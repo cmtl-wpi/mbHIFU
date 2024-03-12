@@ -72,6 +72,11 @@ module m_start_up
     use m_surface_tension
 
     use m_body_forces
+
+    use m_particles
+
+    use m_mpi_particles
+
     ! ==========================================================================
 
     implicit none
@@ -158,7 +163,17 @@ contains
             R0_type, file_per_process, sigma, &
             pi_fac, adv_n, adap_dt, bf_x, bf_y, bf_z, &
             k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, &
-            g_x, g_y, g_z
+            g_x, g_y, g_z, &
+            particleflag, avgdensFlag, particleoutFlag, &
+            particlestatFlag, RPflag, clusterflag, &
+            stillparticlesflag, heatflag, massflag, &
+            csonref, rholiqref, Lref, Tini, Runiv, &
+            gammagas, gammavapor, pvap, cpgas, cpvapor, &
+            kgas, kvapor, MWgas, MWvap, diffcoefvap, &
+            sigmabubble, viscref, RKeps, ratiodt, &
+            projectiontype, smoothtype, epsilonb, &
+            coupledFlag, solverapproach, correctpresFlag, &
+            charwidth, valmaxvoid, dtmaxpart
 
         ! Checking that an input file has been provided by the user. If it
         ! has, then the input file is read in, otherwise, simulation exits.
@@ -190,6 +205,8 @@ contains
             n_glb = n
             p_glb = p
 
+            ! Lagrangian solver non-dimensionalize inputs
+            call s_particles_nondimensionalize_inputs()
         else
             call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
         end if
@@ -846,6 +863,7 @@ contains
         do i = 1, buff_size
             x_cb(-1 - i) = x_cb(-i) - dx(-i)
         end do
+
         ! Computing the cell-center locations buffer, at the beginning of
         ! the coordinate direction, from the cell-width distribution buffer
         do i = 1, buff_size
@@ -1069,7 +1087,7 @@ contains
 
     end subroutine s_initialize_internal_energy_equations
 
-    subroutine s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
+    subroutine s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, time_real, dtnext, dtdid, time_prev, dt_next_inp, dt0)
         integer, intent(inout) :: t_step
         real(kind(0d0)), intent(inout) :: time_avg, time_final
         real(kind(0d0)), intent(inout) :: io_time_avg, io_time_final
@@ -1078,6 +1096,7 @@ contains
         logical, intent(inout) :: file_exists
         real(kind(0d0)), intent(inout) :: start, finish
         integer, intent(inout) :: nt
+        REAL(KIND(0.D0)) :: time_real, dtnext, dtdid, time_prev, dt_next_inp, dt0
 
         integer :: i, j, k, l
 
@@ -1101,18 +1120,28 @@ contains
 #ifdef DEBUG
         print *, 'Computed derived vars'
 #endif
-
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-        if (time_stepper == 1) then
-            call s_1st_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 2) then
-            call s_2nd_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 3 .and. (.not. adap_dt)) then
-            call s_3rd_order_tvd_rk(t_step, time_avg, dt)
-        elseif (time_stepper == 3 .and. adap_dt) then
-            call s_strang_splitting(t_step, time_avg)
-        end if
+	IF(.NOT.coupledflag .and. .not.particleflag) THEN
+            if (time_stepper == 1) then
+                call s_1st_order_tvd_rk(t_step, time_avg)
+            elseif (time_stepper == 2) then
+                call s_2nd_order_tvd_rk(t_step, time_avg)
+            elseif (time_stepper == 3 .and. (.not. adap_dt)) then
+                call s_3rd_order_tvd_rk(t_step, time_avg, dt)
+            elseif (time_stepper == 3 .and. adap_dt) then
+                call s_strang_splitting(t_step, time_avg)
+            end if
+	END IF
+
+        IF(particleflag) THEN !Cash-Karp Runge-Kutta time-stepper, Lagrangian solver
+            CALL rkqs(time_real, dtnext, dtdid, t_step)
+            IF(particleoutFlag) CALL write_particles(time_real)
+            time_real = time_prev + dtdid
+            dt_next_inp = dtnext
+        END IF
+
         if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
+
         ! Time-stepping loop controls
         if ((mytime + dt) >= finaltime) dt = finaltime - mytime
         t_step = t_step + 1
@@ -1151,24 +1180,24 @@ contains
             print *, "Performance: ", time_final*1.0d9/sys_size, " ns/gp/eq/rhs"
             inquire (FILE='time_data.dat', EXIST=file_exists)
             if (file_exists) then
-                open (1, file='time_data.dat', position='append', status='old')
-                write (1, *) num_procs, time_final
-                close (1)
+                open (11, file='time_data.dat', position='append', status='old')
+                write (11, *) num_procs, time_final
+                close (11)
             else
-                open (1, file='time_data.dat', status='new')
-                write (1, *) num_procs, time_final
-                close (1)
+                open (11, file='time_data.dat', status='new')
+                write (11, *) num_procs, time_final
+                close (11)
             end if
 
             inquire (FILE='io_time_data.dat', EXIST=file_exists)
             if (file_exists) then
-                open (1, file='io_time_data.dat', position='append', status='old')
-                write (1, *) num_procs, io_time_final
-                close (1)
+                open (11, file='io_time_data.dat', position='append', status='old')
+                write (11, *) num_procs, io_time_final
+                close (11)
             else
-                open (1, file='io_time_data.dat', status='new')
-                write (1, *) num_procs, io_time_final
-                close (1)
+                open (11, file='io_time_data.dat', status='new')
+                write (11, *) num_procs, io_time_final
+                close (11)
             end if
 
         end if
@@ -1205,7 +1234,17 @@ contains
                 !$acc update host(mv_ts(1)%sf)
             end if
 
-            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step)
+            IF(particleflag) THEN !Lagrangean solver
+                CALL s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step, q_particle(1))
+                IF (parallel_io .NEQV. .TRUE.) THEN
+                    CALL write_restart_particles (t_step)
+                ELSE
+                    CALL write_restart_particles_parallel (t_step)
+                END IF
+            ELSE
+                CALL s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step)
+            END IF
+
             !  call nvtxEndRange
             call cpu_time(finish)
             nt = int((t_step - t_step_start)/(t_step_save))
@@ -1371,6 +1410,8 @@ contains
 #else
                 "on CPUs"
 #endif
+            if(particleflag) do_particles=.true. !Lagrangian solver
+
         end if
 
         ! Broadcasting the user inputs to all of the processors and performing the
@@ -1382,6 +1423,8 @@ contains
         call s_initialize_parallel_io()
 
         call s_mpi_decompose_computational_domain()
+
+        CALL s_mpi_bcast_user_particles() !Lagrangian solver
 
     end subroutine s_initialize_mpi_domain
 
@@ -1430,7 +1473,9 @@ contains
         if (grid_geometry == 3) call s_finalize_fftw_module
         call s_finalize_mpi_proxy_module()
         call s_finalize_global_parameters_module()
-        if (relax) call s_finalize_relaxation_solver_module()
+        if (relax) call s_finalize_relaxation_solver_module()      
+        IF(particleflag) CALL s_deallocate_particles() !Lagrangian solver
+
         if (any(Re_size > 0)) then
             call s_finalize_viscous_module()
         end if

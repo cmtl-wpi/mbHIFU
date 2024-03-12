@@ -254,6 +254,11 @@ module m_global_parameters
     integer :: strxb, strxe
     !> @}
 
+    ! Lagrangian solver
+    LOGICAL :: particleflag, avgdensFlag, do_particles
+    INTEGER :: solverapproach
+    LOGICAL :: second_dir
+
 contains
 
     !> Assigns default values to user inputs prior to reading
@@ -353,6 +358,13 @@ contains
         sigR = dflt_real
         sigma = dflt_real
         adv_n = .false.
+
+        ! Lagrangian solver
+        particleflag   = .FALSE.
+        avgdensFlag    = .FALSE.
+        do_particles   = .FALSE.
+        solverapproach = 1
+        second_dir = .FALSE.
 
     end subroutine s_assign_default_values_to_user_inputs
 
@@ -591,13 +603,23 @@ contains
         ! ==================================================================
 
 #ifdef MFC_MPI
-        allocate (MPI_IO_DATA%view(1:sys_size))
-        allocate (MPI_IO_DATA%var(1:sys_size))
+        IF(avgdensflag .NEQV. .TRUE.) THEN
+            ALLOCATE(MPI_IO_DATA%view(1:sys_size))
+            ALLOCATE(MPI_IO_DATA%var(1:sys_size))
+            DO i = 1, sys_size
+                ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
+                MPI_IO_DATA%var(i)%sf => NULL()
+            END DO
+        ELSE
+            ALLOCATE(MPI_IO_DATA%view(1:sys_size+1))
+            ALLOCATE(MPI_IO_DATA%var(1:sys_size+1))
 
-        do i = 1, sys_size
-            allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
-            MPI_IO_DATA%var(i)%sf => null()
-        end do
+            DO i = 1, sys_size+1
+                ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
+                MPI_IO_DATA%var(i)%sf => NULL()
+            END DO
+        END IF
+
 #endif
 
         ! Size of the ghost zone layer is non-zero only when post-processing
@@ -747,6 +769,8 @@ contains
             do i = 1, sys_size
                 MPI_IO_DATA%var(i)%sf => null()
             end do
+			
+			IF(avgdensflag) MPI_IO_DATA%var(sys_size+1)%sf => NULL()
 
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)

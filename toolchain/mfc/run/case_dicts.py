@@ -204,6 +204,43 @@ SIMULATION.update({
     'adap_dt': ParamType.LOG,
     'ib': ParamType.LOG,
     'num_ibs': ParamType.INT,
+    'particleflag': ParamType.LOG,
+    'avgdensFlag': ParamType.LOG,
+    'particleoutFlag': ParamType.LOG,
+    'particlestatFlag': ParamType.LOG,
+    'RPflag': ParamType.LOG,
+    'clusterflag': ParamType.INT,
+    'stillparticlesflag': ParamType.LOG,
+    'heatflag': ParamType.INT,
+    'massflag': ParamType.INT,
+    'csonref': ParamType.REAL,
+    'rholiqref': ParamType.REAL,
+    'Lref': ParamType.REAL,
+    'Tini': ParamType.REAL,
+    'Runiv': ParamType.REAL,
+    'gammagas': ParamType.REAL,
+    'gammavapor': ParamType.REAL,
+    'pvap': ParamType.REAL,
+    'cpgas': ParamType.REAL,
+    'cpvapor': ParamType.REAL,
+    'kgas': ParamType.REAL,
+    'kvapor': ParamType.REAL,
+    'MWgas': ParamType.REAL,
+    'MWvap': ParamType.REAL,
+    'diffcoefvap': ParamType.REAL,
+    'sigmabubble': ParamType.REAL,
+    'viscref': ParamType.REAL,
+    'RKeps': ParamType.REAL,
+    'ratiodt': ParamType.INT,
+    'projectiontype': ParamType.INT,
+    'smoothtype': ParamType.INT,
+    'epsilonb': ParamType.REAL,
+    'coupledFlag': ParamType.LOG,
+    'solverapproach': ParamType.INT,
+    'correctpresFlag': ParamType.LOG,
+    'charwidth': ParamType.REAL.,
+    'valmaxvoid': ParamType.REAL,
+    'dtmaxpart': ParamType.REAL
 })
 
 # NOTE: Not currently present
@@ -246,7 +283,8 @@ for cmp in ["x", "y", "z"]:
 #        SIMULATION.append(f'probe_wrt({wrt_id})%{cmp}')
 #        set_type(f'probe_wrt({wrt_id})%{cmp}', ParamType.LOG)
 
-for probe_id in range(1,3+1):
+#for probe_id in range(1,3+1):
+for probe_id in range(1,10+1):
     for cmp in ["x", "y", "z"]:
         SIMULATION[f'probe({probe_id})%{cmp}'] = ParamType.REAL
 
@@ -308,7 +346,10 @@ POST_PROCESS.update({
     'omega_wrt': ParamType.LOG,
     'qbmm': ParamType.LOG,
     'qm_wrt': ParamType.LOG,
-    'cf_wrt': ParamType.LOG
+    'cf_wrt': ParamType.LOG,
+    'particleflag': ParamType.LOG,
+    'avgdensFlag': ParamType.LOG,
+    'solverapproach': ParamType.LOG
 })
 
 for cmp_id in range(1,3+1):

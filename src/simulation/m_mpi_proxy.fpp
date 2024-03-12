@@ -71,10 +71,16 @@ module m_mpi_proxy
     !! immersed boundary markers, for a single computational domain boundary
     !! at the time, from the relevant neighboring processor.
 
+
     !$acc declare create(q_cons_buff_send, q_cons_buff_recv)
     !$acc declare create( ib_buff_send, ib_buff_recv)
     !$acc declare create(c_divs_buff_send, c_divs_buff_recv)
 #endif
+!=======
+!    INTEGER :: MPI_COMM_CART
+!    !! Cartesian processor topology communicator!
+!
+!>>>>>>> Lagrangian solver
     !> @name Generic flags used to identify and report MPI errors
     !> @{
     integer, private :: err_code, ierr, v_size
@@ -121,24 +127,30 @@ contains
 
             v_size = sys_size + 2*nb*4
         else
+
+            IF (particleflag) THEN
+                v_size = send_size !< Lagrangian solver: send/receive size
+            ELSE
+                v_size = sys_size
+            END IF
+
             if (n > 0) then
                 if (p > 0) then
-                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*sys_size* &
+                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*v_size* &
                                              & (m + 2*buff_size + 1)* &
                                              & (n + 2*buff_size + 1)* &
                                              & (p + 2*buff_size + 1)/ &
                                              & (min(m, n, p) + 2*buff_size + 1)))
                 else
-                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*sys_size* &
+                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*v_size* &
                                              & (max(m, n) + 2*buff_size + 1)))
                 end if
             else
-                @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*sys_size))
+                @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*v_size))
             end if
 
             @:ALLOCATE_GLOBAL(q_cons_buff_recv(0:ubound(q_cons_buff_send, 1)))
 
-            v_size = sys_size
         end if
 
         if (sigma /= dflt_real) then
@@ -280,9 +292,6 @@ contains
 
         real(kind(0d0)) :: fct_min !<
             !! Processor factorization (fct) minimization parameter
-
-        integer :: MPI_COMM_CART !<
-            !! Cartesian processor topology communicator
 
         integer :: rem_cells !<
             !! Remaining number of cells, in a particular coordinate direction,
@@ -654,7 +663,6 @@ contains
         integer :: dst_proc(1:3)
 
 #ifdef MFC_MPI
-
         ! MPI Communication in x-direction =================================
         if (mpi_dir == 1) then
 
@@ -832,13 +840,17 @@ contains
     subroutine s_mpi_sendrecv_variables_buffers(q_cons_vf, &
                                                 pb, mv, &
                                                 mpi_dir, &
-                                                pbc_loc)
+                                                pbc_loc, &
+                                                q_particle)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: pb, mv
         integer, intent(in) :: mpi_dir, pbc_loc
 
-        integer :: i, j, k, l, r, q !< Generic loop iterators
+        ! Lagrangian solver
+        TYPE(scalar_field), DIMENSION(:), OPTIONAL :: q_particle
+
+        integer :: i, j, k, l, r, q, s !< Generic loop iterators
 
         integer :: buffer_counts(1:3), buffer_count
 
@@ -863,8 +875,8 @@ contains
                             /)
         else
             buffer_counts = (/ &
-                            buff_size*sys_size*(n + 1)*(p + 1), &
-                            buff_size*sys_size*(m + 2*buff_size + 1)*(p + 1), &
+                            buff_size*v_size*(n + 1)*(p + 1), &
+                            buff_size*v_size*(m + 2*buff_size + 1)*(p + 1), &
                             buff_size*v_size*(m + 2*buff_size + 1)*(n + 2*buff_size + 1) &
                             /)
         end if
@@ -911,6 +923,13 @@ contains
                                     r = (i - 1) + v_size*(j + buff_size*(k + (n + 1)*l))
                                     q_cons_buff_send(r) = q_cons_vf(i)%sf(j + pack_offset, k, l)
                                 end do
+                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
+                                   DO s = 1, send_size-adv_idx%end
+                                      r = (adv_idx%end + s-1) + send_size * &
+                                          (j + buff_size*(k + (n+1)*l))
+                                      q_cons_buff_send(r) = q_particle(s)%sf(j + pack_offset, k, l)
+                                   END DO
+                                END IF
                             end do
                         end do
                     end do
@@ -948,15 +967,23 @@ contains
                     end if
                 #:elif mpi_dir == 2
                     !$acc parallel loop collapse(4) gang vector default(present) private(r)
-                    do i = 1, sys_size
+                    do j = -buff_size, m + buff_size
                         do l = 0, p
                             do k = 0, buff_size - 1
-                                do j = -buff_size, m + buff_size
+                                do i = 1, sys_size
                                     r = (i - 1) + v_size* &
                                         ((j + buff_size) + (m + 2*buff_size + 1)* &
                                          (k + buff_size*l))
                                     q_cons_buff_send(r) = q_cons_vf(i)%sf(j, k + pack_offset, l)
                                 end do
+                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
+                                    DO s = 1, send_size-adv_idx%end
+                                       r = (adv_idx%end + s-1) + send_size * &
+                                          ((j+buff_size) + (m+2*buff_size+1) * &
+                                          (k + buff_size*l))
+                                       q_cons_buff_send(r) = q_particle(s)%sf(j, k + pack_offset, l)
+                                    END DO
+                                END IF
                             end do
                         end do
                     end do
@@ -996,15 +1023,23 @@ contains
                     end if
                 #:else
                     !$acc parallel loop collapse(4) gang vector default(present) private(r)
-                    do i = 1, sys_size
+                    do j = -buff_size, m + buff_size
                         do l = 0, buff_size - 1
                             do k = -buff_size, n + buff_size
-                                do j = -buff_size, m + buff_size
+                                do i = 1, sys_size
                                     r = (i - 1) + v_size* &
                                         ((j + buff_size) + (m + 2*buff_size + 1)* &
                                          ((k + buff_size) + (n + 2*buff_size + 1)*l))
                                     q_cons_buff_send(r) = q_cons_vf(i)%sf(j, k, l + pack_offset)
                                 end do
+                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
+                                    DO s = 1, send_size-adv_idx%end
+                                       r = (adv_idx%end + s-1) + send_size * &
+                                           ((j+buff_size) + (m+2*buff_size+1) * &
+                                           ((k+buff_size) + (n+2*buff_size+1)*l))
+                                       q_cons_buff_send(r) = q_particle(s)%sf(j, k, l + pack_offset)
+                                    END DO
+                                 END IF
                             end do
                         end do
                     end do
@@ -1088,7 +1123,14 @@ contains
                                     end if
 #endif
                                 end do
-                            end do
+                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
+                                    DO s = 1, send_size-adv_idx%end
+                                    	r = (adv_idx%end + s-1) + send_size * &
+                                          (j + buff_size*((k+1) + (n+1)*l))
+                                    	q_particle(s)%sf(j + unpack_offset, k, l) = q_cons_buff_recv(r)
+                                    END DO
+                            	END IF
+			    end do
                         end do
                     end do
 
@@ -1125,10 +1167,10 @@ contains
                     end if
                 #:elif mpi_dir == 2
                     !$acc parallel loop collapse(4) gang vector default(present) private(r)
-                    do i = 1, sys_size
+                    do j = -buff_size, m + buff_size
                         do l = 0, p
                             do k = -buff_size, -1
-                                do j = -buff_size, m + buff_size
+                                do i = 1, sys_size
                                     r = (i - 1) + v_size* &
                                         ((j + buff_size) + (m + 2*buff_size + 1)* &
                                          ((k + buff_size) + buff_size*l))
@@ -1140,6 +1182,14 @@ contains
                                     end if
 #endif
                                 end do
+                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
+                                    DO s = 1, send_size-adv_idx%end
+                                    	r = (adv_idx%end + s-1) + send_size * &
+                                     	((j+buff_size) + (m+2*buff_size+1) * &
+                                             ((k+buff_size) + buff_size*l))
+                                    	q_particle(s)%sf(j, k + unpack_offset, l) = q_cons_buff_recv(r)
+                                    END DO
+                            	END IF
                             end do
                         end do
                     end do
@@ -1180,10 +1230,10 @@ contains
                 #:else
                     ! Unpacking buffer from bc_z%beg
                     !$acc parallel loop collapse(4) gang vector default(present) private(r)
-                    do i = 1, sys_size
+                    do j = -buff_size, m + buff_size
                         do l = -buff_size, -1
                             do k = -buff_size, n + buff_size
-                                do j = -buff_size, m + buff_size
+                                do i = 1, sys_size
                                     r = (i - 1) + v_size* &
                                         ((j + buff_size) + (m + 2*buff_size + 1)* &
                                          ((k + buff_size) + (n + 2*buff_size + 1)* &
@@ -1196,6 +1246,15 @@ contains
                                     end if
 #endif
                                 end do
+                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
+                                    DO s = 1, send_size-adv_idx%end
+                                    	r = (adv_idx%end + s-1) + send_size * &
+                                      	 ((j+buff_size) + (m+2*buff_size+1) * &
+                                       	 ((k+buff_size) + (n+2*buff_size+1) * &
+                                                            (l+buff_size)))
+                                    	q_particle(s)%sf(j, k, l + unpack_offset) = q_cons_buff_recv(r)
+                                    END DO
+                            	END IF
                             end do
                         end do
                     end do

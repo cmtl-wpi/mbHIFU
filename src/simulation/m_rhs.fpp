@@ -54,11 +54,19 @@ module m_rhs
     use m_surface_tension
 
     use m_body_forces
+
+    use m_time_tmp
+
+    use ieee_arithmetic
+
+    use m_mpi_common
+    
     ! ==========================================================================
 
     implicit none
 
-    private; public :: s_initialize_rhs_module, &
+    !private; public :: s_initialize_rhs_module, &
+    public :: s_initialize_rhs_module, &
  s_compute_rhs, &
  s_pressure_relaxation_procedure, &
  s_finalize_rhs_module
@@ -222,6 +230,12 @@ module m_rhs
     real(kind(0d0)), allocatable, dimension(:, :, :) :: nbub !< Bubble number density
     !$acc declare create(nbub)
 #endif
+
+    ! Variable for sub-grid particle concentration, lagrangian solver
+    ! 1: one minus the voidfraction (1-beta)
+    ! 2: Temporal derivative of the void fraction
+    ! 3-5: Extra-allocated variables in those cases where source terms are required
+    TYPE(scalar_field), ALLOCATABLE, DIMENSION(:) :: q_particle
 
 contains
 
@@ -696,19 +710,21 @@ contains
 
     end subroutine s_initialize_rhs_module
 
-    subroutine s_compute_rhs(q_cons_vf, q_prim_vf, rhs_vf, pb, rhs_pb, mv, rhs_mv, t_step, time_avg)
+    subroutine s_compute_rhs(q_cons_vf, q_prim_vf, rhs_vf, pb, rhs_pb, mv, rhs_mv, t_step, time_avg, qtime)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, rhs_pb
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: mv, rhs_mv
+        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: pb, rhs_pb
+        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: mv, rhs_mv
         integer, intent(in) :: t_step
         real(kind(0d0)), intent(inout) :: time_avg
 
         real(kind(0d0)) :: t_start, t_finish
         real(kind(0d0)) :: gp_sum
 
+	REAL(KIND(0.D0)), OPTIONAL :: qtime !< Current time for the Lagrangian solver
+        
         real(kind(0d0)) :: top, bottom  !< Numerator and denominator when evaluating flux limiter function
         real(kind(0d0)), dimension(num_fluids) :: myalpha_rho, myalpha
 
@@ -738,25 +754,29 @@ contains
 
         ix%end = m - ix%beg; iy%end = n - iy%beg; iz%end = p - iz%beg
         ! ==================================================================
-
         !$acc update device(ix, iy, iz)
         call cpu_time(t_start)
         ! Association/Population of Working Variables ======================
         !$acc parallel loop collapse(4) gang vector default(present)
-        do i = 1, sys_size
-            do l = iz%beg, iz%end
-                do k = iy%beg, iy%end
-                    do j = ix%beg, ix%end
-                        q_cons_qp%vf(i)%sf(j, k, l) = q_cons_vf(i)%sf(j, k, l)
+        if (particleflag) then
+            do i = 1, sys_size
+                q_cons_qp%vf(i)%sf => q_cons_vf(i)%sf
+            end do
+        else
+            do i = 1, sys_size
+                do l = iz%beg, iz%end
+                    do k = iy%beg, iy%end
+                        do j = ix%beg, ix%end
+                            q_cons_qp%vf(i)%sf(j, k, l) = q_cons_vf(i)%sf(j, k, l)
+                        end do
                     end do
                 end do
             end do
-        end do
+        end if
 
         ! ==================================================================
 
         ! Converting Conservative to Primitive Variables ==================
-
         if (mpp_lim .and. bubbles) then
             !$acc parallel loop collapse(3) gang vector default(present)
             do l = iz%beg, iz%end
@@ -778,15 +798,29 @@ contains
         end if
 
         call nvtxStartRange("RHS-CONVERT")
-        call s_convert_conservative_to_primitive_variables( &
-            q_cons_qp%vf, &
-            q_prim_qp%vf, &
-            gm_alpha_qp%vf, &
-            ix, iy, iz)
+        IF(particleflag) THEN !Lagrangian solver
+            call s_convert_conservative_to_primitive_variables( &
+                                                  q_cons_qp%vf, &
+                                                  q_prim_qp%vf, &
+                                                gm_alpha_qp%vf, &
+                                                    ix, iy, iz, &
+                                                   q_particle(1))
+        ELSE
+            call s_convert_conservative_to_primitive_variables( &
+                                                  q_cons_qp%vf, &
+                                                  q_prim_qp%vf, &
+                                                gm_alpha_qp%vf, &
+                                                      ix, iy, iz)
+        END IF
+
         call nvtxEndRange
 
         call nvtxStartRange("RHS-MPI")
-        call s_populate_primitive_variables_buffers(q_prim_qp%vf, pb, mv)
+        if (particleflag) then !Lagrangian solver
+            call s_populate_primitive_variables_buffers(q_prim_qp%vf, pb, mv, q_particle)
+        else
+            call s_populate_primitive_variables_buffers(q_prim_qp%vf, pb, mv)
+        end if
         call nvtxEndRange
 
         if (t_step == t_step_stop) return
@@ -994,11 +1028,22 @@ contains
         ! Additional Physics and Source Temrs ==================================
         ! Additions for monopole
         call nvtxStartRange("RHS_monopole")
-        if (monopole) call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
+        if (monopole) then
+            if (PRESENT(qtime)) then !Lagrangian solver
+                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
+                                                   q_prim_qp%vf(1:sys_size), &
+                                                   t_step, &
+                                                   num_dims, &
+                                                   rhs_vf, &
+                                                   qtime)
+            else
+                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
                                                    q_prim_qp%vf(1:sys_size), &
                                                    t_step, &
                                                    num_dims, &
                                                    rhs_vf)
+            end if
+        end if
         call nvtxEndRange
 
         ! Add bubles source term
@@ -1020,6 +1065,11 @@ contains
             !$acc update device(ix, iy, iz)
 
             !$acc parallel loop collapse(4) gang vector default(present)
+	    if (particleflag) then
+            do i = 1, sys_size
+                q_prim_vf(i)%sf => q_prim_qp%vf(i)%sf
+            end do
+            else
             do i = 1, sys_size
                 do l = iz%beg, iz%end
                     do k = iy%beg, iy%end
@@ -1029,6 +1079,7 @@ contains
                     end do
                 end do
             end do
+	    end if
         end if
         call cpu_time(t_finish)
         if (t_step >= 4) then
@@ -1655,7 +1706,6 @@ contains
                     end do
                 end do
             end if
-
             if (cyl_coord .and. ((bc_y%beg == -2) .or. (bc_y%beg == -14))) then
                 if (any(Re_size > 0)) then
                     if (p > 0) then
@@ -1703,7 +1753,6 @@ contains
                         end do
                     end do
                 end do
-
             else
                 !$acc parallel loop collapse(3) gang vector default(present)
                 do l = 0, p
@@ -1982,7 +2031,7 @@ contains
                     ! because the primitive variables are directly recovered later on by the conservative
                     ! variables (see s_convert_conservative_to_primitive_variables called in s_compute_rhs).
                     ! However, the internal-energy equations should be reset with the corresponding mixture
-                    ! pressure from the correction. This step is carried out below.
+                    ! ! pressure from the correction. This step is carried out below.
 
                     !$acc loop seq
                     do i = 1, num_fluids
@@ -2067,7 +2116,6 @@ contains
                     end do
 
                     pres_relax = (q_cons_vf(E_idx)%sf(j, k, l) - dyn_pres - pi_inf)/gamma
-
                     !$acc loop seq
                     do i = 1, num_fluids
                         q_cons_vf(i + intxb - 1)%sf(j, k, l) = &
@@ -2236,10 +2284,12 @@ contains
             !$acc exit data detach(q_prim_qp%vf(j)%sf)
             nullify (q_prim_qp%vf(j)%sf)
         end do
-
+        
         do j = mom_idx%beg, E_idx
-            @:DEALLOCATE(q_cons_qp%vf(j)%sf)
-            @:DEALLOCATE(q_prim_qp%vf(j)%sf)
+            if (.not.particleflag) then
+                @:DEALLOCATE(q_cons_qp%vf(j)%sf)
+                @:DEALLOCATE(q_prim_qp%vf(j)%sf)
+            end if
         end do
 
         @:DEALLOCATE(q_cons_qp%vf, q_prim_qp%vf)
