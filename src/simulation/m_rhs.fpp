@@ -44,16 +44,21 @@ module m_rhs
     use m_viscous
     
     use m_nvtx
+
+    use m_time_tmp
+
+    use ieee_arithmetic
+
+    use m_mpi_common
     
     ! ==========================================================================
 
     implicit none
 
-    private; public :: s_initialize_rhs_module, &
- s_compute_rhs, &
- s_pressure_relaxation_procedure, &
- s_finalize_rhs_module
-
+    public :: s_initialize_rhs_module, &
+              s_compute_rhs, &
+              s_pressure_relaxation_procedure, &
+              s_finalize_rhs_module
 
     type(vector_field) :: q_cons_qp !<
     !! This variable contains the WENO-reconstructed values of the cell-average
@@ -170,6 +175,12 @@ module m_rhs
 
     real(kind(0d0)), allocatable, dimension(:, :, :) :: nbub !< Bubble number density
 !$acc declare create(nbub)
+
+    ! Variable for sub-grid particle concentration, lagrangian solver
+    ! 1: one minus the voidfraction (1-beta)
+    ! 2: Temporal derivative of the void fraction
+    ! 3-5: Extra-allocated variables in those cases where source terms are required
+    TYPE(scalar_field), ALLOCATABLE, DIMENSION(:) :: q_particle
 
 contains
 
@@ -618,14 +629,16 @@ contains
 
     end subroutine s_initialize_rhs_module ! -------------------------------
 
-    subroutine s_compute_rhs(q_cons_vf, q_prim_vf, rhs_vf, pb, rhs_pb, mv, rhs_mv, t_step) ! -------
+    subroutine s_compute_rhs(q_cons_vf, q_prim_vf, rhs_vf, pb, rhs_pb, mv, rhs_mv, t_step, qtime) ! -------
 
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_prim_vf
         type(scalar_field), dimension(sys_size), intent(INOUT) :: rhs_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent (INOUT) :: pb, mv
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent (INOUT) :: rhs_pb, rhs_mv
+        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent (INOUT), OPTIONAL :: pb, mv
+        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent (INOUT), OPTIONAL :: rhs_pb, rhs_mv
         integer, intent(IN) :: t_step
+
+	REAL(KIND(0.D0)), OPTIONAL :: qtime !< Current time for the Lagrangian solver
         
         real(kind(0d0)) :: top, bottom  !< Numerator and denominator when evaluating flux limiter function
         real(kind(0d0)), dimension(num_fluids) :: myalpha_rho, myalpha
@@ -656,29 +669,37 @@ contains
 
         ix%end = m - ix%beg; iy%end = n - iy%beg; iz%end = p - iz%beg
         ! ==================================================================
-
         !$acc update device(ix, iy, iz)
 
         ! Association/Population of Working Variables ======================
         !$acc parallel loop collapse(4) gang vector default(present)
-        do i = 1, sys_size
-            do l = iz%beg, iz%end
-                do k = iy%beg, iy%end
-                    do j = ix%beg, ix%end
-                        q_cons_qp%vf(i)%sf(j, k, l) = q_cons_vf(i)%sf(j, k, l)
+        if (particleflag) then
+            do i = 1, sys_size
+                q_cons_qp%vf(i)%sf => q_cons_vf(i)%sf
+            end do
+        else
+            do i = 1, sys_size
+                do l = iz%beg, iz%end
+                    do k = iy%beg, iy%end
+                        do j = ix%beg, ix%end
+                            q_cons_qp%vf(i)%sf(j, k, l) = q_cons_vf(i)%sf(j, k, l)
+                        end do
                     end do
                 end do
             end do
-        end do
+        end if
 
         call nvtxStartRange("RHS-MPI")
-        call s_populate_conservative_variables_buffers(pb, mv)
+        if (particleflag) then !Lagrangian solver
+            call s_populate_conservative_variables_buffers()
+        else
+            call s_populate_conservative_variables_buffers(pb, mv)
+        end if
         call nvtxEndRange
-        
+
         ! ==================================================================
 
         ! Converting Conservative to Primitive Variables ==================
-
         if (mpp_lim .and. bubbles) then
             !$acc parallel loop collapse(3) gang vector default(present)
             do l = iz%beg, iz%end
@@ -701,11 +722,21 @@ contains
         end if
 
         call nvtxStartRange("RHS-CONVERT")
-        call s_convert_conservative_to_primitive_variables( &
-            q_cons_qp%vf, &
-            q_prim_qp%vf, &
-            gm_alpha_qp%vf, &
-            ix, iy, iz)
+        IF(particleflag) THEN !Lagrangian solver
+            call s_convert_conservative_to_primitive_variables( &
+                                                  q_cons_qp%vf, &
+                                                  q_prim_qp%vf, &
+                                                gm_alpha_qp%vf, &
+                                                    ix, iy, iz, &
+                                                   q_particle(1))
+        ELSE
+            call s_convert_conservative_to_primitive_variables( &
+                                                  q_cons_qp%vf, &
+                                                  q_prim_qp%vf, &
+                                                gm_alpha_qp%vf, &
+                                                      ix, iy, iz)
+        END IF
+
         call nvtxEndRange
         
         if (t_step == t_step_stop) return
@@ -739,7 +770,7 @@ contains
             ix%end = m - ix%beg; iy%end = n - iy%beg; iz%end = p - iz%beg
             ! ===============================================================
             ! Reconstructing Primitive/Conservative Variables ===============
-            
+
             if (all(Re_size == 0)) then
                     iv%beg = 1; iv%end = sys_size
                 !call nvtxStartRange("RHS-WENO")
@@ -868,6 +899,7 @@ contains
             end if
 
             call nvtxStartRange("RHS_Flux_Add")
+
             if (id == 1) then
 
                 if (bc_x%beg <= -5) then
@@ -892,6 +924,7 @@ contains
                         end do
                     end do
                 end do
+
 
                 !Non-polytropic qbmm needs to account for change in bubble radius due to a change in nb 
                 if(qbmm .and. (.not. polytropic) ) then
@@ -1061,9 +1094,15 @@ contains
                 if (monopole) then
                     ndirs = 1; if (n > 0) ndirs = 2; if (p > 0) ndirs = 3
                     if (id == ndirs) then 
-                        call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
+                        if (PRESENT(qtime)) THEN !Lagrangian solver
+                            call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
+                                             q_cons_qp%vf(1:sys_size), q_prim_qp%vf(1:sys_size), t_step, id, &
+                                             rhs_vf,qtime)
+                        else
+                            call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
                                              q_cons_qp%vf(1:sys_size), q_prim_qp%vf(1:sys_size), t_step, id, &
                                              rhs_vf)
+                        end if
                     end if
                 end if
 
@@ -1129,6 +1168,7 @@ contains
                         end do
                     end do
                 end do
+
                 !Non-polytropic qbmm needs to account for change in bubble radius due to a change in nb 
                 if(qbmm .and. (.not. polytropic) ) then
                 !$acc parallel loop collapse(5) gang vector default(present) private(nb_q, nR, nR2, R, R2, nb_dot, nR_dot, nR2_dot, var)
@@ -1295,13 +1335,18 @@ contains
                 end if
 
 
-
                 if (monopole) then
                     ndirs = 1; if (n > 0) ndirs = 2; if (p > 0) ndirs = 3
                     if (id == ndirs) then 
-                        call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
+                        if (PRESENT(qtime)) THEN !Lagrangian solver
+                                call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
+                                             q_cons_qp%vf(1:sys_size), q_prim_qp%vf(1:sys_size), t_step, id, &
+                                             rhs_vf,qtime)
+                        else
+                                call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
                                              q_cons_qp%vf(1:sys_size), q_prim_qp%vf(1:sys_size), t_step, id, &
                                              rhs_vf)
+                        end if
                     end if
                 end if
 
@@ -1719,6 +1764,7 @@ contains
                                             end do
                                         end do
                                     end do
+
                                 else if ((j == advxb) .and. (bubbles .neqv. .true.)) then
                                     !$acc parallel loop collapse(3) gang vector default(present)
                                     do k = 0, p
@@ -1781,10 +1827,16 @@ contains
 
                 if (monopole) then
                     ndirs = 1; if (n > 0) ndirs = 2; if (p > 0) ndirs = 3
-                    if (id == ndirs) then 
-                        call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
+                    if (id == ndirs) then
+                        if (PRESENT(qtime)) THEN !Lagrangian solver
+                                call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
+                                             q_cons_qp%vf(1:sys_size), q_prim_qp%vf(1:sys_size), t_step, id, &
+                                             rhs_vf,qtime)
+                        else
+                                 call s_monopole_calculations(mono_mass_src, mono_mom_src, mono_e_src, &
                                              q_cons_qp%vf(1:sys_size), q_prim_qp%vf(1:sys_size), t_step, id, &
                                              rhs_vf)
+                        end if
                     end if
                 end if
 
@@ -1843,7 +1895,6 @@ contains
                         end do
                     end if
                 end if
-
             end if  ! id loop
             call nvtxEndRange
 
@@ -1857,6 +1908,7 @@ contains
             end if
             call nvtxEndRange
         end do
+
         ! END: Dimensional Splitting Loop =================================
 
         if (run_time_info .or. probe_wrt) then
@@ -2146,7 +2198,7 @@ contains
 
         integer :: i, j, k, l, r, q !< Generic loop iterators
 
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent (INOUT) :: pb, mv
+        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent (INOUT), OPTIONAL :: pb, mv
 
         ! Population of Buffers in x-direction =============================
 
@@ -2269,9 +2321,14 @@ contains
 
 
         else                            ! Processor BC at beginning
-
-            call s_mpi_sendrecv_conservative_variables_buffers( &
-                q_cons_qp%vf, pb, mv, 1, -1)
+            IF(particleflag) THEN !Lagrangian solver
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                               q_cons_qp%vf, mpi_dir=1, pbc_loc=-1, &
+                                               q_particle=q_particle)
+            ELSE
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                         q_cons_qp%vf, pb, mv, 1, -1)
+            END IF
 
         end if
 
@@ -2394,10 +2451,14 @@ contains
             end if
 
         else                            ! Processor BC at end
-
-            call s_mpi_sendrecv_conservative_variables_buffers( &
-                q_cons_qp%vf, pb, mv,  1, 1)
-
+            IF(particleflag) THEN !Lagrangian solver
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                q_cons_qp%vf, mpi_dir=1, pbc_loc=1, &
+                                               q_particle=q_particle)
+            ELSE
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                          q_cons_qp%vf, pb, mv, 1, 1)
+            END IF
         end if
 
         ! END: Population of Buffers in x-direction ========================
@@ -2633,10 +2694,14 @@ contains
             end if
 
         else                            ! Processor BC at beginning
-
-            call s_mpi_sendrecv_conservative_variables_buffers( &
-                q_cons_qp%vf, pb, mv,  2, -1)
-
+            IF(particleflag) THEN !Lagrangian solver
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                               q_cons_qp%vf, mpi_dir=2, pbc_loc=-1, &
+                                               q_particle=q_particle)
+            ELSE
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                         q_cons_qp%vf, pb, mv, 2, -1)
+            END IF
         end if
 
         if (bc_y%end <= -3) then         ! Ghost-cell extrap. BC at end
@@ -2786,10 +2851,14 @@ contains
             end if            
 
         else                            ! Processor BC at end
-
-            call s_mpi_sendrecv_conservative_variables_buffers( &
-                q_cons_qp%vf, pb, mv,  2, 1)
-
+            IF(particleflag) THEN !Lagrangian solver
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                q_cons_qp%vf, mpi_dir=2, pbc_loc=1, &
+                                               q_particle=q_particle)
+            ELSE
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                          q_cons_qp%vf, pb, mv, 2, 1)
+            END IF
         end if
 
         ! END: Population of Buffers in y-direction ========================
@@ -2948,10 +3017,14 @@ contains
             end if 
 
         else                            ! Processor BC at beginning
-
-            call s_mpi_sendrecv_conservative_variables_buffers( &
-                q_cons_qp%vf, pb, mv,  3, -1)
-
+            IF(particleflag) THEN !Lagrangian solver
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                               q_cons_qp%vf, mpi_dir=3, pbc_loc=-1, &
+                                               q_particle=q_particle)
+            ELSE
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                         q_cons_qp%vf, pb, mv, 3, -1)
+            END IF
         end if
 
         if (bc_z%end <= -3) then         ! Ghost-cell extrap. BC at end
@@ -3097,10 +3170,14 @@ contains
                 end do
             end if
         else                            ! Processor BC at end
-
-            call s_mpi_sendrecv_conservative_variables_buffers( &
-                q_cons_qp%vf, pb, mv,  3, 1)
-
+            IF(particleflag) THEN !Lagrangian solver
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                q_cons_qp%vf, mpi_dir=3, pbc_loc=1, &
+                                               q_particle=q_particle)
+            ELSE
+                call s_mpi_sendrecv_conservative_variables_buffers( &
+                                          q_cons_qp%vf, pb, mv, 3, 1)
+            END IF
         end if
 
         ! END: Population of Buffers in z-direction ========================

@@ -69,7 +69,8 @@ contains
             flux_lim, flux_wrt, cyl_coord, &
             parallel_io, rhoref, pref, bubbles, qbmm, sigR, &
             R0ref, nb, polytropic, thermal, Ca, Web, Re_inv, &
-            polydisperse, poly_sigma
+            polydisperse, poly_sigma, &
+            particleflag, avgdensFlag, solverapproach
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -92,6 +93,9 @@ contains
             m_glb = m
             n_glb = n
             p_glb = p
+
+            !Lagrangean solver
+            if (particleflag) do_particles=.true.
         else
             call s_mpi_abort('File post_process.inp is missing. Exiting ...')
         end if
@@ -127,6 +131,7 @@ contains
 
     end subroutine s_check_input_file ! ------------------------------------
 
+
     subroutine s_perform_time_step(t_step)
     
         integer, intent(INOUT) :: t_step 
@@ -151,7 +156,8 @@ contains
         end if
 
         ! Converting the conservative variables to the primitive ones
-        call s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf)
+        CALL s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf)
+
     end subroutine s_perform_time_step
 
     subroutine s_save_data(t_step, varname, pres, c, H)
@@ -428,6 +434,14 @@ contains
 
         ! Adding the sound speed to the formatted database file ----------------
         if (c_wrt) then
+
+            IF(avgdensFlag) THEN !Lagrangian solver, void fraction
+                q_sf = 1.0d0 - q_particle(1)%sf(                &
+                              -offset_x%beg : m + offset_x%end, &
+                              -offset_y%beg : n + offset_y%end, &
+                              -offset_z%beg : p + offset_z%end  )
+            ELSE
+
             do k = -offset_z%beg, p + offset_z%end
                 do j = -offset_y%beg, n + offset_y%end
                     do i = -offset_x%beg, m + offset_x%end
@@ -448,6 +462,8 @@ contains
                     end do
                 end do
             end do
+
+            END IF
 
             write (varname, '(A)') 'c'
             call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -613,6 +629,7 @@ contains
             call s_check_input_file()
             
             print '(" Post-processing a "I0"x"I0"x"I0" case on "I0" rank(s)")', m, n, p, num_procs
+
         end if
 
         ! Broadcasting the user inputs to all of the processors and performing the

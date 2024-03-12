@@ -62,11 +62,13 @@ contains
     end subroutine s_mpi_initialize ! --------------------------------------
 
 
-    subroutine s_initialize_mpi_data(q_cons_vf) ! --------------------------
+    subroutine s_initialize_mpi_data(q_cons_vf, beta) ! --------------------------
 
         type(scalar_field), &
             dimension(sys_size), &
             intent(IN) :: q_cons_vf
+        type(scalar_field), &
+            intent(IN), optional :: beta
 
         integer, dimension(num_dims) :: sizes_glb, sizes_loc
 
@@ -74,10 +76,21 @@ contains
 
         ! Generic loop iterator
         integer :: i, j, q, k, l
+        integer :: alt_sys !Altered system size when lagrangian particles exist
+
+        if (present(beta)) then
+                alt_sys = sys_size + 1
+        else
+                alt_sys = sys_size
+        end if
 
         do i = 1, sys_size
             MPI_IO_DATA%var(i)%sf => q_cons_vf(i)%sf(0:m, 0:n, 0:p)
         end do
+
+        if (present(beta)) then
+                MPI_IO_DATA%var(alt_sys)%sf => beta%sf(0:m,0:n,0:p)
+        end if
 
         !Additional variables pb and mv for non-polytropic qbmm
 #ifdef MFC_PRE_PROCESS 
@@ -111,7 +124,7 @@ contains
         end if
 
         ! Define the view for each variable
-        do i = 1, sys_size
+        do i = 1, alt_sys 
             call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
                                           MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(i), ierr)
             call MPI_TYPE_COMMIT(MPI_IO_DATA%view(i), ierr)
