@@ -1,4 +1,3 @@
-from ..      import common
 from ..state import ARG
 
 
@@ -7,16 +6,26 @@ COMMON = [
     "Web", "poly_sigma", "case_dir", "thermal", "polytropic",
     "m", "mpp_lim", "R0ref", "adv_alphan", "num_fluids", "model_eqns",
     "nb", "weno_order", "rhoref", "bubbles", "Re_inv", "n", "precision",
-    "Ca", "polydisperse"
+    "Ca", "polydisperse", "file_per_process", "relax", "relax_model"
 ]
 
 
 PRE_PROCESS = COMMON + [
     'old_grid', 'old_ic', 't_step_old', 't_step_start', 'vel_profile',
-    'instability_wave', 'perturb_flow', 'perturb_flow_fluid',
+    'instability_wave', 'perturb_flow', 'perturb_flow_fluid', 'perturb_flow_mag',
     'perturb_sph', 'perturb_sph_fluid', 'fluid_rho', 'num_patches', 'qbmm',
-    'dist_type', 'R0_type', 'sigR', 'sigV', 'rhoRV'
+    'dist_type', 'R0_type', 'sigR', 'sigV', 'rhoRV', "palpha_eps", "ptgalpha_eps",
+    'ib', 'num_ibs'
 ]
+
+for ib_id in range(1, 10+1):
+    for attribute in ["geometry", "radius", "theta", "slip", "c", "p", "t", "m"]:
+        PRE_PROCESS.append(f"patch_ib({ib_id})%{attribute}")
+
+    for cmp_id, cmp in enumerate(["x", "y", "z"]):
+        cmp_id += 1
+        PRE_PROCESS.append(f'patch_ib({ib_id})%{cmp}_centroid')
+        PRE_PROCESS.append(f'patch_ib({ib_id})%length_{cmp}')
 
 for cmp in ["x", "y", "z"]:
     for prepend in ["domain%beg", "domain%end", "a", "b"]:
@@ -32,14 +41,14 @@ for f_id in range(1, 10+1):
     PRE_PROCESS.append(f'fluid_rho({f_id})')
 
     for attribute in ["gamma", "pi_inf", "mul0", "ss", "pv", "gamma_v", "M_v",
-                      "mu_v", "k_v", "G"]:
+                      "mu_v", "k_v", "G", "cv", "qv", "qvp" ]:
         PRE_PROCESS.append(f"fluid_pp({f_id})%{attribute}")
 
 for p_id in range(1, 10+1):
     for attribute in ["geometry", "radius", "radii", "epsilon", "beta",
                       "normal", "smoothen", "smooth_patch_id", "alpha_rho",
                       "smooth_coeff", "rho", "vel", "pres", "alpha", "gamma",
-                      "pi_inf", "r0", "v0", "p0", "m0", "hcid"]:
+                      "pi_inf", "r0", "v0", "p0", "m0", "hcid", "cv", "qv", "qvp" ]:
         PRE_PROCESS.append(f"patch_icpp({p_id})%{attribute}")
 
     PRE_PROCESS.append(f"patch_icpp({p_id})%model%filepath")
@@ -49,6 +58,7 @@ for p_id in range(1, 10+1):
             PRE_PROCESS.append(f"patch_icpp({p_id})%model%{attribute}({j})")
 
     PRE_PROCESS.append(f"patch_icpp({p_id})%model%spc")
+    PRE_PROCESS.append(f"patch_icpp({p_id})%model%threshold")
 
     for cmp_id, cmp in enumerate(["x", "y", "z"]):
         cmp_id += 1
@@ -71,31 +81,42 @@ for p_id in range(1, 10+1):
         for alter_id in range(1, p_id):
             PRE_PROCESS.append(f'patch_icpp({p_id})%alter_patch({alter_id})')
 
-
 SIMULATION = COMMON + [
     'run_time_info', 't_step_old', 't_tol', 'dt', 't_step_start',
-    't_step_stop', 't_step_save', 'time_stepper', 'weno_eps',
+    't_step_stop', 't_step_save', 't_step_print', 'time_stepper', 'weno_eps',
     'mapped_weno', 'mp_weno', 'weno_avg', 'weno_Re_flux',
     'riemann_solver', 'wave_speeds', 'avg_state', 'prim_vars_wrt',
     'alt_crv', 'alt_soundspeed', 'regularization', 'null_weights',
     'mixture_err', 'lsq_deriv', 'fd_order', 'num_probes', 'probe_wrt', 
     'bubble_model', 'Monopole', 'num_mono', 'qbmm', 'R0_type', 'integral_wrt', 
-    'num_integrals', 'cu_mpi',
-    'Ac_src', 'Ac_src_c','Ac_src_a', 'Ac_src_f','Ac_src_id',
-    'Ac_src_fp', 'Ac_src_res',
+    'num_integrals', 'cu_mpi', "palpha_eps", "ptgalpha_eps", 'ib', 'num_ibs',
     'particleflag','avgdensFlag','particleoutFlag','particlestatFlag','RPflag',
     'clusterflag','stillparticlesflag','heatflag','massflag',
     'csonref','rholiqref','Lref','Tini','Runiv','gammagas','gammavapor',
     'pvap','cpgas','cpvapor','kgas','kvapor','MWgas','MWvap','diffcoefvap',
     'sigmabubble','viscref','RKeps','ratiodt','projectiontype','smoothtype',
     'epsilonb','coupledFlag','solverapproach','correctpresFlag','charwidth',
-    'valmaxvoid','dtmaxpart','hifu_wrt', 'hifu_intensityFlag','hifu_heatValidation', 
-    'hifu_heateqnFlag', 'hifu_Tref', 'hifu_K', 'hifu_alpha', 'hifu_t_step_stopSource'
+    'valmaxvoid','dtmaxpart'
 ]
+
+for ib_id in range(1, 10+1):
+    for attribute in ["geometry", "radius", "theta","slip", "c", "m", "t", "p"]:
+        SIMULATION.append(f"patch_ib({ib_id})%{attribute}")
+
+    for cmp_id, cmp in enumerate(["x", "y", "z"]):
+        cmp_id += 1
+        SIMULATION.append(f'patch_ib({ib_id})%{cmp}_centroid')
+        SIMULATION.append(f'patch_ib({ib_id})%length_{cmp}')
 
 for cmp in ["x", "y", "z"]:
     SIMULATION.append(f'bc_{cmp}%beg')
     SIMULATION.append(f'bc_{cmp}%end')
+    SIMULATION.append(f'bc_{cmp}%vb1')
+    SIMULATION.append(f'bc_{cmp}%vb2')
+    SIMULATION.append(f'bc_{cmp}%vb3')
+    SIMULATION.append(f'bc_{cmp}%ve1')
+    SIMULATION.append(f'bc_{cmp}%ve2')
+    SIMULATION.append(f'bc_{cmp}%ve3')
 
 for wrt_id in range(1,10+1):
     for cmp in ["x", "y", "z"]:
@@ -108,7 +129,7 @@ for probe_id in range(1,10+1):
 
 for f_id in range(1,10+1):
     for attribute in ["gamma", "pi_inf", "mul0", "ss", "pv", "gamma_v", "M_v",
-                      "mu_v", "k_v", "G"]:
+                      "mu_v", "k_v", "G", "cv", "qv", "qvp" ]:
         SIMULATION.append(f"fluid_pp({f_id})%{attribute}")
 
     for re_id in [1, 2]:
@@ -116,7 +137,7 @@ for f_id in range(1,10+1):
 
     for mono_id in range(1,4+1):
         for attribute in ["mag", "length", "dir", "npulse", "pulse", "support",
-                          "delay", "foc_length", "aperture"]:
+                          "delay", "foc_length", "aperture", "support_width"]:
             SIMULATION.append(f"Mono({mono_id})%{attribute}")
 
         for cmp_id in range(1,3+1):
@@ -136,7 +157,7 @@ POST_PROCESS = COMMON + [
     'mom_wrt', 'vel_wrt', 'flux_lim', 'flux_wrt', 'E_wrt', 'pres_wrt',
     'alpha_wrt', 'kappa_wrt', 'gamma_wrt', 'heat_ratio_wrt', 'pi_inf_wrt',
     'pres_inf_wrt', 'cons_vars_wrt', 'prim_vars_wrt', 'c_wrt', 'omega_wrt','qbmm',
-    'qm_wrt', 'particleflag', 'avgdensFlag', 'solverapproach', 'hifu_wrt'
+    'qm_wrt', 'particleflag', 'avgdensFlag', 'solverapproach'
 ]
 
 for cmp_id in range(1,3+1):
@@ -152,7 +173,8 @@ for fl_id in range(1,10+1):
     for append in ["schlieren_alpha", "alpha_rho_wrt", "alpha_wrt", "kappa_wrt"]:
         POST_PROCESS.append(f'{append}({fl_id})')
 
-    for attribute in ["gamma", "pi_inf", "ss", "pv", "gamma_v", "M_v", "mu_v", "k_v", "G", "mul0"]:
+    for attribute in ["gamma", "pi_inf", "ss", "pv", "gamma_v", "M_v", "mu_v", "k_v", "G", "mul0",
+                      "cv", "qv", "qvp" ]:
         POST_PROCESS.append(f"fluid_pp({fl_id})%{attribute}")
 
 ALL = list(set(PRE_PROCESS + SIMULATION + POST_PROCESS))
@@ -161,15 +183,13 @@ CASE_OPTIMIZATION = [ "nb", "weno_order" ]
 
 
 def get_input_dict_keys(target_name: str) -> list:
-    result = None
-    if target_name == "pre_process":  result = PRE_PROCESS.copy()
-    if target_name == "simulation":   result = SIMULATION.copy()
-    if target_name == "post_process": result = POST_PROCESS.copy()
-
-    if result == None:
-        raise common.MFCException(f"[INPUT DICTS] Target {target_name} doesn't have an input dict.")
+    result = {
+        "pre_process"  : PRE_PROCESS,
+        "simulation"   : SIMULATION,
+        "post_process" : POST_PROCESS
+    }.get(target_name, {}).copy()
 
     if not ARG("case_optimization") or target_name != "simulation":
         return result
-    
+
     return [ x for x in result if x not in CASE_OPTIMIZATION ]

@@ -70,7 +70,9 @@ program p_main
     ! Time-stepping Loop =======================================================
     do
         if (t_step == t_step_stop) then
-            exit 
+            call s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, &
+                                            io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
+            exit
         end if
 
         if (particleflag) then
@@ -79,14 +81,14 @@ program p_main
         end if
 
         call s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, &
-                                  proc_time, io_proc_time, file_exists, start, finish, nt, &
+                                 proc_time, io_proc_time, file_exists, start, finish, nt, &
                                       time_real, dtnext, dtdid, time_prev, dt_next_inp, dt0)
 
         if (mod(t_step - t_step_start, t_step_save) == 0 .or. t_step == t_step_stop) then
             call s_save_data(t_step, start, finish, io_time_avg, nt)
         end if
 
-        IF(particleflag .AND. run_time_info) then
+        if (particleflag .AND. run_time_info) then
             call s_lagrangian_run_time_info(q_cons_ts(1)%vf, q_prim_vf, time_real, t_step, &
                                                                                dtnext, tavg)
         else
@@ -95,11 +97,11 @@ program p_main
 
     end do
 
-    IF(particleflag.AND.particlestatFlag) CALL write_particle_stats
+    if (particleflag.AND.particlestatFlag) CALL write_particle_stats
 
     ! ==========================================================================
 
-    deallocate(proc_time, io_proc_time)
+    deallocate (proc_time, io_proc_time)
 
     call s_finalize_modules()
 

@@ -13,6 +13,8 @@ MODULE m_particles_output
 
   IMPLICIT NONE
 
+  !private; public :: write_samples
+
   REAL(KIND(0.D0)) :: Rmax=0.
   REAL(KIND(0.D0)) :: Rmin=1000000
 
@@ -21,10 +23,10 @@ MODULE m_particles_output
      INTEGER :: funit
   END TYPE fileop
 
-  TYPE (fileop) :: particlefile     = fileop("./"  ,"particles",".bin",11), &
-                   particlestatfile = fileop("./"  ,"particle_stats",".dat",12), &
-                   samplesfile      = fileop("./"  ,"samples",".dat",13), &
-                   voidfractionfile = fileop("./"  ,"voidfraction",".dat",14)
+  TYPE (fileop) :: particlefile     = fileop("./D/"  ,"particles",".bin",11), &
+                   particlestatfile = fileop("./D/"  ,"particle_stats",".dat",12), &
+                   samplesfile      = fileop("./D/"  ,"samples",".dat",13), &
+                   voidfractionfile = fileop("./D/"  ,"voidfraction",".dat",14)
 CONTAINS
 
   SUBROUTINE write_particles (qtime)

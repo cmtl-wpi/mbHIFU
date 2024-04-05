@@ -73,7 +73,7 @@ MODULE m_particles
             CALL s_populate_variables_buffers(q_cons_vf,q_particle)
         ELSE
             CALL s_populate_variables_buffers(q_cons_vf)
-            !IF (We_size > 0 .AND. (We_riemann_flux .OR. We_rhs_flux)) THNE
+            !IF (We_size > 0 .AND. (We_riemann_flux .OR. We_rhs_flux)) THEN
                 !CALL s_account_for_capillary_potential_energy(q_cons_ts(1)%vf)
             !END IF
         END IF
@@ -703,7 +703,7 @@ MODULE m_particles
     REAL(KIND(0.D0))                 :: qtime
     INTEGER  :: i,j,k,l,nparticles
     LOGICAL  :: file_exist,indomain
-	
+
     CALL s_populate_variables_buffers(q_cons_vp, q_particle)
 
     IF(model_eqns == 2 .AND. (adv_alphan .NEQV. .TRUE.)) THEN
@@ -790,9 +790,9 @@ MODULE m_particles
 
     IF (particleoutFlag)  CALL write_particles (qtime)
 
-	
+
     CALL s_populate_variables_buffers(q_cons_vp, q_particle)
-	
+
 
     IF(model_eqns == 2 .AND. (adv_alphan .NEQV. .TRUE.)) THEN
              
@@ -1125,6 +1125,7 @@ MODULE m_particles
   
   IF (coupledFlag) THEN
     !CALL s_compute_rhs(q, q_prim, dq, t_step=t_step, qtime=qtime, largestep=largestep)
+    !if (proc_rank==0) print*,size(q), associate(q_prim), associate(dq), associate(t_step), associate(qtime)
     CALL s_compute_rhs(q, q_prim, dq, t_step=t_step, qtime=qtime)
     IF (num_procs > 1) THEN
          CALL bcst_largestep(largestep)
@@ -1353,6 +1354,7 @@ MODULE m_particles
        
        charvol = 0d0
        charpres = 0d0
+
  
        DO i=(cell(1)-epsilonbaux(1)),(cell(1)+epsilonbaux(1))
           DO j=(cell(2)-epsilonbaux(2)),(cell(2)+epsilonbaux(2))
@@ -1416,12 +1418,14 @@ MODULE m_particles
               IF (cellaux(1).LT.-buff_size) THEN
                   celloutside = .TRUE.
                   i = i+1
+                  !i = i+abs(cellaux(1)-(-buff_size))
               ENDIF
   
               !check ghost part in y direction
               IF (cellaux(2).LT.-buff_size) THEN
                   celloutside = .TRUE.
                   j = j+1
+                  !j = j+abs(cellaux(2)-(-buff_size))
               ENDIF
   
               IF(cyl_coord.AND.DIM.NE.3) THEN
@@ -1436,16 +1440,24 @@ MODULE m_particles
                   IF (cellaux(3).LT.-buff_size) THEN
                       celloutside = .TRUE.
                       k = k+1
+                      !k = k+abs(cellaux(3)-(-buff_size))
                   ENDIF
-              END IF 
- 
-              CALL get_char_vol(cellaux,vol)
-              charvol  = charvol + vol!*q_particle(1)%sf(cellaux(1),cellaux(2),cellaux(3))
-              charpres = charpres + pres%sf(cellaux(1),cellaux(2),cellaux(3)) &
+              END IF
+
+              if (cellaux(1).GT.m+buff_size) celloutside =.TRUE.
+              if (cellaux(2).GT.n+buff_size) celloutside =.TRUE.
+              if (cellaux(3).GT.p+buff_size) celloutside =.TRUE. 
+              
+              !print*, 'cellaux values x, y, z:', cellaux(1), cellaux(2), cellaux(3), celloutside, epsilonbaux(1), buff_size
+              if (.not. celloutside) then
+                 CALL get_char_vol(cellaux,vol)
+                 charvol  = charvol + vol!*q_particle(1)%sf(cellaux(1),cellaux(2),cellaux(3))
+                 charpres = charpres + pres%sf(cellaux(1),cellaux(2),cellaux(3)) &
                          * vol!*q_particle(1)%sf(cellaux(1),cellaux(2),cellaux(3))
-              charvol2  = charvol2 + vol*q_particle(1)%sf(cellaux(1),cellaux(2),cellaux(3))
-              charpres2 = charpres2 + pres%sf(cellaux(1),cellaux(2),cellaux(3)) &
+                 charvol2  = charvol2 + vol*q_particle(1)%sf(cellaux(1),cellaux(2),cellaux(3))
+                 charpres2 = charpres2 + pres%sf(cellaux(1),cellaux(2),cellaux(3)) &
                          * vol*q_particle(1)%sf(cellaux(1),cellaux(2),cellaux(3))
+              end if
 
            IF (j.LT.epsilonbaux(2)) THEN
                j = j+1
