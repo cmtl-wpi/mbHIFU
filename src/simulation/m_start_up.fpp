@@ -75,6 +75,10 @@ module m_start_up
 
     use m_mpi_particles
 
+    use m_hifu               !< HIFU
+
+    use m_heateqn
+
     ! ==========================================================================
 
     implicit none
@@ -94,13 +98,16 @@ module m_start_up
     abstract interface ! ===================================================
 
         !! @param q_cons_vf  Conservative variables
-        subroutine s_read_abstract_data_files(q_cons_vf) ! -----------
+        subroutine s_read_abstract_data_files(q_cons_vf, hifu_id) ! -----------
 
             import :: scalar_field, sys_size, pres_field
 
             type(scalar_field), &
                 dimension(sys_size), &
                 intent(INOUT) :: q_cons_vf
+        
+            integer, intent(IN), optional :: hifu_id
+            ! HIFU vars (in parallel)
 
         end subroutine s_read_abstract_data_files ! -----------------
 
@@ -164,7 +171,10 @@ contains
             sigmabubble, viscref, RKeps, ratiodt, &
             projectiontype, smoothtype, epsilonb, &
             coupledFlag, solverapproach, correctpresFlag, &
-            charwidth, valmaxvoid, dtmaxpart
+            charwidth, valmaxvoid, dtmaxpart,  &
+            hifu_wrt, hifu_intensityFlag, hifu_heateqnFlag, &
+            hifu_Tref, hifu_K, hifu_alpha, hifu_heatValidation, &
+            hifu_t_step_stopSource
 
         ! Checking that an input file has been provided by the user. If it
         ! has, then the input file is read in, otherwise, simulation exits.
@@ -234,9 +244,12 @@ contains
         !!              up the latter. This procedure also calculates the cell-
         !!              width distributions from the cell-boundary locations.
         !! @param q_cons_vf Cell-averaged conservative variables
-    subroutine s_read_serial_data_files(q_cons_vf) ! ------------------------------
+    subroutine s_read_serial_data_files(q_cons_vf, hifu_id)!-----------------
 
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
+
+        ! HIFU vars (ONLY IMPLEMENTED IN PARALLEL)
+        integer, intent(IN), optional :: hifu_id
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the starting time-step directory
@@ -444,11 +457,13 @@ contains
     end subroutine s_read_serial_data_files ! -------------------------------------
 
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_parallel_data_files(q_cons_vf) ! ---------------------------
+    subroutine s_read_parallel_data_files(q_cons_vf, hifu_id) ! -------------------
 
         type(scalar_field), &
             dimension(sys_size), &
             intent(INOUT) :: q_cons_vf
+
+        integer, intent(IN), optional :: hifu_id !HIFU
 
 #ifdef MFC_MPI
 
@@ -637,7 +652,13 @@ contains
             end if
         else
             ! Open the file to read conservative variables
-            write (file_loc, '(I0,A)') t_step_start, '.dat'
+
+            if (present(hifu_id)) then
+                write (file_loc, '(I0,A)') t_step_start, 'hifu.dat'
+            else
+                write (file_loc, '(I0,A)') t_step_start, '.dat'
+            end if
+            !write (file_loc, '(I0,A)') t_step_start, '.dat'
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -731,6 +752,20 @@ contains
 
                 end if
 
+            else if (present(hifu_id)) then
+
+                call s_initialize_HIFU(q_cons_vf)
+
+                if (hifu_intensityFlag .and. .not. hifu_heateqnFlag) then
+                    if (proc_rank==0) print*, 'Initialize: Start calculating intensity avg'
+                else if (hifu_heatValidation) then
+                    if (proc_rank==0) print*, 'Initialize: Validation case - 2D rod'
+                    call s_cbc_heatEqn(q_cons_vf)
+                    call s_write_data_files(q_cons_vf, q_prim_vf, t_step=0, hifu_id=1)
+                else
+                    call s_mpi_abort('Heat transfer eqn! Something when wrong. Exiting...')
+                end if
+
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
             end if
@@ -795,6 +830,10 @@ contains
         end if
 
         deallocate (x_cb_glb, y_cb_glb, z_cb_glb)
+
+        if (hifu_intensityFlag)then
+            call s_restart_Pmax()
+        end if
 
 #endif
 
@@ -1093,7 +1132,9 @@ contains
         print *, 'Computed derived vars'
 #endif
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-        IF(.NOT.coupledflag .and. .not.particleflag) THEN
+        if (hifu_heateqnFlag) then !Solve heat eqn
+            call s_time_stepper_heatEqn(t_step)
+        else if (.not.coupledflag .and. .not.particleflag) then
             if (time_stepper == 1) then
                 call s_1st_order_tvd_rk(t_step, time_avg)
             elseif (time_stepper == 2) then
@@ -1101,7 +1142,7 @@ contains
             elseif (time_stepper == 3) then
                 call s_3rd_order_tvd_rk(t_step, time_avg)
             end if
-        END IF
+        end if
 
         IF(particleflag) THEN !Cash-Karp Runge-Kutta time-stepper, Lagrangian solver
             CALL rkqs(time_real, dtnext, dtdid, t_step)
@@ -1203,6 +1244,9 @@ contains
                 !$acc update host(mv_ts(1)%sf)
             end if
 
+            !HIFU
+            IF (hifu_wrt) call s_write_data_files(q_cons_ts(3)%vf, q_prim_vf, t_step, hifu_id=1)
+
             IF(particleflag) THEN !Lagrangean solver
                 CALL s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step, q_particle(1))
                 IF (parallel_io .NEQV. .TRUE.) THEN
@@ -1293,6 +1337,12 @@ contains
 
         ! Reading in the user provided initial condition and grid data
         call s_read_data_files(q_cons_ts(1)%vf)
+
+        if (hifu_wrt) then
+            call s_read_data_files(q_cons_ts(3)%vf, hifu_id=1)
+            call s_populate_HIFU_variables_buffers(q_cons_ts(3)%vf)
+        end if
+
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
         if (ib) call s_ibm_setup()
 

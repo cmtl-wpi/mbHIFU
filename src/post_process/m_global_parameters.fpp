@@ -250,6 +250,10 @@ module m_global_parameters
     INTEGER :: solverapproach
     LOGICAL :: second_dir
 
+    ! HIFU
+    logical :: hifu_wrt
+
+
 contains
 
     !> Assigns default values to user inputs prior to reading
@@ -353,6 +357,9 @@ contains
         do_particles   = .FALSE.
         solverapproach = 1
         second_dir = .FALSE.
+
+        !HIFU
+        hifu_wrt = .FALSE.
 
     end subroutine s_assign_default_values_to_user_inputs ! ----------------
 

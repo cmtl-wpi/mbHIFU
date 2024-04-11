@@ -72,7 +72,8 @@ contains
             parallel_io, rhoref, pref, bubbles, qbmm, sigR, &
             R0ref, nb, polytropic, thermal, Ca, Web, Re_inv, &
             polydisperse, poly_sigma, file_per_process, relax, &
-            relax_model, particleflag, avgdensFlag, solverapproach
+            relax_model, particleflag, avgdensFlag, solverapproach, &
+            hifu_wrt
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -140,9 +141,21 @@ contains
     end subroutine s_check_input_file ! ------------------------------------
 
 
-    subroutine s_perform_time_step(t_step)
+    subroutine s_perform_time_step(t_step, hifu_id)
 
         integer, intent(INOUT) :: t_step
+        integer, intent(IN), OPTIONAL :: hifu_id
+
+        if (present(hifu_id)) then
+            ! Populating the grid and HIFU variables
+            call s_read_data_files(t_step, hifu_id=1)
+            ! Populating the buffer regions of the grid variables
+            if (buff_size > 0) call s_populate_grid_variables_buffer_regions()
+            ! Populating the buffer regions of the HIFU variables
+            if (buff_size > 0) call s_populate_conservative_variables_buffer_regions()
+            return
+        end if
+
         if (proc_rank == 0) then
             print '(" ["I3"%]  Saving "I8" of "I0" @ t_step = "I0"")', &
                 int(ceiling(100d0*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
@@ -593,6 +606,58 @@ contains
                     varname(:) = ' '
                 end do
             end if
+
+        end if
+
+        ! HIFU
+        ! Adding the Termperature to the previously formatted database file -------------------
+        if (hifu_wrt) then
+            call s_perform_time_step(t_step, hifu_id=1)
+
+            !------- Temperature --------------------
+            q_sf = q_cons_vf(3)%sf( &
+                   -offset_x%beg:m + offset_x%end, &
+                   -offset_y%beg:n + offset_y%end, &
+                   -offset_z%beg:p + offset_z%end)
+
+            write (varname, '(A)') 'Temperature'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- heat source sum or error in Solver validation---------
+            q_sf = q_cons_vf(1)%sf( &
+                   -offset_x%beg:m + offset_x%end, &
+                   -offset_y%beg:n + offset_y%end, &
+                   -offset_z%beg:p + offset_z%end)
+
+            if (q_cons_vf(1)%sf(0,0,0)==0) then
+                write (varname, '(A)') 'Error_heatEqn_Validation'
+            else
+                write (varname, '(A)') 'heatSourceTerm'
+            end if
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- number of Samples --------------------
+            q_sf = q_cons_vf(2)%sf( &
+                   -offset_x%beg:m + offset_x%end, &
+                   -offset_y%beg:n + offset_y%end, &
+                   -offset_z%beg:p + offset_z%end)
+
+            write (varname, '(A)') 'numberSamples'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !-------  Analitical Temperature --------------------
+            q_sf = q_cons_vf(5)%sf( &
+                   -offset_x%beg:m + offset_x%end, &
+                   -offset_y%beg:n + offset_y%end, &
+                   -offset_z%beg:p + offset_z%end)
+
+            write (varname, '(A)') 'AnalitycalTemperature'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
         end if
 
         ! Closing the formatted database file

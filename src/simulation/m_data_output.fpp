@@ -30,6 +30,8 @@ module m_data_output
     use m_delay_file_access
 
     use m_ibm
+
+    use m_hifu                 !< HIFU routines
     ! ==========================================================================
 
     implicit none
@@ -52,7 +54,7 @@ module m_data_output
         !> Write data files
         !! @param q_cons_vf Conservative variables
         !! @param t_step Current time step
-        subroutine s_write_abstract_data_files(q_cons_vf, q_prim_vf, t_step, beta)
+        subroutine s_write_abstract_data_files(q_cons_vf, q_prim_vf, t_step, beta, hifu_id)
 
             import :: scalar_field, sys_size, pres_field
 
@@ -68,6 +70,9 @@ module m_data_output
 
             ! Lagrangian particle
             TYPE(scalar_field), OPTIONAL :: beta
+
+            ! HIFU
+            integer, intent(IN), optional :: hifu_id
 
         end subroutine s_write_abstract_data_files ! -------------------
     end interface ! ========================================================
@@ -438,7 +443,7 @@ contains
         !!      conservative variables data files for given time-step.
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param t_step Current time-step
-    subroutine s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta) ! -------------
+    subroutine s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta, hifu_id) ! -------------
 
         type(scalar_field), dimension(sys_size), intent(IN) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_prim_vf
@@ -447,6 +452,9 @@ contains
 
         ! Lagrangian solver
         TYPE(scalar_field), OPTIONAL :: beta
+
+        ! HIFU vars (only in parallel)
+        integer, intent(IN), optional :: hifu_id
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the current time-step directory
@@ -821,7 +829,7 @@ contains
         !!      conservative variables data files for given time-step.
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param t_step Current time-step
-    subroutine s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta) ! ----
+    subroutine s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, hifu_id) ! ----
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -835,6 +843,9 @@ contains
 
         ! Lagrangian solver
         TYPE(scalar_field), OPTIONAL :: beta
+
+        ! HIFU vars
+        integer, intent(IN), optional :: hifu_id
 
 #ifdef MFC_MPI
 
@@ -946,7 +957,13 @@ contains
             END IF
 
             ! Open the file to write all flow variables
-            write (file_loc, '(I0,A)') t_step, '.dat'
+            
+            if (present(hifu_id)) then
+                write (file_loc, '(I0,A)') t_step, 'hifu.dat'
+            else
+                write (file_loc, '(I0,A)') t_step, '.dat'
+            end if
+            !write (file_loc, '(I0,A)') t_step, '.dat'
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
             if (file_exist .and. proc_rank == 0) then

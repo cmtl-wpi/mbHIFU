@@ -499,6 +499,19 @@ contains
                              'num_ibs and ib. Exiting ...')
         end if
 
+        !  HIFU parameters =================================================
+
+        if (.not. hifu_wrt) then
+            if (hifu_intensityFlag .or. hifu_heateqnFlag) call s_mpi_abort('Unsupported HIFU flags. Exiting ...')
+        else if (hifu_wrt) then
+            if (hifu_intensityFlag .and. hifu_heateqnFlag) call s_mpi_abort('Unsupported HIFU flags. Exiting ...')
+            if (.not. hifu_intensityFlag .and. .not. hifu_heateqnFlag) call s_mpi_abort('Unsupported HIFU flags. Exiting ...')
+            if (p>0) call s_mpi_abort('HIFU works in axisymmetric mode only. Exiting ...')
+            if (.not. cyl_coord) call s_mpi_abort('HIFU works in axisymmetric mode only. Exiting ...')
+        end if
+
+        ! END: HIFU Parameters =============================================
+
     end subroutine s_check_inputs
 
 end module m_checker

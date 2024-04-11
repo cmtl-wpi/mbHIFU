@@ -42,6 +42,11 @@ module m_time_steppers
     use m_kernel_functions
 
     use m_mpi_common
+
+    use m_hifu                 !< HIFU
+
+    use m_heateqn
+
     ! ==========================================================================
 
     implicit none
@@ -83,15 +88,17 @@ contains
         integer :: i, j !< Generic loop iterators
 
         ! Setting number of time-stages for selected time-stepping scheme
-        IF(coupledflag) THEN !Euler-Lagrangian solver
+        if (coupledflag) then !Euler-Lagrangian solver
             num_ts = 2
-        ELSE
+        else if (hifu_wrt) then !HIFU space q_cons_ts(3)
+            num_ts = 3
+        else
             if (time_stepper == 1) then
                 num_ts = 1
             elseif (any(time_stepper == (/2, 3/))) then
                 num_ts = 2
             end if
-        END IF
+        end if
 
         ! Setting the indical bounds in the x-, y- and z-directions
         ix_t%beg = -buff_size; ix_t%end = m + buff_size
@@ -249,6 +256,95 @@ contains
         end if
 
     end subroutine s_initialize_time_steppers_module ! ---------------------
+
+    !Forward finite difference approximation for dT/dt
+    subroutine s_time_stepper_heatEqn(t_step) ! ----------------------------
+
+        integer, intent(IN) :: t_step
+
+        integer :: i, j, k, l, q!< Generic loop iterator
+        real(kind(0d0)) :: start, finish
+        integer :: unitFile
+        character(LEN=path_len + 3*name_len) :: file_path !<
+        logical :: axialCondition, radialCondition_extra, radialCondition, condition
+
+        ! Stage 1 of 1 =====================================================
+
+        call cpu_time(start)
+
+        call nvtxStartRange("Time_Step")
+
+        call s_rhs_heatEqn(q_cons_ts(3)%vf, t_step)
+
+        if (t_step == t_step_stop-1) then
+            !Intended only for validation of heatEqn solver with 2D diffusion rod problem
+            if (hifu_heatValidation) then
+                if (proc_rank==0) print*, 'Starting analytical solution'
+                call s_heatEqn_analyticalSol(q_cons_ts(3)%vf)
+            end if
+            close(unitFile)
+            !return
+        end if
+
+        if (t_step == t_step_stop) return
+
+        !Open file to save measured focal temperature
+        if (t_step==t_step_start) then
+                unitFile = 100+proc_rank
+                write (file_path, '(A,I0,A)') '/D/focalTemp_', proc_rank, '.dat'
+                file_path = trim(case_dir)//trim(file_path)
+                open (unitFile, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+        end if
+
+        l = 0
+        do  j = 0, m
+            do k = 0, n
+                q_cons_ts(3)%vf(3)%sf(j, k, l) = q_cons_ts(3)%vf(3)%sf(j, k, l) + q_cons_ts(3)%vf(4)%sf(j, k, l)*dt
+
+                !Write focal temperature
+                axialCondition= (dy(k)>y_cc(k) .and. y_cc(k)>0.0)
+                radialCondition= (x_cb(j-1)<=mono(1)%foc_length .and. mono(1)%foc_length<=x_cb(j))
+                condition= (axialCondition .and. radialCondition)
+                if (condition) then
+                    write (unitFile, '(6x,I24,f24.8,f24.8,f24.8,I24,I24,I24)') &
+                                t_step, &
+                                x_cc(j), &
+                                y_cc(k), &
+                                q_cons_ts(3)%vf(3)%sf(j,k,l), &
+                                j, &
+                                k, &
+                                l
+                end if
+
+                if (ieee_is_nan(q_cons_ts(3)%vf(3)%sf(j, k, l))) then
+                    call s_mpi_abort('Temperature value is NaN!!')
+                end if
+
+            end do
+        end do
+
+        !Updates boundary condition
+        !Intended only for validation of heatEqn solver with 2D diffusion rod problem
+        if (hifu_heatValidation) call s_cbc_heatEqn(q_cons_ts(3)%vf)
+
+        if (t_step == t_step_stop-1) then
+                !Intended only for validation of heatEqn solver with 2D diffusion rod problem
+                if (hifu_heatValidation) then
+                        if (proc_rank==0) print*, 'Starting analytical solution'
+                        call s_heatEqn_analyticalSol(q_cons_ts(3)%vf)
+                end if
+                unitFile=100+proc_rank
+                close(unitFile)
+                !return
+        end if
+
+        call nvtxEndRange
+
+        call cpu_time(finish)
+
+        ! ============================================================================
+
+    end subroutine s_time_stepper_heatEqn ! ------------------------------------------
 
     !> 1st order TVD RK time-stepping algorithm
         !! @param t_step Current time step
@@ -558,6 +654,13 @@ contains
 
         if (probe_wrt) then
             call s_time_step_cycling(t_step)
+        end if
+
+        if (hifu_intensityFlag) then !HIFU get heat generated
+            !> Heat deposition
+            call s_update_intensity_HIFU(q_cons_ts(1)%vf, q_prim_vf, t_step, q_cons_ts(3)%vf)
+            !> update Pmax and Pmin
+            call s_update_Pmax(q_cons_ts(1)%vf, t_step)
         end if
 
         if (t_step == t_step_stop) return

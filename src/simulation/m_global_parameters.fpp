@@ -406,6 +406,16 @@ module m_global_parameters
     TYPE (probedat), ALLOCATABLE, DIMENSION(:) :: prb
     INTEGER :: nsamples, totsamples     !< Number of samples in each proc and total number of samples
 
+    ! HIFU global parameters
+
+    real(kind(0d0)), target, allocatable, dimension(:,:) :: Pmax, Pmin
+    logical :: hifu_wrt
+    logical :: hifu_intensityFlag, hifu_heateqnFlag, hifu_heatValidation
+    real(kind(0d0)) :: hifu_Tref  !Initial temperature in the domain to start heat eqn
+    real(kind(0d0)) :: hifu_K     !Dimensionless thermal conductivity (refer to notes)
+    real(kind(0d0)) :: hifu_alpha !Dimensionless thermal diffusivity (refer to notes)
+    integer :: hifu_t_step_stopSource !Time step to stop the source heat
+
     ! ======================================================================
 
 contains
@@ -613,6 +623,16 @@ contains
         dtmaxpart = dflt_real
         do_particles = .FALSE.
         bubblesources = .FALSE.
+
+        !HIFU variables
+        hifu_wrt = .FALSE.
+        hifu_intensityFlag = .FALSE.
+        hifu_heateqnFlag = .FALSE.
+        hifu_heatValidation = .FALSE.
+        hifu_Tref = dflt_real
+        hifu_K = dflt_real
+        hifu_alpha = dflt_real
+        hifu_t_step_stopSource = dflt_int
 
     end subroutine s_assign_default_values_to_user_inputs ! ----------------
 

@@ -419,6 +419,9 @@ contains
             ! Numerical Schlieren function
             if (schlieren_wrt) dbvars = dbvars + 1
 
+            ! HIFU Temperature
+            if (hifu_wrt) dbvars = dbvars + 1
+
         end if
 
         ! END: Querying Number of Flow Variable(s) in Binary Output ========

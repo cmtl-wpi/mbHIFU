@@ -37,9 +37,10 @@ module m_data_input
 
         !> Subroutine for reading data files
         !!  @param t_step Current time-step to input
-        subroutine s_read_abstract_data_files(t_step) ! ------------
+        subroutine s_read_abstract_data_files(t_step, hifu_id) ! ---
 
             integer, intent(IN) :: t_step
+            integer, intent(IN), optional :: hifu_id
 
         end subroutine s_read_abstract_data_files ! ----------------
 
@@ -63,9 +64,10 @@ contains
         !!      present in the corresponding time-step directory and to
         !!      populate the associated grid and conservative variables.
         !!  @param t_step Current time-step
-    subroutine s_read_serial_data_files(t_step) ! -----------------------------
+    subroutine s_read_serial_data_files(t_step, hifu_id) ! -----------------
 
         integer, intent(IN) :: t_step
+        integer, intent(IN), optional :: hifu_id
 
         character(LEN=len_trim(case_dir) + 2*name_len) :: t_step_dir !<
             !! Location of the time-step directory associated with t_step
@@ -85,6 +87,8 @@ contains
             !! Generic logical used to test the existence of a particular file
 
         integer :: i !< Generic loop iterator
+
+        if (present(hifu_id)) call s_mpi_abort('HIFU post-process only in parallel ')
 
         ! Setting location of time-step folder based on current time-step
         write (t_step_dir, '(A,I0,A,I0)') '/p_all/p', proc_rank, '/', t_step
@@ -239,9 +243,10 @@ contains
         !!      present in the corresponding time-step directory and to
         !!      populate the associated grid and conservative variables.
         !!  @param t_step Current time-step
-    subroutine s_read_parallel_data_files(t_step) ! ---------------------------
+    subroutine s_read_parallel_data_files(t_step, hifu_id) ! -------------------
 
         integer, intent(IN) :: t_step
+        integer, intent(IN), optional :: hifu_id
 
 #ifdef MFC_MPI
 
@@ -389,7 +394,12 @@ contains
             end if
         else
             ! Open the file to read conservative variables
-            write (file_loc, '(I0,A)') t_step, '.dat'
+            if (present(hifu_id)) then
+                write (file_loc, '(I0,A)') t_step, 'hifu.dat'
+            else
+                write (file_loc, '(I0,A)') t_step, '.dat'
+            end if
+            !write (file_loc, '(I0,A)') t_step, '.dat'
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
