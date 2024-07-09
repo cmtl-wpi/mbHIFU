@@ -349,7 +349,8 @@ POST_PROCESS.update({
     'cf_wrt': ParamType.LOG,
     'particleflag': ParamType.LOG,
     'avgdensFlag': ParamType.LOG,
-    'solverapproach': ParamType.LOG
+    'solverapproach': ParamType.LOG,
+    'ib': ParamType.LOG
 })
 
 for cmp_id in range(1,3+1):

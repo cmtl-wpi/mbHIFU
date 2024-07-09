@@ -13,6 +13,8 @@ module m_global_parameters
 #endif
 
     use m_derived_types         !< Definitions of the derived types
+
+    use m_helper_basic          !< Functions to compare floating point numbers
     ! ==========================================================================
 
     implicit none
@@ -128,6 +130,7 @@ module m_global_parameters
 #ifdef MFC_MPI
 
     type(mpi_io_var), public :: MPI_IO_DATA
+    type(mpi_io_ib_var), public :: MPI_IO_IB_DATA
 
 #endif
 
@@ -191,6 +194,7 @@ module m_global_parameters
     logical :: qm_wrt
     logical :: schlieren_wrt
     logical :: cf_wrt
+    logical :: ib
     !> @}
 
     real(kind(0d0)), dimension(num_fluids_max) :: schlieren_alpha    !<
@@ -339,6 +343,7 @@ contains
         qm_wrt = .false.
         schlieren_wrt = .false.
         cf_wrt = .false.
+        ib = .false.
 
         schlieren_alpha = dflt_real
 
@@ -501,7 +506,7 @@ contains
                 sys_size = stress_idx%end
             end if
 
-            if (sigma /= dflt_real) then
+            if (.not. f_is_default(sigma)) then
                 c_idx = sys_size + 1
                 sys_size = c_idx
             end if
@@ -527,7 +532,7 @@ contains
             sys_size = internalEnergies_idx%end
             alf_idx = 1 ! dummy, cannot actually have a void fraction
 
-            if (sigma /= dflt_real) then
+            if (.not. f_is_default(sigma)) then
                 c_idx = sys_size + 1
                 sys_size = c_idx
             end if
@@ -620,6 +625,12 @@ contains
             END DO
         END IF
 
+        do i = 1, sys_size
+            allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
+            MPI_IO_DATA%var(i)%sf => null()
+        end do
+
+        if (ib) allocate (MPI_IO_IB_DATA%var%sf(0:m, 0:n, 0:p))
 #endif
 
         ! Size of the ghost zone layer is non-zero only when post-processing
@@ -776,6 +787,7 @@ contains
             deallocate (MPI_IO_DATA%view)
         end if
 
+        if (ib) MPI_IO_IB_DATA%var%sf => null()
 #endif
 
     end subroutine s_finalize_global_parameters_module

@@ -33,10 +33,12 @@ module m_start_up
 
     use m_phase_change          !< Phase-change module
 
+    use m_helper_basic          !< Functions to compare floating point numbers
+
     use m_helper
 
 #ifdef MFC_MPI
-    use mpi                      !< Message passing interface (MPI) module
+    use mpi                     !< Message passing interface (MPI) module
 #endif
 
     use m_check_patches
@@ -44,6 +46,8 @@ module m_start_up
     use m_check_ib_patches
 
     use m_helper
+
+    use m_checker_common
 
     use m_checker
     ! ==========================================================================
@@ -195,6 +199,7 @@ contains
                              'Exiting ...')
         end if
 
+        call s_check_inputs_common()
         call s_check_inputs()
 
         ! Check all the patch properties
@@ -764,7 +769,7 @@ contains
             call s_initialize_nonpoly()
         end if
         !Initialize pb based on surface tension for qbmm (polytropic)
-        if (qbmm .and. polytropic .and. Web /= dflt_real) then
+        if (qbmm .and. polytropic .and. (.not. f_is_default(Web))) then
             pb0 = pref + 2d0*fluid_pp(1)%ss/(R0*R0ref)
             pb0 = pb0/pref
             pref = 1d0
