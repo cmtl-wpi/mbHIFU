@@ -204,6 +204,7 @@ SIMULATION.update({
     'adap_dt': ParamType.LOG,
     'ib': ParamType.LOG,
     'num_ibs': ParamType.INT,
+#<<<<<<< HEAD
     'particleflag': ParamType.LOG,
     'avgdensFlag': ParamType.LOG,
     'particleoutFlag': ParamType.LOG,
@@ -240,7 +241,10 @@ SIMULATION.update({
     'correctpresFlag': ParamType.LOG,
     'charwidth': ParamType.REAL.,
     'valmaxvoid': ParamType.REAL,
-    'dtmaxpart': ParamType.REAL
+    'dtmaxpart': ParamType.REAL,
+#=======
+    'low_Mach': ParamType.INT
+#>>>>>>> 6e8ded8ff83004ec6cc8f09164b41a6f041b9baf
 })
 
 # NOTE: Not currently present
