@@ -34,7 +34,7 @@ module m_start_up
 
     use m_cbc                  !< Characteristic boundary conditions (CBC)
 
-    use m_monopole             !< Monopole calculations
+    use m_acoustic_src      !< Acoustic source calculations
 
     use m_rhs                  !< Right-hand-side (RHS) evaluation procedures
 
@@ -158,7 +158,7 @@ contains
             nb, mapped_weno, wenoz, teno, weno_order, num_fluids, &
 #:endif
             Ca, Web, Re_inv, &
-            monopole, mono, num_mono, &
+            acoustic_source, acoustic, num_source, &
             polytropic, thermal, &
             integral, integral_wrt, num_integrals, &
             polydisperse, poly_sigma, qbmm, &
@@ -1126,6 +1126,7 @@ contains
         print *, 'Computed derived vars'
 #endif
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
+!<<<<<<< HEAD
 	IF(.NOT.coupledflag .and. .not.particleflag) THEN
             if (time_stepper == 1) then
                 call s_1st_order_tvd_rk(t_step, time_avg)
@@ -1145,6 +1146,17 @@ contains
             dt_next_inp = dtnext
         END IF
 
+!=======
+!        if (time_stepper == 1) then
+!            call s_1st_order_tvd_rk(t_step, time_avg)
+!        elseif (time_stepper == 2) then
+!            call s_2nd_order_tvd_rk(t_step, time_avg)
+!        elseif (time_stepper == 3 .and. (.not. adap_dt)) then
+!            call s_3rd_order_tvd_rk(t_step, time_avg)
+!        elseif (time_stepper == 3 .and. adap_dt) then
+!            call s_strang_splitting(t_step, time_avg)
+!        end if
+!>>>>>>> 24ea4af2c0c8c14b1bec2a1cbf44a82cae109450
         if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
 
         ! Time-stepping loop controls
@@ -1296,8 +1308,8 @@ contains
         call acc_present_dump()
 #endif
 
-        if (monopole) then
-            call s_initialize_monopole_module()
+        if (acoustic_source) then
+            call s_initialize_acoustic_src_module()
         end if
 
         if (any(Re_size > 0)) then
@@ -1445,7 +1457,7 @@ contains
         !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac)
         !$acc update device(R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, pv, M_n, M_v, k_n, k_v, pb0, mass_n0, mass_v0, Pe_T, Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN , mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
 
-        !$acc update device(monopole, num_mono)
+        !$acc update device(acoustic_source, num_source)
         !$acc update device(sigma)
 
         !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
@@ -1458,6 +1470,10 @@ contains
         !$acc update device(relax, relax_model)
         if (relax) then
             !$acc update device(palpha_eps, ptgalpha_eps)
+        end if
+
+        if (ib) then
+            !$acc update device(ib_markers%sf)
         end if
 
     end subroutine s_initialize_gpu_vars

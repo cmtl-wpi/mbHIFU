@@ -39,7 +39,7 @@ module m_rhs
 
     use m_hypoelastic
 
-    use m_monopole
+    use m_acoustic_src
 
     use m_viscous
 
@@ -747,6 +747,8 @@ contains
         integer :: i, j, k, l, q, ii, id !< Generic loop iterators
         integer :: term_index
 
+        call nvtxStartRange("Compute_RHS")
+
         ! Configuring Coordinate Direction Indexes =========================
         ix%beg = -buff_size; iy%beg = 0; iz%beg = 0
 
@@ -838,7 +840,7 @@ contains
                                                  q_prim_qp, &
                                                  dq_prim_dx_qp, dq_prim_dy_qp, dq_prim_dz_qp, &
                                                  ix, iy, iz)
-        call nvtxEndRange()
+        call nvtxEndRange
 
         call nvtxStartRange("Surface_Tension")
         if (.not. f_is_default(sigma)) call s_get_capilary(q_prim_qp%vf)
@@ -867,16 +869,13 @@ contains
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
-                call nvtxEndRange
             else
-
                 iv%beg = 1; iv%end = E_idx - 1
                 call s_reconstruct_cell_boundary_values( &
                     q_prim_qp%vf(iv%beg:iv%end), &
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
-                call nvtxEndRange
 
                 iv%beg = E_idx; iv%end = E_idx
                 call s_reconstruct_cell_boundary_values_first_order( &
@@ -884,7 +883,6 @@ contains
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
-                call nvtxEndRange
 
                 iv%beg = E_idx + 1; iv%end = sys_size
                 call s_reconstruct_cell_boundary_values( &
@@ -892,8 +890,6 @@ contains
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
-                call nvtxEndRange
-
             end if
 
             ! Reconstruct viscous derivatives for viscosity
@@ -923,7 +919,7 @@ contains
                 end if
             end if
 
-            call nvtxEndRange
+            call nvtxEndRange ! WENO
 
             ! Configuring Coordinate Direction Indexes ======================
             if (id == 1) then
@@ -935,6 +931,7 @@ contains
             end if
             ix%end = m; iy%end = n; iz%end = p
             ! ===============================================================
+            call nvtxStartRange("RHS_riemann_solver")
 
             ! Computing Riemann Solver Flux and Source Flux =================
 
@@ -964,7 +961,7 @@ contains
                                                  q_cons_qp, &
                                                  q_prim_qp, &
                                                  flux_src_n(id))
-            call nvtxEndRange()
+            call nvtxEndRange
 
             ! RHS additions for hypoelasticity
             call nvtxStartRange("RHS_Hypoelasticity")
@@ -1026,24 +1023,43 @@ contains
         end if
 
         ! Additional Physics and Source Temrs ==================================
-        ! Additions for monopole
-        call nvtxStartRange("RHS_monopole")
-        if (monopole) then
+!<<<<<<< HEAD
+!        ! Additions for monopole
+!        call nvtxStartRange("RHS_monopole")
+!        if (monopole) then
+!            if (PRESENT(qtime)) then !Lagrangian solver
+!                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
+!                                                   q_prim_qp%vf(1:sys_size), &
+!                                                   t_step, &
+!                                                   num_dims, &
+!                                                   rhs_vf, &
+!                                                   qtime)
+!            else
+!                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
+!                                                   q_prim_qp%vf(1:sys_size), &
+!                                                   t_step, &
+!                                                   num_dims, &
+!                                                   rhs_vf)
+!            end if
+!        end if
+!=======
+        ! Additions for acoustic_source
+        call nvtxStartRange("RHS_acoustic_src")
+        if (acoustic_source) 
             if (PRESENT(qtime)) then !Lagrangian solver
-                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
-                                                   q_prim_qp%vf(1:sys_size), &
-                                                   t_step, &
-                                                   num_dims, &
-                                                   rhs_vf, &
-                                                   qtime)
+                call s_acoustic_src_calculations(q_cons_qp%vf(1:sys_size), &
+                                                 q_prim_qp%vf(1:sys_size), &
+                                                 t_step, &
+                                                 rhs_vf, &
+                                                 qtime)
             else
-                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
-                                                   q_prim_qp%vf(1:sys_size), &
-                                                   t_step, &
-                                                   num_dims, &
-                                                   rhs_vf)
+                call s_acoustic_src_calculations(q_cons_qp%vf(1:sys_size), &
+                                                 q_prim_qp%vf(1:sys_size), &
+                                                 t_step, &
+                                                 rhs_vf)
             end if
-        end if
+        end if            
+!>>>>>>> 24ea4af2c0c8c14b1bec2a1cbf44a82cae109450
         call nvtxEndRange
 
         ! Add bubles source term
@@ -1089,6 +1105,7 @@ contains
         end if
         ! ==================================================================
 
+        call nvtxEndRange
     end subroutine s_compute_rhs
 
     subroutine s_compute_advection_source_term(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf)
