@@ -31,8 +31,6 @@ module m_start_up
 
     use m_compile_specific
 
-    use m_checker_common
-
     use m_checker
     ! ==========================================================================
 
@@ -74,8 +72,8 @@ contains
             parallel_io, rhoref, pref, bubbles, qbmm, sigR, &
             R0ref, nb, polytropic, thermal, Ca, Web, Re_inv, &
             polydisperse, poly_sigma, file_per_process, relax, &
-            relax_model, cf_wrt, sigma, adv_n, ib, &
-	        particleflag, avgdensFlag, solverapproach
+            relax_model, cf_wrt, sigma, adv_n, &
+	    particleflag, avgdensFlag, solverapproach
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -138,7 +136,6 @@ contains
                              'case_dir. Exiting ...')
         end if
 
-        call s_check_inputs_common()
         call s_check_inputs()
 
     end subroutine s_check_input_file
@@ -512,12 +509,6 @@ contains
             end do
         end if
         ! ----------------------------------------------------------------------
-
-        if (ib) then
-            q_sf = real(ib_markers%sf(-offset_x%beg:m + offset_x%end, -offset_y%beg:n + offset_y%end, -offset_z%beg:p + offset_z%end))
-            varname = 'ib_markers'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-        end if
 
         ! Adding Q_M to the formatted database file ------------------
         if (p > 0 .and. qm_wrt) then

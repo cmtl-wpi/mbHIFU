@@ -212,7 +212,7 @@ print(json.dumps({
      'particleoutFlag'             : 'T',
      'particlestatFlag'            : 'F',
      'RPflag'                      : 'T',
-     'clusterflag'                 : '3',
+     'clusterflag'                 : 3,
      'stillparticlesflag'          : 'T',
      'heatflag'                    : 1,
      'massflag'                    : 1,

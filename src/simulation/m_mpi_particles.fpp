@@ -32,6 +32,8 @@ MODULE m_mpi_particles
         INTEGER, ALLOCATABLE, DIMENSION(:,:)         :: id_List
         INTEGER :: n_neighbors
         INTEGER :: MPI_Req
+!	integer :: MPI_COMM_CART !<
+            !! Cartesian processor topology communicator
 
         ! Variable to contain particle variables for Parallel I/O
         REAL(KIND(0.D0)), ALLOCATABLE, DIMENSION(:,:)     :: MPI_IO_DATA_particle
@@ -95,7 +97,7 @@ CONTAINS
    CALL MPI_BCAST(charwidth, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
    CALL MPI_BCAST(valmaxvoid, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
    CALL MPI_BCAST(dtmaxpart, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-   CALL MPI_BCAST(old_2D, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+!   CALL MPI_BCAST(old_2D, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 #endif
 
   END SUBROUTINE s_mpi_bcast_user_particles
@@ -108,6 +110,8 @@ CONTAINS
     INTEGER (kind=MPI_ADDRESS_KIND) :: offsets(0:1)
     INTEGER, ALLOCATABLE, DIMENSION(:) :: proc_coords
     INTEGER :: i,j,n_max
+!    integer :: MPI_COMM_CART !<
+            !! Cartesian processor topology communicator
 
     !fixme: don't know if this definition of sizeint and sizedble are correct
     sizeint = 0
@@ -307,7 +311,7 @@ CONTAINS
 !  END SUBROUTINE s_initialize_mpi_data_particle ! ---------------------------------
 
 
-  SUBROUTINE get_min( aux )
+  SUBROUTINE get_min( aux ) !Replazable from m_mpi_common
 
   REAL(KIND(0.D0)) :: aux,auxmin
 
@@ -318,7 +322,7 @@ CONTAINS
 
   END SUBROUTINE get_min
   
-  SUBROUTINE get_max( aux )
+  SUBROUTINE get_max( aux ) !Replazable from m_mpi_common
 
   REAL(KIND(0.D0)) :: aux,auxmax
 
@@ -329,7 +333,7 @@ CONTAINS
 
   END SUBROUTINE get_max
 
-  SUBROUTINE get_sum( aux )
+  SUBROUTINE get_sum( aux ) !Replazable from m_mpi_common
 
   REAL(KIND(0.D0)) :: aux,auxmax
 
@@ -340,7 +344,7 @@ CONTAINS
 
   END SUBROUTINE get_sum
   
-  SUBROUTINE bcst_largestep(largestep)
+  SUBROUTINE bcst_largestep(largestep) !DO I NEED THIS?
 
   LOGICAL :: largestep,aux
 

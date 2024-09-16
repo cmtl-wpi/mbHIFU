@@ -37,8 +37,7 @@ module m_time_steppers
 
     use m_body_forces
 
-    use m_time_tmp             !< Lagrangian solver
-
+!< Lagrangian solver
     use m_particles
 
     use m_particles_types
@@ -219,7 +218,7 @@ contains
             end do
         end if
 
-        if (.not. f_is_default(sigma)) then
+        if (sigma /= dflt_real) then
             @:ALLOCATE(q_prim_vf(c_idx)%sf(ix_t%beg:ix_t%end, &
                 iy_t%beg:iy_t%end, &
                 iz_t%beg:iz_t%end))
@@ -301,14 +300,15 @@ contains
 
         ! Allocating the cell-average RHS variable for adaptive method, Lagrangian solver
         IF(coupledflag .OR. (solverapproach.EQ.2)) THEN
-            ALLOCATE(rhs_vp_adapt(1:6))
+            @:ALLOCATE_GLOBAL(rhs_vp_adapt(1:6))
             DO i = 1, 6
-                ALLOCATE(rhs_vp_adapt(i)%vf(1:sys_size))
+                @:ALLOCATE(rhs_vp_adapt(i)%vf(1:sys_size))
             END DO
-            DO j = 1, sys_size
-                DO i = 1, 6
-                    ALLOCATE(rhs_vp_adapt(i)%vf(j)%sf(0:m,0:n,0:p))
+            DO i = 1, 6
+                DO j = 1, sys_size
+                    @:ALLOCATE(rhs_vp_adapt(i)%vf(j)%sf(0:m,0:n,0:p))
                 END DO
+                @:ACC_SETUP_SFs(rhs_vp_adapt(i))
             END DO
         END IF
 
@@ -334,6 +334,14 @@ contains
         call nvtxStartRange("Time_Step")
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+
+        if (ib .and. t_step == 1) then
+            if (qbmm .and. .not. polytropic) then
+                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            else
+                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
+            end if
+        end if
 
 #ifdef DEBUG
         print *, 'got rhs'
@@ -443,6 +451,14 @@ contains
         call nvtxStartRange("Time_Step")
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+
+        if (ib .and. t_step == 1) then
+            if (qbmm .and. .not. polytropic) then
+                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            else
+                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
+            end if
+        end if
 
         if (run_time_info) then
             call s_write_run_time_information(q_prim_vf, t_step)
@@ -606,10 +622,11 @@ contains
 
     !> 3rd order TVD RK time-stepping algorithm
         !! @param t_step Current time-step
-    subroutine s_3rd_order_tvd_rk(t_step, time_avg) ! --------------------------------
+    subroutine s_3rd_order_tvd_rk(t_step, time_avg, dt_in)
 
-        integer, intent(IN) :: t_step
-        real(kind(0d0)), intent(INOUT) :: time_avg
+        integer, intent(in) :: t_step
+        real(kind(0d0)), intent(inout) :: time_avg
+        real(kind(0d0)), intent(in) :: dt_in
 
         integer :: i, j, k, l, q !< Generic loop iterator
         real(kind(0d0)) :: ts_error, denom, error_fraction, time_step_factor !< Generic loop iterator
@@ -624,6 +641,14 @@ contains
         end if
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+
+        if (ib .and. t_step == 1) then
+            if (qbmm .and. .not. polytropic) then
+                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
+            else
+                call s_ibm_correct_state(q_cons_ts(1)%vf, q_prim_vf)
+            end if
+        end if
 
         if (run_time_info) then
             call s_write_run_time_information(q_prim_vf, t_step)
@@ -642,7 +667,7 @@ contains
                     do j = 0, m
                         q_cons_ts(2)%vf(i)%sf(j, k, l) = &
                             q_cons_ts(1)%vf(i)%sf(j, k, l) &
-                            + dt*rhs_vf(i)%sf(j, k, l)
+                            + dt_in*rhs_vf(i)%sf(j, k, l)
                     end do
                 end do
             end do
@@ -658,7 +683,7 @@ contains
                             do q = 1, nnode
                                 pb_ts(2)%sf(j, k, l, q, i) = &
                                     pb_ts(1)%sf(j, k, l, q, i) &
-                                    + dt*rhs_pb(j, k, l, q, i)
+                                    + dt_in*rhs_pb(j, k, l, q, i)
                             end do
                         end do
                     end do
@@ -675,7 +700,7 @@ contains
                             do q = 1, nnode
                                 mv_ts(2)%sf(j, k, l, q, i) = &
                                     mv_ts(1)%sf(j, k, l, q, i) &
-                                    + dt*rhs_mv(j, k, l, q, i)
+                                    + dt_in*rhs_mv(j, k, l, q, i)
                             end do
                         end do
                     end do
@@ -717,7 +742,7 @@ contains
                         q_cons_ts(2)%vf(i)%sf(j, k, l) = &
                             (3d0*q_cons_ts(1)%vf(i)%sf(j, k, l) &
                              + q_cons_ts(2)%vf(i)%sf(j, k, l) &
-                             + dt*rhs_vf(i)%sf(j, k, l))/4d0
+                             + dt_in*rhs_vf(i)%sf(j, k, l))/4d0
                     end do
                 end do
             end do
@@ -733,7 +758,7 @@ contains
                                 pb_ts(2)%sf(j, k, l, q, i) = &
                                     (3d0*pb_ts(1)%sf(j, k, l, q, i) &
                                      + pb_ts(2)%sf(j, k, l, q, i) &
-                                     + dt*rhs_pb(j, k, l, q, i))/4d0
+                                     + dt_in*rhs_pb(j, k, l, q, i))/4d0
                             end do
                         end do
                     end do
@@ -751,7 +776,7 @@ contains
                                 mv_ts(2)%sf(j, k, l, q, i) = &
                                     (3d0*mv_ts(1)%sf(j, k, l, q, i) &
                                      + mv_ts(2)%sf(j, k, l, q, i) &
-                                     + dt*rhs_mv(j, k, l, q, i))/4d0
+                                     + dt_in*rhs_mv(j, k, l, q, i))/4d0
                             end do
                         end do
                     end do
@@ -792,7 +817,7 @@ contains
                         q_cons_ts(1)%vf(i)%sf(j, k, l) = &
                             (q_cons_ts(1)%vf(i)%sf(j, k, l) &
                              + 2d0*q_cons_ts(2)%vf(i)%sf(j, k, l) &
-                             + 2d0*dt*rhs_vf(i)%sf(j, k, l))/3d0
+                             + 2d0*dt_in*rhs_vf(i)%sf(j, k, l))/3d0
                     end do
                 end do
             end do
@@ -808,7 +833,7 @@ contains
                                 pb_ts(1)%sf(j, k, l, q, i) = &
                                     (pb_ts(1)%sf(j, k, l, q, i) &
                                      + 2d0*pb_ts(2)%sf(j, k, l, q, i) &
-                                     + 2d0*dt*rhs_pb(j, k, l, q, i))/3d0
+                                     + 2d0*dt_in*rhs_pb(j, k, l, q, i))/3d0
                             end do
                         end do
                     end do
@@ -826,7 +851,7 @@ contains
                                 mv_ts(1)%sf(j, k, l, q, i) = &
                                     (mv_ts(1)%sf(j, k, l, q, i) &
                                      + 2d0*mv_ts(2)%sf(j, k, l, q, i) &
-                                     + 2d0*dt*rhs_mv(j, k, l, q, i))/3d0
+                                     + 2d0*dt_in*rhs_mv(j, k, l, q, i))/3d0
                             end do
                         end do
                     end do
@@ -881,13 +906,13 @@ contains
         call nvtxStartRange("Time_Step")
 
         ! Stage 1 of 3 =====================================================
-        call s_adaptive_dt_bubble(t_step)
+        call s_3rd_order_tvd_rk(t_step, time_avg, 0.5d0*dt)
 
         ! Stage 2 of 3 =====================================================
-        call s_3rd_order_tvd_rk(t_step, time_avg)
+        call s_adaptive_dt_bubble(t_step)
 
         ! Stage 3 of 3 =====================================================
-        call s_adaptive_dt_bubble(t_step)
+        call s_3rd_order_tvd_rk(t_step, time_avg, 0.5d0*dt)
 
         call nvtxEndRange
 
@@ -920,9 +945,7 @@ contains
 
         call s_compute_bubble_source(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf)
 
-        call s_comp_alpha_from_n(q_cons_ts(1)%vf)
-
-    end subroutine s_adaptive_dt_bubble ! ------------------------------
+    end subroutine s_adaptive_dt_bubble
 
     !> This subroutine applies the body forces source term at each
         !! Runge-Kutta stage
@@ -1013,8 +1036,6 @@ contains
         qtime = realtime
         dttarget = dt
 
-        !IF(proc_rank == 0) CALL s_write_run_time_information(q_cons_ts(1)%vf, t_step)
-
         if (run_time_info) then
             call s_write_run_time_information(q_prim_vf, t_step)
         end if
@@ -1030,10 +1051,10 @@ contains
 
         largestep = .FALSE.
         IF (coupledFlag.OR.bubblesources) THEN
-            CALL RKparticledyn(qtime,1,q_cons_ts(1)%vf,t_step,q_prim_vf,rhs_vp_adapt(1)%vf,largestep)
+            CALL s_RK_particle_dynamics(qtime,1,q_cons_ts(1)%vf,t_step,q_prim_vf,rhs_vp_adapt(1)%vf,largestep)
             IF (largestep) STOP 'error at the 0 step'
         ELSE
-            CALL RKparticledyn(qtime,1,q_cons_ts(1)%vf,t_step,q_prim_vf)
+            CALL s_RK_particle_dynamics(qtime,1,q_cons_ts(1)%vf,t_step,q_prim_vf)
         ENDIF
 
         !> Take a step
@@ -1044,8 +1065,9 @@ contains
 
         !> Update values
         qtime = qtime + hdid
-        CALL updateRK (q_cons_ts,.TRUE.,q_prim_vf)
-
+        CALL s_update_RK (q_cons_ts,.TRUE.,q_prim_vf)
+        
+        if(avgdensflag) call write_void_evol(qtime)
         IF (particlestatFlag) CALL particle_stats ()
         IF (.NOT.stillparticlesflag.AND.(num_procs.GT.1)) CALL transfer_particles
         hnext = min(hnext,dt0)
@@ -1077,39 +1099,40 @@ contains
         RKcoef6=(/37.d0/378.d0,0.0d0,250.d0/621.d0,125.0d0/594.0d0,0.0d0,512.0d0/1771.0d0/),                         &
         RKcoefE=(/37.d0/378.d0-2825.0d0/27648.0d0,0.0d0,250.d0/621.d0-18575.0d0/48384.0d0,                           &
         125.0d0/594.0d0-13525.0d0/55296.0d0,-277.0d0/14336.0d0,512.0d0/1771.0d0-0.25d0/)
+        
 
         IF (coupledFlag.OR.bubblesources) THEN
 
             !> First step
             if (proc_rank==0) print*, 'rkqs 1st step at', qtime
             call s_mpi_barrier()
-            CALL update(RKh,1,RKcoef1,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
+            CALL s_update_particle(RKh,1,RKcoef1,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
 
             !> Second step
             if (proc_rank==0) print*, 'rkqs 2nd step at', qtime+A2*RKh
             call s_mpi_barrier()
-            CALL RKparticledyn(qtime+A2*RKh,2,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(2)%vf,largestep)
-            CALL update(RKh,2,RKcoef2,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
+            CALL s_RK_particle_dynamics(qtime+A2*RKh,2,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(2)%vf,largestep)
+            CALL s_update_particle(RKh,2,RKcoef2,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
 
             !> Third step
             if (proc_rank==0) print*, 'rkqs 3rd step at', qtime+A3*RKh
-            CALL RKparticledyn(qtime+A3*RKh,3,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(3)%vf,largestep)
-            CALL update(RKh,3,RKcoef3,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
+            CALL s_RK_particle_dynamics(qtime+A3*RKh,3,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(3)%vf,largestep)
+            CALL s_update_particle(RKh,3,RKcoef3,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
 
             !> Fourth step
             if (proc_rank==0) print*, 'rkqs 4th step at', qtime+A4*RKh
-            CALL RKparticledyn(qtime+A4*RKh,4,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(4)%vf,largestep)
-            CALL update(RKh,4,RKcoef4,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
+            CALL s_RK_particle_dynamics(qtime+A4*RKh,4,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(4)%vf,largestep)
+            CALL s_update_particle(RKh,4,RKcoef4,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
 
             !> Fifth step
             if (proc_rank==0) print*, 'rkqs 5th step at', qtime+A5*RKh
-            CALL RKparticledyn(qtime+A5*RKh,5,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(5)%vf,largestep)
-            CALL update(RKh,5,RKcoef5,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
+            CALL s_RK_particle_dynamics(qtime+A5*RKh,5,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(5)%vf,largestep)
+            CALL s_update_particle(RKh,5,RKcoef5,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
 
             !> Sixth step
             if (proc_rank==0) print*, 'rkqs 6th step at', qtime+A6*RKh
-            CALL RKparticledyn(qtime+A6*RKh,6,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(6)%vf,largestep)
-            CALL update(RKh,6,RKcoef6,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
+            CALL s_RK_particle_dynamics(qtime+A6*RKh,6,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(6)%vf,largestep)
+            CALL s_update_particle(RKh,6,RKcoef6,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
 
             DO i = 1, cont_idx%end
                 q_prim_vf(i)%sf => q_cons_ts(1)%vf(i)%sf
@@ -1119,40 +1142,40 @@ contains
                 q_prim_vf(i)%sf => q_cons_ts(1)%vf(i)%sf
             END DO
 
-            CALL RKerror (qtime+RKh,RKh,RKcoefE,errmax,largestep,t_step,q_cons_ts,q_prim_vf,rhs_vp_adapt) 
+            CALL s_calculate_RKerror (qtime+RKh,RKh,RKcoefE,errmax,largestep,t_step,q_cons_ts,q_prim_vf,rhs_vp_adapt) 
 
         ELSE
 
             !> First step
-            CALL update(RKh,1,RKcoef1,largestep)
+            CALL s_update_particle(RKh,1,RKcoef1,largestep)
             IF (largestep) RETURN
 
             !> Second step
-            CALL RKparticledyn(qtime+A2*RKh,2,q_cons_ts(1)%vf,t_step,q_prim_vf)
-            CALL update(RKh,2,RKcoef2,largestep)
+            CALL s_RK_particle_dynamics(qtime+A2*RKh,2,q_cons_ts(1)%vf,t_step,q_prim_vf)
+            CALL s_update_particle(RKh,2,RKcoef2,largestep)
             IF (largestep) RETURN
 
             !> Third step
-            CALL RKparticledyn(qtime+A3*RKh,3,q_cons_ts(1)%vf,t_step,q_prim_vf)
-            CALL update(RKh,3,RKcoef3,largestep)
+            CALL s_RK_particle_dynamics(qtime+A3*RKh,3,q_cons_ts(1)%vf,t_step,q_prim_vf)
+            CALL s_update_particle(RKh,3,RKcoef3,largestep)
             IF (largestep) RETURN
 
             !> Fourth step
-            CALL RKparticledyn (qtime+A4*RKh,4,q_cons_ts(1)%vf,t_step,q_prim_vf)
-            CALL update (RKh,4,RKcoef4,largestep)
+            CALL s_RK_particle_dynamics (qtime+A4*RKh,4,q_cons_ts(1)%vf,t_step,q_prim_vf)
+            CALL s_update_particle (RKh,4,RKcoef4,largestep)
             IF (largestep) RETURN
 
             !> Fifth step
-            CALL RKparticledyn (qtime+A5*RKh,5,q_cons_ts(1)%vf,t_step,q_prim_vf)
-            CALL update (RKh,5,RKcoef5,largestep)
+            CALL s_RK_particle_dynamics (qtime+A5*RKh,5,q_cons_ts(1)%vf,t_step,q_prim_vf)
+            CALL s_update_particle (RKh,5,RKcoef5,largestep)
             IF (largestep) RETURN
 
             !> Sixth step
-            CALL RKparticledyn (qtime+A6*RKh,6,q_cons_ts(1)%vf,t_step,q_prim_vf)
-            CALL update (RKh,6,RKcoef6,largestep)
+            CALL s_RK_particle_dynamics (qtime+A6*RKh,6,q_cons_ts(1)%vf,t_step,q_prim_vf)
+            CALL s_update_particle (RKh,6,RKcoef6,largestep)
             IF (largestep) RETURN
 
-            CALL RKerror (qtime+RKh,RKh,RKcoefE,errmax,largestep,t_step)
+            CALL s_calculate_RKerror (qtime+RKh,RKh,RKcoefE,errmax,largestep,t_step)
 
         ENDIF
 

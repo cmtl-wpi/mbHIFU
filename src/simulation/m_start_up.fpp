@@ -34,7 +34,7 @@ module m_start_up
 
     use m_cbc                  !< Characteristic boundary conditions (CBC)
 
-    use m_acoustic_src      !< Acoustic source calculations
+    use m_monopole             !< Monopole calculations
 
     use m_rhs                  !< Right-hand-side (RHS) evaluation procedures
 
@@ -57,8 +57,6 @@ module m_start_up
 
     use ieee_arithmetic
 
-    use m_helper_basic          !< Functions to compare floating point numbers
-
 #ifdef MFC_OpenACC
     use openacc
 #endif
@@ -68,8 +66,6 @@ module m_start_up
     use m_ibm
 
     use m_compile_specific
-
-    use m_checker_common
 
     use m_checker
 
@@ -143,7 +139,7 @@ contains
             mpp_lim, time_stepper, weno_eps, weno_flat, &
             riemann_flat, rdma_mpi, cu_tensor, &
             teno_CT, mp_weno, weno_avg, &
-            riemann_solver, low_Mach, wave_speeds, avg_state, &
+            riemann_solver, wave_speeds, avg_state, &
             bc_x, bc_y, bc_z, &
             x_domain, y_domain, z_domain, &
             hypoelasticity, &
@@ -158,7 +154,7 @@ contains
             nb, mapped_weno, wenoz, teno, weno_order, num_fluids, &
 #:endif
             Ca, Web, Re_inv, &
-            acoustic_source, acoustic, num_source, &
+            monopole, mono, num_mono, &
             polytropic, thermal, &
             integral, integral_wrt, num_integrals, &
             polydisperse, poly_sigma, qbmm, &
@@ -251,7 +247,6 @@ contains
         end if
         ! ==================================================================
 
-        call s_check_inputs_common()
         call s_check_inputs()
 
     end subroutine s_check_input_file
@@ -1092,7 +1087,7 @@ contains
 
     end subroutine s_initialize_internal_energy_equations
 
-    subroutine s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, time_real, dtnext, dtdid, time_prev, dt_next_inp, dt0)
+    subroutine s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
         integer, intent(inout) :: t_step
         real(kind(0d0)), intent(inout) :: time_avg, time_final
         real(kind(0d0)), intent(inout) :: io_time_avg, io_time_final
@@ -1101,7 +1096,6 @@ contains
         logical, intent(inout) :: file_exists
         real(kind(0d0)), intent(inout) :: start, finish
         integer, intent(inout) :: nt
-        REAL(KIND(0.D0)) :: time_real, dtnext, dtdid, time_prev, dt_next_inp, dt0
 
         integer :: i, j, k, l
 
@@ -1126,7 +1120,6 @@ contains
         print *, 'Computed derived vars'
 #endif
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-!<<<<<<< HEAD
 	IF(.NOT.coupledflag .and. .not.particleflag) THEN
             if (time_stepper == 1) then
                 call s_1st_order_tvd_rk(t_step, time_avg)
@@ -1140,23 +1133,14 @@ contains
 	END IF
 
         IF(particleflag) THEN !Cash-Karp Runge-Kutta time-stepper, Lagrangian solver
+            dt = dtnext
+            time_prev = time_real
             CALL rkqs(time_real, dtnext, dtdid, t_step)
             IF(particleoutFlag) CALL write_particles(time_real)
             time_real = time_prev + dtdid
             dt_next_inp = dtnext
         END IF
 
-!=======
-!        if (time_stepper == 1) then
-!            call s_1st_order_tvd_rk(t_step, time_avg)
-!        elseif (time_stepper == 2) then
-!            call s_2nd_order_tvd_rk(t_step, time_avg)
-!        elseif (time_stepper == 3 .and. (.not. adap_dt)) then
-!            call s_3rd_order_tvd_rk(t_step, time_avg)
-!        elseif (time_stepper == 3 .and. adap_dt) then
-!            call s_strang_splitting(t_step, time_avg)
-!        end if
-!>>>>>>> 24ea4af2c0c8c14b1bec2a1cbf44a82cae109450
         if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
 
         ! Time-stepping loop controls
@@ -1285,7 +1269,7 @@ contains
             call s_initialize_nonpoly()
         end if
         !Initialize pb based on surface tension for qbmm (polytropic)
-        if (qbmm .and. polytropic .and. (.not. f_is_default(Web))) then
+        if (qbmm .and. polytropic .and. Web /= dflt_real) then
             pb0 = pref + 2d0*fluid_pp(1)%ss/(R0*R0ref)
             pb0 = pb0/pref
             pref = 1d0
@@ -1308,8 +1292,8 @@ contains
         call acc_present_dump()
 #endif
 
-        if (acoustic_source) then
-            call s_initialize_acoustic_src_module()
+        if (monopole) then
+            call s_initialize_monopole_module()
         end if
 
         if (any(Re_size > 0)) then
@@ -1318,7 +1302,7 @@ contains
 
         call s_initialize_rhs_module()
 
-        if (.not. f_is_default(sigma)) call s_initialize_surface_tension_module()
+        if (sigma .ne. dflt_real) call s_initialize_surface_tension_module()
 
 #if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
         call acc_present_dump()
@@ -1454,10 +1438,10 @@ contains
         if (qbmm .and. .not. polytropic) then
             !$acc update device(pb_ts(1)%sf, mv_ts(1)%sf)
         end if
-        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac, low_Mach)
+        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac)
         !$acc update device(R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, pv, M_n, M_v, k_n, k_v, pb0, mass_n0, mass_v0, Pe_T, Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN , mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
 
-        !$acc update device(acoustic_source, num_source)
+        !$acc update device(monopole, num_mono)
         !$acc update device(sigma)
 
         !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
@@ -1470,10 +1454,6 @@ contains
         !$acc update device(relax, relax_model)
         if (relax) then
             !$acc update device(palpha_eps, ptgalpha_eps)
-        end if
-
-        if (ib) then
-            !$acc update device(ib_markers%sf)
         end if
 
     end subroutine s_initialize_gpu_vars
@@ -1501,7 +1481,7 @@ contains
             call s_finalize_viscous_module()
         end if
 
-        if (.not. f_is_default(sigma)) call s_finalize_surface_tension_module()
+        if (sigma .ne. dflt_real) call s_finalize_surface_tension_module()
         if (bodyForces) call s_finalize_body_forces_module()
 
         ! Terminating MPI execution environment

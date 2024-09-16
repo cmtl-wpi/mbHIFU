@@ -31,7 +31,7 @@ contains
     subroutine s_populate_primitive_variables_buffers(q_prim_vf, pb, mv, q_particle)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: pb, mv
         TYPE(scalar_field), dimension(:), OPTIONAL :: q_particle
         integer :: bc_loc, bc_dir
 
@@ -140,8 +140,13 @@ contains
         case (-16)    ! No-slip wall BC at end
             call s_no_slip_wall(q_prim_vf, pb, mv, 2, 1)
         case default ! Processor BC at end
-            call s_mpi_sendrecv_variables_buffers( &
-                q_prim_vf, pb, mv, 2, 1)
+            IF(particleflag) THEN !Lagrangian solver
+                call s_mpi_sendrecv_variables_buffers( &
+                        q_prim_vf, pb, mv, 2, 1, q_particle=q_particle)
+            ELSE
+                call s_mpi_sendrecv_variables_buffers( &
+                        q_prim_vf, pb, mv, 2, 1)
+            END IF
         end select
 
         if (qbmm .and. .not. polytropic) then

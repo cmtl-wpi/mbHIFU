@@ -88,8 +88,8 @@ MODULE m_particles_types
 
   TYPE (particleListinfo),   POINTER   :: particlesubList
 
-  LOGICAL :: Ffluidflag
-  LOGICAL :: old_2D
+!  LOGICAL :: Ffluidflag
+!  LOGICAL :: old_2D
  
 
   CONTAINS
@@ -678,11 +678,14 @@ MODULE m_particles_types
       ELSE
         IF(cyl_coord) THEN
            Charvol = dx(cell(1))*dy(cell(2))*y_cc_lp(cell(2))*2d0*PI
-        ELSE IF(old_2D .NEQV. .TRUE.) THEN
-           Charvol = dx(cell(1))*dy(cell(2))*charwidth
+        !ELSE IF(old_2D .NEQV. .TRUE.) THEN
+        !   Charvol = dx(cell(1))*dy(cell(2))*charwidth
+        !ELSE
+        !   Charvol = dx(cell(1))*dy(cell(2))*charwidth
         ELSE
-           Charvol = dx(cell(1))*dy(cell(2))*charwidth
+            Charvol = dx(cell(1))*dy(cell(2))*charwidth
         END IF
+
       ENDIF
     
     END SUBROUTINE get_char_vol
@@ -708,18 +711,18 @@ MODULE m_particles_types
       ! 2D
       IF(p.eq.0 .AND. cyl_coord.NEQV..TRUE.) THEN
         ! For the old 2D kernel (see Fuster and Colonius, JFM, 2011))
-        IF(old_2D) THEN
-           particle_in_domain = ((pos_part(1).LT.x_cb(m+buff_size)).AND.(pos_part(1).GE.x_cb(-buff_size-1)).AND. &
-                                 (pos_part(2).LT.y_cb(n+buff_size)).AND.(pos_part(2).GE.y_cb(-buff_size-1)))
+        !IF(old_2D) THEN
+        !   particle_in_domain = ((pos_part(1).LT.x_cb(m+buff_size)).AND.(pos_part(1).GE.x_cb(-buff_size-1)).AND. &
+        !                         (pos_part(2).LT.y_cb(n+buff_size)).AND.(pos_part(2).GE.y_cb(-buff_size-1)))
         ! For present 2D kernel
-        ELSE
+        !ELSE
            ! Defining a virtual z-axis that has the same dimensions as y-axis
            ! defined in the input file
            particle_in_domain = ((pos_part(1).LT.x_cb(m+buff_size)).AND.(pos_part(1).GE.x_cb(-buff_size-1)).AND. &
                                  (pos_part(2).LT.y_cb(n+buff_size)).AND.(pos_part(2).GE.y_cb(-buff_size-1)).AND. &
                                  !(pos_part(3).LT.y_cb(n+buff_size)).AND.(pos_part(3).GE.y_cb(-buff_size-1)))
                                   (pos_part(3).LT.charwidth/2d0).AND.(pos_part(3).GE.-charwidth/2d0))
-        END IF
+        !END IF
       ELSE
         ! cyl_coord
         particle_in_domain = ((pos_part(1).LT.x_cb(m+buff_size)).AND.(pos_part(1).GE.x_cb(-buff_size-1)).AND. &

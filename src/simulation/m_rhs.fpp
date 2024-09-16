@@ -39,7 +39,7 @@ module m_rhs
 
     use m_hypoelastic
 
-    use m_acoustic_src
+    use m_monopole
 
     use m_viscous
 
@@ -54,8 +54,6 @@ module m_rhs
     use m_surface_tension
 
     use m_body_forces
-
-    use m_time_tmp
 
     use ieee_arithmetic
 
@@ -270,7 +268,7 @@ contains
             @:ALLOCATE(q_prim_qp%vf(l)%sf(ix%beg:ix%end, iy%beg:iy%end, iz%beg:iz%end))
         end do
 
-        if (.not. f_is_default(sigma)) then
+        if (sigma /= dflt_real) then
             ! This assumes that the color function advection equation is
             ! the last equation. If this changes then this logic will
             ! need updated
@@ -298,7 +296,7 @@ contains
             !$acc enter data attach(q_prim_qp%vf(l)%sf)
         end do
 
-        if (.not. f_is_default(sigma)) then
+        if (sigma /= dflt_real) then
             q_prim_qp%vf(c_idx)%sf => &
                 q_cons_qp%vf(c_idx)%sf
             !$acc enter data copyin(q_prim_qp%vf(c_idx)%sf)
@@ -592,7 +590,7 @@ contains
                             & iz%beg:iz%end))
                 end do
 
-                if (any(Re_size > 0) .or. (.not. f_is_default(sigma))) then
+                if (any(Re_size > 0) .or. (sigma /= dflt_real)) then
                     do l = mom_idx%beg, E_idx
                         @:ALLOCATE(flux_src_n(i)%vf(l)%sf( &
                                  & ix%beg:ix%end, &
@@ -718,7 +716,7 @@ contains
         real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: pb, rhs_pb
         real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: mv, rhs_mv
         integer, intent(in) :: t_step
-        real(kind(0d0)), intent(inout) :: time_avg
+        real(kind(0d0)), intent(inout), optional :: time_avg
 
         real(kind(0d0)) :: t_start, t_finish
         real(kind(0d0)) :: gp_sum
@@ -747,8 +745,6 @@ contains
         integer :: i, j, k, l, q, ii, id !< Generic loop iterators
         integer :: term_index
 
-        call nvtxStartRange("Compute_RHS")
-
         ! Configuring Coordinate Direction Indexes =========================
         ix%beg = -buff_size; iy%beg = 0; iz%beg = 0
 
@@ -760,21 +756,23 @@ contains
         call cpu_time(t_start)
         ! Association/Population of Working Variables ======================
         !$acc parallel loop collapse(4) gang vector default(present)
-        if (particleflag) then
-            do i = 1, sys_size
-                q_cons_qp%vf(i)%sf => q_cons_vf(i)%sf
-            end do
-        else
+        !if (particleflag) then
+        !    do i = 1, sys_size
+        !        q_cons_qp%vf(i)%sf => q_cons_vf(i)%sf
+        !    end do
+        !else
             do i = 1, sys_size
                 do l = iz%beg, iz%end
                     do k = iy%beg, iy%end
                         do j = ix%beg, ix%end
+                            !if (proc_rank==0) print*, 'rhs1:', i, j, k, l
+                            !if (proc_rank==0) print*, 'rhs2:', q_cons_vf(i)%sf(j, k, l)
                             q_cons_qp%vf(i)%sf(j, k, l) = q_cons_vf(i)%sf(j, k, l)
                         end do
                     end do
                 end do
             end do
-        end if
+        !end if
 
         ! ==================================================================
 
@@ -840,10 +838,10 @@ contains
                                                  q_prim_qp, &
                                                  dq_prim_dx_qp, dq_prim_dy_qp, dq_prim_dz_qp, &
                                                  ix, iy, iz)
-        call nvtxEndRange
+        call nvtxEndRange()
 
         call nvtxStartRange("Surface_Tension")
-        if (.not. f_is_default(sigma)) call s_get_capilary(q_prim_qp%vf)
+        if (sigma /= dflt_real) call s_get_capilary(q_prim_qp%vf)
         call nvtxEndRange
 
         ! Dimensional Splitting Loop =======================================
@@ -861,7 +859,7 @@ contains
 
             call nvtxStartRange("RHS-WENO")
 
-            if (f_is_default(sigma)) then
+            if (sigma == dflt_real) then
                 ! Reconstruct densitiess
                 iv%beg = 1; iv%end = sys_size
                 call s_reconstruct_cell_boundary_values( &
@@ -869,13 +867,16 @@ contains
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
+                call nvtxEndRange
             else
+
                 iv%beg = 1; iv%end = E_idx - 1
                 call s_reconstruct_cell_boundary_values( &
                     q_prim_qp%vf(iv%beg:iv%end), &
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
+                call nvtxEndRange
 
                 iv%beg = E_idx; iv%end = E_idx
                 call s_reconstruct_cell_boundary_values_first_order( &
@@ -883,6 +884,7 @@ contains
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
+                call nvtxEndRange
 
                 iv%beg = E_idx + 1; iv%end = sys_size
                 call s_reconstruct_cell_boundary_values( &
@@ -890,6 +892,8 @@ contains
                     qL_rsx_vf, qL_rsy_vf, qL_rsz_vf, &
                     qR_rsx_vf, qR_rsy_vf, qR_rsz_vf, &
                     id)
+                call nvtxEndRange
+
             end if
 
             ! Reconstruct viscous derivatives for viscosity
@@ -919,7 +923,7 @@ contains
                 end if
             end if
 
-            call nvtxEndRange ! WENO
+            call nvtxEndRange
 
             ! Configuring Coordinate Direction Indexes ======================
             if (id == 1) then
@@ -931,7 +935,6 @@ contains
             end if
             ix%end = m; iy%end = n; iz%end = p
             ! ===============================================================
-            call nvtxStartRange("RHS_riemann_solver")
 
             ! Computing Riemann Solver Flux and Source Flux =================
 
@@ -961,7 +964,7 @@ contains
                                                  q_cons_qp, &
                                                  q_prim_qp, &
                                                  flux_src_n(id))
-            call nvtxEndRange
+            call nvtxEndRange()
 
             ! RHS additions for hypoelasticity
             call nvtxStartRange("RHS_Hypoelasticity")
@@ -972,7 +975,7 @@ contains
 
             ! RHS additions for viscosity
             call nvtxStartRange("RHS_add_phys")
-            if (any(Re_size > 0d0) .or. (.not. f_is_default(sigma))) then
+            if (any(Re_size > 0d0) .or. (sigma /= dflt_real)) then
                 call s_compute_additional_physics_rhs(id, &
                                                       q_prim_qp%vf, &
                                                       rhs_vf, &
@@ -1023,43 +1026,24 @@ contains
         end if
 
         ! Additional Physics and Source Temrs ==================================
-!<<<<<<< HEAD
-!        ! Additions for monopole
-!        call nvtxStartRange("RHS_monopole")
-!        if (monopole) then
-!            if (PRESENT(qtime)) then !Lagrangian solver
-!                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
-!                                                   q_prim_qp%vf(1:sys_size), &
-!                                                   t_step, &
-!                                                   num_dims, &
-!                                                   rhs_vf, &
-!                                                   qtime)
-!            else
-!                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
-!                                                   q_prim_qp%vf(1:sys_size), &
-!                                                   t_step, &
-!                                                   num_dims, &
-!                                                   rhs_vf)
-!            end if
-!        end if
-!=======
-        ! Additions for acoustic_source
-        call nvtxStartRange("RHS_acoustic_src")
-        if (acoustic_source) 
+        ! Additions for monopole
+        call nvtxStartRange("RHS_monopole")
+        if (monopole) then
             if (PRESENT(qtime)) then !Lagrangian solver
-                call s_acoustic_src_calculations(q_cons_qp%vf(1:sys_size), &
-                                                 q_prim_qp%vf(1:sys_size), &
-                                                 t_step, &
-                                                 rhs_vf, &
-                                                 qtime)
+                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
+                                                   q_prim_qp%vf(1:sys_size), &
+                                                   t_step, &
+                                                   num_dims, &
+                                                   rhs_vf, &
+                                                   qtime)
             else
-                call s_acoustic_src_calculations(q_cons_qp%vf(1:sys_size), &
-                                                 q_prim_qp%vf(1:sys_size), &
-                                                 t_step, &
-                                                 rhs_vf)
+                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
+                                                   q_prim_qp%vf(1:sys_size), &
+                                                   t_step, &
+                                                   num_dims, &
+                                                   rhs_vf)
             end if
-        end if            
-!>>>>>>> 24ea4af2c0c8c14b1bec2a1cbf44a82cae109450
+        end if
         call nvtxEndRange
 
         ! Add bubles source term
@@ -1081,21 +1065,21 @@ contains
             !$acc update device(ix, iy, iz)
 
             !$acc parallel loop collapse(4) gang vector default(present)
-	    if (particleflag) then
-            do i = 1, sys_size
-                q_prim_vf(i)%sf => q_prim_qp%vf(i)%sf
-            end do
-            else
-            do i = 1, sys_size
-                do l = iz%beg, iz%end
-                    do k = iy%beg, iy%end
-                        do j = ix%beg, ix%end
-                            q_prim_vf(i)%sf(j, k, l) = q_prim_qp%vf(i)%sf(j, k, l)
+            !if (particleflag) then
+            !    do i = 1, sys_size
+            !        q_prim_vf(i)%sf => q_prim_qp%vf(i)%sf
+            !    end do
+            !else
+                do i = 1, sys_size
+                    do l = iz%beg, iz%end
+                        do k = iy%beg, iy%end
+                            do j = ix%beg, ix%end
+                                q_prim_vf(i)%sf(j, k, l) = q_prim_qp%vf(i)%sf(j, k, l)
+                            end do
                         end do
                     end do
                 end do
-            end do
-	    end if
+            !end if
         end if
         call cpu_time(t_finish)
         if (t_step >= 4) then
@@ -1105,7 +1089,6 @@ contains
         end if
         ! ==================================================================
 
-        call nvtxEndRange
     end subroutine s_compute_rhs
 
     subroutine s_compute_advection_source_term(idir, rhs_vf, q_cons_vf, q_prim_vf, flux_src_n_vf)
@@ -1677,7 +1660,7 @@ contains
 
         if (idir == 1) then ! x-direction
 
-            if (.not. f_is_default(sigma)) then
+            if (sigma /= dflt_real) then
                 !$acc parallel loop collapse(3) gang vector default(present)
                 do l = 0, p
                     do k = 0, n
@@ -1709,7 +1692,7 @@ contains
 
         elseif (idir == 2) then ! y-direction
 
-            if (.not. f_is_default(sigma)) then
+            if (sigma /= dflt_real) then
                 !$acc parallel loop collapse(3) gang vector default(present)
                 do l = 0, p
                     do k = 0, n
@@ -1842,7 +1825,7 @@ contains
 
         elseif (idir == 3) then ! z-direction
 
-            if (.not. f_is_default(sigma)) then
+            if (sigma /= dflt_real) then
                 !$acc parallel loop collapse(3) gang vector default(present)
                 do l = 0, p
                     do k = 0, n
@@ -2303,10 +2286,10 @@ contains
         end do
         
         do j = mom_idx%beg, E_idx
-            if (.not.particleflag) then
+            !if (.not.particleflag) then
                 @:DEALLOCATE(q_cons_qp%vf(j)%sf)
                 @:DEALLOCATE(q_prim_qp%vf(j)%sf)
-            end if
+            !end if
         end do
 
         @:DEALLOCATE(q_cons_qp%vf, q_prim_qp%vf)

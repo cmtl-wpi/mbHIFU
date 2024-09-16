@@ -626,7 +626,8 @@ MODULE m_kernel_functions
                       ENDDO
   
                   ! 2D with virtual depth
-                  ELSE IF (old_2D.NEQV..TRUE.) THEN
+                 ! ELSE IF (old_2D.NEQV..TRUE.) THEN
+                  ELSE
                   
                       theta = 0d0
                       Nr = CEILING(charwidth/(y_cb(cellaux(2))-y_cb(cellaux(2)-1)))
@@ -649,14 +650,14 @@ MODULE m_kernel_functions
                           END IF
                       ENDDO
   
-                  ELSE
+                  !ELSE
   
-                      func = exp(-0.5d0*(distance/stddsv)**2)/(DSQRT(2.0d0*pi)*stddsv)**3    
-                      DO WHILE (distance.LT.5.0d0*stddsv)
-                          auxvect(3) = auxvect(3) + charwidth
-                          distance =  Modulus(auxvect)
-                          func = func + 2.0d0*exp(-0.5d0*(distance/stddsv)**2)/(DSQRT(2.0d0*pi)*stddsv)**3    
-                      ENDDO
+                     ! func = exp(-0.5d0*(distance/stddsv)**2)/(DSQRT(2.0d0*pi)*stddsv)**3    
+                     ! DO WHILE (distance.LT.5.0d0*stddsv)
+                     !     auxvect(3) = auxvect(3) + charwidth
+                     !     distance =  Modulus(auxvect)
+                     !     func = func + 2.0d0*exp(-0.5d0*(distance/stddsv)**2)/(DSQRT(2.0d0*pi)*stddsv)**3    
+                     ! ENDDO
                   END IF
               END IF
   

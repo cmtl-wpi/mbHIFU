@@ -17,8 +17,6 @@ module m_mpi_proxy
     use mpi                    !< Message passing interface (MPI) module
 #endif
 
-    use m_helper_basic         !< Functions to compare floating point numbers
-
     use m_helper
 
     use m_derived_types        !< Definitions of the derived types
@@ -78,11 +76,6 @@ module m_mpi_proxy
     !$acc declare create( ib_buff_send, ib_buff_recv)
     !$acc declare create(c_divs_buff_send, c_divs_buff_recv)
 #endif
-!=======
-!    INTEGER :: MPI_COMM_CART
-!    !! Cartesian processor topology communicator!
-!
-!>>>>>>> Lagrangian solver
     !> @name Generic flags used to identify and report MPI errors
     !> @{
     integer, private :: err_code, ierr, v_size
@@ -95,6 +88,9 @@ module m_mpi_proxy
 
     integer :: nVars !< nVars for surface tension communication
     !$acc declare create(nVars)
+
+     integer :: MPI_COMM_CART !<
+            !! Cartesian processor topology communicator
 
 contains
 
@@ -155,7 +151,7 @@ contains
 
         end if
 
-        if (.not. f_is_default(sigma)) then
+        if (sigma /= dflt_real) then
             nVars = num_dims + 1
             if (n > 0) then
                 if (p > 0) then
@@ -200,11 +196,11 @@ contains
 
         #:for VAR in ['t_step_old', 'm', 'n', 'p', 'm_glb', 'n_glb', 'p_glb',  &
             & 't_step_start','t_step_stop','t_step_save','t_step_print',       &
-            & 'model_eqns','time_stepper', 'riemann_solver', 'low_Mach',       &
+            & 'model_eqns','time_stepper', 'riemann_solver',                   &
             & 'wave_speeds', 'avg_state', 'precision', 'bc_x%beg', 'bc_x%end', &
             & 'bc_y%beg', 'bc_y%end', 'bc_z%beg', 'bc_z%end',  'fd_order',     &
             & 'num_probes', 'num_integrals', 'bubble_model', 'thermal',        &
-            & 'R0_type', 'num_source', 'relax_model', 'num_ibs']
+            & 'R0_type', 'num_mono', 'relax_model', 'num_ibs']
             call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
@@ -212,7 +208,7 @@ contains
             & 'mp_weno', 'rdma_mpi', 'weno_flat', 'riemann_flat',                &
             & 'weno_Re_flux', 'alt_soundspeed', 'null_weights', 'mixture_err',   &
             & 'parallel_io', 'hypoelasticity', 'bubbles', 'polytropic',          &
-            & 'polydisperse', 'qbmm', 'acoustic_source', 'probe_wrt', 'integral_wrt',   &
+            & 'polydisperse', 'qbmm', 'monopole', 'probe_wrt', 'integral_wrt',   &
             & 'prim_vars_wrt', 'weno_avg', 'file_per_process', 'relax',          &
             & 'adv_n', 'adap_dt', 'ib', 'bodyForces', 'bf_x', 'bf_y', 'bf_z' ]
             call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -255,20 +251,12 @@ contains
 
         do j = 1, num_probes_max
             do i = 1, 3
-                call MPI_BCAST(acoustic(j)%loc(i), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+                call MPI_BCAST(mono(j)%loc(i), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             end do
 
-            call MPI_BCAST(acoustic(j)%dipole, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-
-            #:for VAR in [ 'pulse', 'support', 'num_elements', 'element_on' ]
-                call MPI_BCAST(acoustic(j)%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-            #:endfor
-
-            #:for VAR in [ 'mag', 'length', 'height', &
-                'wavelength', 'frequency', 'gauss_sigma_dist', 'gauss_sigma_time', &
-                'npulse', 'dir', 'delay', 'foc_length', 'aperture', &
-                'element_spacing_angle', 'element_polygon_ratio', 'rotate_angle' ]
-                call MPI_BCAST(acoustic(j)%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            #:for VAR in [ 'mag', 'length', 'delay', 'dir', 'npulse', 'pulse',  &
+                'support', 'foc_length', 'aperture', 'support_width' ]
+                call MPI_BCAST(mono(j)%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
             #:for VAR in [ 'x','y','z' ]
@@ -302,6 +290,9 @@ contains
 
         real(kind(0d0)) :: fct_min !<
             !! Processor factorization (fct) minimization parameter
+
+       ! integer :: MPI_COMM_CART !<
+            !! Cartesian processor topology communicator
 
         integer :: rem_cells !<
             !! Remaining number of cells, in a particular coordinate direction,
@@ -2317,7 +2308,7 @@ contains
             @:DEALLOCATE_GLOBAL(ib_buff_send, ib_buff_recv)
         end if
 
-        if (.not. f_is_default(sigma)) then
+        if (sigma /= dflt_real) then
             @:DEALLOCATE_GLOBAL(c_divs_buff_send, c_divs_buff_recv)
         end if
 

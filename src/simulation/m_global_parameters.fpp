@@ -19,8 +19,6 @@ module m_global_parameters
 
     use m_derived_types        !< Definitions of the derived types
 
-    use m_helper_basic         !< Functions to compare floating point numbers
-
 #ifdef MFC_OpenACC
     use openacc
 #endif
@@ -120,10 +118,10 @@ module m_global_parameters
         integer, parameter :: weno_polyn = ${weno_polyn}$ !< Degree of the WENO polynomials (polyn)
         integer, parameter :: weno_order = ${weno_order}$ !< Order of the WENO reconstruction
         integer, parameter :: num_fluids = ${num_fluids}$ !< number of fluids in the simulation
-        logical, parameter :: wenojs = (${wenojs}$ /= 0)            !< WENO-JS (default)
-        logical, parameter :: mapped_weno = (${mapped_weno}$ /= 0)  !< WENO-M (WENO with mapping of nonlinear weights)
-        logical, parameter :: wenoz = (${wenoz}$ /= 0)              !< WENO-Z
-        logical, parameter :: teno = (${teno}$ /= 0)                !< TENO (Targeted ENO)
+        logical, parameter :: wenojs = ${wenojs}$           !< WENO-JS (default)
+        logical, parameter :: mapped_weno = ${mapped_weno}$ !< WENO-M (WENO with mapping of nonlinear weights)
+        logical, parameter :: wenoz = ${wenoz}$             !< WENO-Z
+        logical, parameter :: teno = ${teno}$               !< TENO (Targeted ENO)
     #:else
         integer :: weno_polyn     !< Degree of the WENO polynomials (polyn)
         integer :: weno_order     !< Order of the WENO reconstruction
@@ -140,7 +138,6 @@ module m_global_parameters
     logical :: weno_avg       ! Average left/right cell-boundary states
     logical :: weno_Re_flux   !< WENO reconstruct velocity gradients for viscous stress tensor
     integer :: riemann_solver !< Riemann solver algorithm
-    integer :: low_Mach       !< Low Mach number fix to HLLC Riemann solver
     integer :: wave_speeds    !< Wave speeds estimation method
     integer :: avg_state      !< Average state evaluation method
     logical :: alt_soundspeed !< Alternate mixture sound speed
@@ -154,7 +151,7 @@ module m_global_parameters
     !< amplitude, frequency, and phase shift sinusoid in each direction
     #:for dir in {'x', 'y', 'z'}
         #:for param in {'k','w','p','g'}
-            real(kind(0d0)) :: ${param}$_${dir}$
+            real :: ${param}$_${dir}$
         #:endfor
     #:endfor
     real(kind(0d0)), dimension(3) :: accel_bf
@@ -166,7 +163,7 @@ module m_global_parameters
         !$acc declare create(num_dims, weno_polyn, weno_order, num_fluids, wenojs, mapped_weno, wenoz, teno)
     #:endif
 
-    !$acc declare create(mpp_lim, model_eqns, mixture_err, alt_soundspeed, avg_state, mp_weno, weno_eps, teno_CT, hypoelasticity, low_Mach)
+    !$acc declare create(mpp_lim, model_eqns, mixture_err, alt_soundspeed, avg_state, mp_weno, weno_eps, teno_CT, hypoelasticity)
 
     logical :: relax          !< activate phase change
     integer :: relax_model    !< Relaxation model
@@ -415,13 +412,13 @@ module m_global_parameters
 
     !$acc declare create(mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
 
-    !> @name Acoustic acoustic_source parameters
+    !> @name Acoustic monopole parameters
     !> @{
-    logical :: acoustic_source !< Acoustic source switch
-    type(acoustic_parameters), dimension(num_probes_max) :: acoustic !< Acoustic source parameters
-    integer :: num_source !< Number of acoustic sources
+    logical :: monopole !< Monopole switch
+    type(mono_parameters), dimension(num_probes_max) :: mono !< Monopole parameters
+    integer :: num_mono !< Number of monopoles
     !> @}
-    !$acc declare create(acoustic_source, acoustic, num_source)
+    !$acc declare create(monopole, mono, num_mono)
 
     !> @name Surface tension parameters
     !> @{
@@ -467,7 +464,6 @@ module m_global_parameters
     ! ======================================================================
     !< Global variables used in the Lagrangian solver
 
-    real(kind(0d0)) :: dt0              !< Initial time-step
     logical :: particleflag             !< lagrangian particle switch
     logical :: avgdensFlag              !< density correction switch
     logical :: particleoutFlag          !< output bubble radius evolution
@@ -516,6 +512,10 @@ module m_global_parameters
     TYPE (probedat), ALLOCATABLE, DIMENSION(:) :: prb
     INTEGER :: nsamples, totsamples     !< Number of samples in each proc and total number of samples
 
+    INTEGER :: time_tmp
+    INTEGER :: tot_step
+    REAL(KIND(0.d0)) :: time_real, time_prev, dtnext, dtdid, dt_next_inp, dt0
+
     ! ======================================================================
 
 contains
@@ -555,7 +555,6 @@ contains
         weno_avg = .false.
         weno_Re_flux = .false.
         riemann_solver = dflt_int
-        low_Mach = 0
         wave_speeds = dflt_int
         avg_state = dflt_int
         alt_soundspeed = .false.
@@ -649,9 +648,9 @@ contains
         Web = dflt_real
         poly_sigma = dflt_real
 
-        ! Acoustic source
-        acoustic_source = .false.
-        num_source = dflt_int
+        ! Monopole source
+        monopole = .false.
+        num_mono = 1
 
         ! Surface tension
         sigma = dflt_real
@@ -669,29 +668,22 @@ contains
         #:endfor
 
         do j = 1, num_probes_max
-            acoustic(j)%pulse = dflt_int
-            acoustic(j)%support = dflt_int
-            acoustic(j)%dipole = .false.
             do i = 1, 3
-                acoustic(j)%loc(i) = dflt_real
+                mono(j)%loc(i) = dflt_real
             end do
-            acoustic(j)%mag = dflt_real
-            acoustic(j)%length = dflt_real
-            acoustic(j)%height = dflt_real
-            acoustic(j)%wavelength = dflt_real
-            acoustic(j)%frequency = dflt_real
-            acoustic(j)%gauss_sigma_dist = dflt_real
-            acoustic(j)%gauss_sigma_time = dflt_real
-            acoustic(j)%npulse = dflt_real
-            acoustic(j)%dir = dflt_real
-            acoustic(j)%delay = dflt_real
-            acoustic(j)%foc_length = dflt_real
-            acoustic(j)%aperture = dflt_real
-            acoustic(j)%element_spacing_angle = dflt_real
-            acoustic(j)%element_polygon_ratio = dflt_real
-            acoustic(j)%rotate_angle = dflt_real
-            acoustic(j)%num_elements = dflt_int
-            acoustic(j)%element_on = dflt_int
+            mono(j)%mag = dflt_real
+            mono(j)%length = dflt_real
+            mono(j)%delay = dflt_real
+            mono(j)%dir = 1.d0
+            mono(j)%npulse = 1.d0
+            mono(j)%pulse = 1
+            mono(j)%support = 1
+            mono(j)%foc_length = dflt_real
+            mono(j)%aperture = dflt_real
+            ! The author suggested the support width is typically on the order of
+            ! the width of the characteristic cells. Here, we choose 2.5 cell width
+            ! as the default value.
+            mono(j)%support_width = 2.5d0
         end do
 
         fd_order = dflt_int
@@ -924,7 +916,7 @@ contains
                             pv = fluid_pp(1)%pv
                             pv = pv/pref
                             @:ALLOCATE_GLOBAL(pb0(nb))
-                            if ((f_is_default(Web))) then
+                            if (Web == dflt_real) then
                                 pb0 = pref
                                 pb0 = pb0/pref
                                 pref = 1d0
@@ -941,7 +933,7 @@ contains
                     sys_size = stress_idx%end
                 end if
 
-                if (.not. f_is_default(sigma)) then
+                if (sigma /= dflt_real) then
                     c_idx = sys_size + 1
                     sys_size = c_idx
                 end if
@@ -959,7 +951,7 @@ contains
                 internalEnergies_idx%end = adv_idx%end + num_fluids
                 sys_size = internalEnergies_idx%end
 
-                if (.not. f_is_default(sigma)) then
+                if (sigma /= dflt_real) then
                     c_idx = sys_size + 1
                     sys_size = c_idx
                 end if
@@ -1175,8 +1167,8 @@ contains
         !$acc update device(momxb, momxe, advxb, advxe, contxb, contxe, bubxb, bubxe, intxb, intxe, sys_size, buff_size, E_idx, alf_idx, n_idx, adv_n, adap_dt, pi_fac, strxb, strxe)
         !$acc update device(m, n, p)
 
-        !$acc update device(alt_soundspeed, acoustic_source, num_source)
-        !$acc update device(dt, sys_size, buff_size, pref, rhoref, gamma_idx, pi_inf_idx, E_idx, alf_idx, stress_idx, mpp_lim, bubbles, hypoelasticity, alt_soundspeed, avg_state, num_fluids, model_eqns, num_dims, mixture_err, grid_geometry, cyl_coord, mp_weno, weno_eps, teno_CT, low_Mach)
+        !$acc update device(alt_soundspeed, monopole, num_mono)
+        !$acc update device(dt, sys_size, buff_size, pref, rhoref, gamma_idx, pi_inf_idx, E_idx, alf_idx, stress_idx, mpp_lim, bubbles, hypoelasticity, alt_soundspeed, avg_state, num_fluids, model_eqns, num_dims, mixture_err, grid_geometry, cyl_coord, mp_weno, weno_eps, teno_CT)
 
         #:if not MFC_CASE_OPTIMIZATION
             !$acc update device(wenojs, mapped_weno, wenoz, teno)

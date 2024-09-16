@@ -957,13 +957,11 @@ contains
         else
             ! Initialize MPI data I/O
 
-            if(PRESENT(beta)) then !lagrangian solver
-                call s_initialize_mpi_data(q_cons_vf, beta=beta)
-            elseif (ib) then
-                call s_initialize_mpi_data(q_cons_vf, ib_markers)
-            else
-                call s_initialize_mpi_data(q_cons_vf)
-            end if
+            IF(PRESENT(beta)) THEN !lagrangian solver
+                CALL s_initialize_mpi_data(q_cons_vf, beta=beta)
+            ELSE
+                CALL s_initialize_mpi_data(q_cons_vf)
+            END IF
 
             ! Open the file to write all flow variables
             write (file_loc, '(I0,A)') t_step, '.dat'

@@ -39,14 +39,17 @@ def __filter(cases_) -> typing.List[TestCase]:
         raise MFCException("Testing: Your specified range [--from,--to] is incorrect. Please ensure both IDs exist and are in the correct order.")
 
     if len(ARG("only")) > 0:
-        for case in cases[:]:
+        for i, case in enumerate(cases[:]):
             case: TestCase
 
-            checkCase = case.trace.split(" -> ")
-            checkCase.append(case.get_uuid())
-            if not set(ARG("only")).issubset(set(checkCase)):
-                cases.remove(case)
+            doKeep = False
+            for o in ARG("only"):
+                if str(o) == case.get_uuid():
+                    doKeep = True
+                    break
 
+            if not doKeep:
+                cases.remove(case)
 
     for case in cases[:]:
         if case.ppn > 1 and not ARG("mpi"):

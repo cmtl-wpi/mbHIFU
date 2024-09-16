@@ -29,6 +29,7 @@ cd "${MFC_ROOTDIR}"
 cd - > /dev/null
 echo
 
+    
 % for target in targets:
     ${helpers.run_prologue(target)}
 
@@ -39,7 +40,7 @@ echo
             mpirun -np ${nodes*tasks_per_node}            \
                    "${target.get_install_binpath(case)}")
     % endif
-            
+
     ${helpers.run_epilogue(target)}
 
     echo

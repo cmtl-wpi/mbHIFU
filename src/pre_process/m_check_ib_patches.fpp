@@ -5,7 +5,7 @@ module m_check_ib_patches
     ! Dependencies =============================================================
     use m_derived_types          !< Definitions of the derived types
 
-    use m_global_parameters      !< Global parameters
+    use m_global_parameters      !< Global parameters for the code
 
     use m_mpi_proxy              !< Message passing interface (MPI) module proxy
 
@@ -17,8 +17,6 @@ module m_check_ib_patches
 #endif
 
     use m_compile_specific
-
-    use m_helper_basic           !< Functions to compare floating point numbers
 
     use m_helper
     ! ==========================================================================
@@ -84,9 +82,9 @@ contains
         ! Constraints on the geometric parameters of the circle patch
         if (n == 0 .or. p > 0 .or. patch_ib(patch_id)%radius <= 0d0 &
             .or. &
-            f_is_default(patch_ib(patch_id)%x_centroid) &
+            patch_ib(patch_id)%x_centroid == dflt_real &
             .or. &
-            f_is_default(patch_ib(patch_id)%y_centroid)) then
+            patch_ib(patch_id)%y_centroid == dflt_real) then
 
             call s_mpi_abort('Inconsistency(ies) detected in '// &
                              'geometric parameters of circle '// &
@@ -109,8 +107,8 @@ contains
         ! Constraints on the geometric parameters of the airfoil patch
         if (n == 0 .or. p > 0 .or. patch_ib(patch_id)%c <= 0d0 &
             .or. patch_ib(patch_id)%p <= 0d0 .or. patch_ib(patch_id)%t <= 0d0 &
-            .or. patch_ib(patch_id)%m <= 0d0 .or. f_is_default(patch_ib(patch_id)%x_centroid) &
-            .or. f_is_default(patch_ib(patch_id)%y_centroid)) then
+            .or. patch_ib(patch_id)%m <= 0d0 .or. patch_ib(patch_id)%x_centroid == dflt_real &
+            .or. patch_ib(patch_id)%y_centroid == dflt_real) then
 
             call s_mpi_abort('Inconsistency(ies) detected in '// &
                              'geometric parameters of airfoil '// &
@@ -133,9 +131,9 @@ contains
         ! Constraints on the geometric parameters of the 3d airfoil patch
         if (n == 0 .or. p == 0 .or. patch_ib(patch_id)%c <= 0d0 &
             .or. patch_ib(patch_id)%p <= 0d0 .or. patch_ib(patch_id)%t <= 0d0 &
-            .or. patch_ib(patch_id)%m <= 0d0 .or. f_is_default(patch_ib(patch_id)%x_centroid) &
-            .or. f_is_default(patch_ib(patch_id)%y_centroid) .or. f_is_default(patch_ib(patch_id)%z_centroid) &
-            .or. f_is_default(patch_ib(patch_id)%length_z)) then
+            .or. patch_ib(patch_id)%m <= 0d0 .or. patch_ib(patch_id)%x_centroid == dflt_real &
+            .or. patch_ib(patch_id)%y_centroid == dflt_real .or. patch_ib(patch_id)%z_centroid == dflt_real &
+            .or. patch_ib(patch_id)%length_z == dflt_real) then
 
             call s_mpi_abort('Inconsistency(ies) detected in '// &
                              'geometric parameters of airfoil '// &
@@ -158,9 +156,9 @@ contains
         ! Constraints on the geometric parameters of the rectangle patch
         if (n == 0 .or. p > 0 &
             .or. &
-            f_is_default(patch_ib(patch_id)%x_centroid) &
+            patch_ib(patch_id)%x_centroid == dflt_real &
             .or. &
-            f_is_default(patch_ib(patch_id)%y_centroid) &
+            patch_ib(patch_id)%y_centroid == dflt_real &
             .or. &
             patch_ib(patch_id)%length_x <= 0d0 &
             .or. &
@@ -187,11 +185,11 @@ contains
         ! Constraints on the geometric parameters of the sphere patch
         if (n == 0 .or. p == 0 &
             .or. &
-            f_is_default(patch_ib(patch_id)%x_centroid) &
+            patch_ib(patch_id)%x_centroid == dflt_real &
             .or. &
-            f_is_default(patch_ib(patch_id)%y_centroid) &
+            patch_ib(patch_id)%y_centroid == dflt_real &
             .or. &
-            f_is_default(patch_ib(patch_id)%z_centroid) &
+            patch_ib(patch_id)%z_centroid == dflt_real &
             .or. &
             patch_ib(patch_id)%radius <= 0d0) then
 
@@ -216,27 +214,27 @@ contains
         ! Constraints on the geometric parameters of the cylinder patch
         if (p == 0 &
             .or. &
-            f_is_default(patch_ib(patch_id)%x_centroid) &
+            patch_ib(patch_id)%x_centroid == dflt_real &
             .or. &
-            f_is_default(patch_ib(patch_id)%y_centroid) &
+            patch_ib(patch_id)%y_centroid == dflt_real &
             .or. &
-            f_is_default(patch_ib(patch_id)%z_centroid) &
+            patch_ib(patch_id)%z_centroid == dflt_real &
             .or. &
             (patch_ib(patch_id)%length_x <= 0d0 .and. &
              patch_ib(patch_id)%length_y <= 0d0 .and. &
              patch_ib(patch_id)%length_z <= 0d0) &
             .or. &
             (patch_ib(patch_id)%length_x > 0d0 .and. &
-             ((.not. f_is_default(patch_ib(patch_id)%length_y)) .or. &
-              (.not. f_is_default(patch_ib(patch_id)%length_z)))) &
+             (patch_ib(patch_id)%length_y /= dflt_real .or. &
+              patch_ib(patch_id)%length_z /= dflt_real)) &
             .or. &
             (patch_ib(patch_id)%length_y > 0d0 .and. &
-             ((.not. f_is_default(patch_ib(patch_id)%length_x)) .or. &
-              (.not. f_is_default(patch_ib(patch_id)%length_z)))) &
+             (patch_ib(patch_id)%length_x /= dflt_real .or. &
+              patch_ib(patch_id)%length_z /= dflt_real)) &
             .or. &
             (patch_ib(patch_id)%length_z > 0d0 .and. &
-             ((.not. f_is_default(patch_ib(patch_id)%length_x)) .or. &
-              (.not. f_is_default(patch_ib(patch_id)%length_y)))) &
+             (patch_ib(patch_id)%length_x /= dflt_real .or. &
+              patch_ib(patch_id)%length_y /= dflt_real)) &
             .or. &
             patch_ib(patch_id)%radius <= 0d0) then
 
@@ -258,19 +256,19 @@ contains
         call s_int_to_str(patch_id, iStr)
 
         ! Constraints on the geometric parameters of the inactive patch
-        if ((.not. f_is_default(patch_ib(patch_id)%x_centroid)) &
+        if (patch_ib(patch_id)%x_centroid /= dflt_real &
             .or. &
-            (.not. f_is_default(patch_ib(patch_id)%y_centroid)) &
+            patch_ib(patch_id)%y_centroid /= dflt_real &
             .or. &
-            (.not. f_is_default(patch_ib(patch_id)%z_centroid)) &
+            patch_ib(patch_id)%z_centroid /= dflt_real &
             .or. &
-            (.not. f_is_default(patch_ib(patch_id)%length_x)) &
+            patch_ib(patch_id)%length_x /= dflt_real &
             .or. &
-            (.not. f_is_default(patch_ib(patch_id)%length_y)) &
+            patch_ib(patch_id)%length_y /= dflt_real &
             .or. &
-            (.not. f_is_default(patch_ib(patch_id)%length_z)) &
+            patch_ib(patch_id)%length_z /= dflt_real &
             .or. &
-            (.not. f_is_default(patch_ib(patch_id)%radius))) then
+            patch_ib(patch_id)%radius /= dflt_real) then
 
             call s_mpi_abort('Inconsistency(ies) detected in '// &
                              'geometric parameters of inactive '// &

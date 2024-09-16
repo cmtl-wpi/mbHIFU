@@ -8,7 +8,6 @@ MODULE m_particles_output
 
   USE m_global_parameters
   USE m_particles_types
-  USE m_time_tmp
   USE m_mpi_particles
 
   IMPLICIT NONE
