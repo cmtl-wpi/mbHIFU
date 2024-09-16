@@ -37,6 +37,16 @@ contains
     ! q_cons_hifu(4)%sf(j,k,l): RHS value from heat transfer eqn (finite volume discretization).
     ! q_cons_hifu(5)%sf(j,k,l): Analytical Solution for the specific problem.
     ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    ! NEW VERSION
+    ! Important variables and where they are stored:
+    ! q_cons_hifu(1)%sf(j,k,l): Temperature distribution                (T_hifu_idx)
+    ! q_cons_hifu(2)%sf(j,k,l): RHS value from heat transfer eqn        (T_hifu_idx+1)
+    ! q_cons_hifu(3)%sf(j,k,l): Maximum pressure at each cell           (P_hifu_idx)
+    ! q_cons_hifu(4)%sf(j,k,l): Number of samples to avg intensities    (N_hifu_idx)
+    ! q_cons_hifu(5)%sf(j,k,l): Acoustic damping (Sum over time)        (qus_hifu_idx)
+    ! q_cons_hifu(6)%sf(j,k,l): Viscous damping  (Sum over time)        (qvis_hifu_idx)
+    ! q_cons_hifu(7)%sf(j,k,l): Any extra variable / Analit. Sol.       (dmb_hifu_idx)
+    ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     ! ==========================================================================
 
     ! ==========================================================================
@@ -65,6 +75,9 @@ contains
         integer :: j, k, h, i, imax !< Generic loop iterators
         real(kind(0d0)) :: T0, T1 !bc left, right, upper, bottom
         real(kind(0d0)) :: Cn, r0, L, bess_r0, bess_r, val1, val2
+        integer :: val_idx
+
+        val_idx = u_hifu_idx+1
 
         if (proc_rank==0) print*, 'Populating the analytical solution'
 
@@ -88,7 +101,7 @@ contains
                     Cn = (-2/(i*pi*bess_r0))*(cos(i*pi)-1)
                     val1 = val1 + Cn*bess_r*sin(i*pi*x_cc(j)/L)
                 end do
-                q_cons_hifu(5)%sf(j,k,h) = T0 + (T1-T0) * val1
+                q_cons_hifu(val_idx)%sf(j,k,h) = T0 + (T1-T0) * val1
 
                 !if (q_cons_hifu(5)%sf(j,k,h) /= 0) print*, 'Analytic solution not equal to zero'
                 !if (proc_rank==0 .and. j==10 .and. k==10) print*, 'Analytic temperature probe is ', q_cons_hifu(5)%sf(j,k,h)
@@ -107,7 +120,9 @@ contains
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_hifu
         integer :: j, k, l !< Generic loop iterators
         real(kind(0d0)) :: T_L, T_R, T_U, T_B !bc left, right, upper, bottom
+        integer :: val_idx
 
+        val_idx = u_hifu_idx+1
         T_L = hifu_Tref
         T_R = hifu_Tref
         T_U = 2*hifu_Tref
@@ -121,23 +136,23 @@ contains
                 if (abs(x_cc(j)) < 2*dx(j)/3) then                                     
                     !At the left-upper corner
                     if (abs(y_cc(k)-25.0) < 2*dy(k)/3) then
-                        q_cons_hifu(3)%sf(j,k,l) = (T_L+T_U)/2
+                        q_cons_hifu(val_idx)%sf(j,k,l) = (T_L+T_U)/2
                     else
-                        q_cons_hifu(3)%sf(j,k,l) = T_L
+                        q_cons_hifu(val_idx)%sf(j,k,l) = T_L
                     end if
 
                 ! Right boundary, T0 at x=50 mm
                 else if (abs(x_cc(j)-50.0) < 2*dx(j)/3) then                                      
                     !At the right-upper corner
                     if (abs(y_cc(k)-25.0) < 2*dy(k)/3) then
-                        q_cons_hifu(3)%sf(j,k,l) = (T_L+T_U)/2
+                        q_cons_hifu(val_idx)%sf(j,k,l) = (T_L+T_U)/2
                     else
-                        q_cons_hifu(3)%sf(j,k,l) = T_R
+                        q_cons_hifu(val_idx)%sf(j,k,l) = T_R
                     end if
 
                 ! Upper boundary, T0 at y=25 mm
                 else if (abs(y_cc(k)-25.0) < 2*dy(k)/3) then
-                    q_cons_hifu(3)%sf(j,k,l) = T_U
+                    q_cons_hifu(val_idx)%sf(j,k,l) = T_U
 
                 ! Bottom boundary, T0 at y=0 mm (symmetric boundary)
                 !else if (abs(y_cc(k)) < 2*dy(k)/3) then

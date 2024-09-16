@@ -126,6 +126,7 @@ module m_global_parameters
     type(mpi_io_var), public :: MPI_IO_DATA
     type(mpi_io_ib_var), public :: MPI_IO_IB_DATA
     type(mpi_io_airfoil_ib_var), public :: MPI_IO_airfoil_IB_DATA
+    type(mpi_io_var), public :: MPI_IO_HIFU_DATA
 
     character(LEN=name_len) :: mpiiofs
     integer :: mpi_info_int !<
@@ -218,6 +219,7 @@ module m_global_parameters
 
     !< Lagrangian solver
     integer :: solverapproach
+    integer :: sys_size_hifu
 
 contains
 

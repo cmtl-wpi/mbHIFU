@@ -96,7 +96,11 @@ SIMULATION = COMMON + [
     'pvap','cpgas','cpvapor','kgas','kvapor','MWgas','MWvap','diffcoefvap',
     'sigmabubble','viscref','RKeps','ratiodt','projectiontype','smoothtype',
     'epsilonb','coupledFlag','solverapproach','correctpresFlag','charwidth',
-    'valmaxvoid','dtmaxpart'
+    'valmaxvoid','dtmaxpart','hifu', 'hifu_intensityFlag','hifu_heatValidation', 
+    'hifu_heateqnFlag', 'hifu_Tref', 'hifu_t_step_stopSource', 'hifu_streaming',
+    'hifu_intPrms', 'hifu_atmPres', 'lipidCoatingModel', 'R0_lipidCoat',
+    'sigma0_lipidCoat', 'surfaceElast_lipidCoat', 'sigma_cleanInterface',
+    'surfaceDilatVisc_lipidCoat'
 ]
 
 for ib_id in range(1, 10+1):
@@ -129,7 +133,8 @@ for probe_id in range(1,10+1):
 
 for f_id in range(1,10+1):
     for attribute in ["gamma", "pi_inf", "mul0", "ss", "pv", "gamma_v", "M_v",
-                      "mu_v", "k_v", "G", "cv", "qv", "qvp" ]:
+                      "mu_v", "k_v", "G", "cv", "qv", "qvp", "rho_cp",
+                      "tdiff", "absCoef"]:
         SIMULATION.append(f"fluid_pp({f_id})%{attribute}")
 
     for re_id in [1, 2]:
@@ -157,7 +162,7 @@ POST_PROCESS = COMMON + [
     'mom_wrt', 'vel_wrt', 'flux_lim', 'flux_wrt', 'E_wrt', 'pres_wrt',
     'alpha_wrt', 'kappa_wrt', 'gamma_wrt', 'heat_ratio_wrt', 'pi_inf_wrt',
     'pres_inf_wrt', 'cons_vars_wrt', 'prim_vars_wrt', 'c_wrt', 'omega_wrt','qbmm',
-    'qm_wrt', 'particleflag', 'avgdensFlag', 'solverapproach'
+    'qm_wrt', 'particleflag', 'avgdensFlag', 'solverapproach', 'hifu'
 ]
 
 for cmp_id in range(1,3+1):

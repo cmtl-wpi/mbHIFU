@@ -420,7 +420,7 @@ contains
             if (schlieren_wrt) dbvars = dbvars + 1
 
             ! HIFU Temperature
-            if (hifu_wrt) dbvars = dbvars + 1
+            if (hifu) dbvars = dbvars + 1
 
         end if
 

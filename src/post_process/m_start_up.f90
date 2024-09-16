@@ -73,7 +73,7 @@ contains
             R0ref, nb, polytropic, thermal, Ca, Web, Re_inv, &
             polydisperse, poly_sigma, file_per_process, relax, &
             relax_model, particleflag, avgdensFlag, solverapproach, &
-            hifu_wrt
+            hifu
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -186,6 +186,8 @@ contains
         integer, intent(INOUT) :: t_step
         character(LEN=name_len), intent(INOUT) :: varname
         real(kind(0d0)), intent(INOUT) :: pres, c, H
+        character(LEN=path_len + 3*name_len) :: file_path
+        integer :: unitFile
 
         integer :: i, j, k, l
 
@@ -457,6 +459,7 @@ contains
         if (c_wrt) then
 
             IF(avgdensFlag) THEN !Lagrangian solver, void fraction
+                if (proc_rank==0) print*, 'Post_process: Lagrangian particles'
                 q_sf = 1.0d0 - q_particle(1)%sf(                &
                               -offset_x%beg : m + offset_x%end, &
                               -offset_y%beg : n + offset_y%end, &
@@ -611,11 +614,11 @@ contains
 
         ! HIFU
         ! Adding the Termperature to the previously formatted database file -------------------
-        if (hifu_wrt) then
+        if (hifu) then
             call s_perform_time_step(t_step, hifu_id=1)
 
             !------- Temperature --------------------
-            q_sf = q_cons_vf(3)%sf( &
+            q_sf = q_cons_hifu(T_hifu_idx)%sf( &
                    -offset_x%beg:m + offset_x%end, &
                    -offset_y%beg:n + offset_y%end, &
                    -offset_z%beg:p + offset_z%end)
@@ -624,37 +627,86 @@ contains
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
-            !------- heat source sum or error in Solver validation---------
-            q_sf = q_cons_vf(1)%sf( &
-                   -offset_x%beg:m + offset_x%end, &
-                   -offset_y%beg:n + offset_y%end, &
-                   -offset_z%beg:p + offset_z%end)
+            !------- Avg heat intensity from acoustic damping q_us ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(qus_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(N_hifu_idx)%sf(i,j,k))
+                    end do
+                end do
+            end do
 
-            if (q_cons_vf(1)%sf(0,0,0)==0) then
-                write (varname, '(A)') 'Error_heatEqn_Validation'
-            else
-                write (varname, '(A)') 'heatSourceTerm'
-            end if
+            if (proc_rank==0) print*, 'The current number of samples is', q_cons_hifu(N_hifu_idx)%sf(0,0,0)
+
+            write (varname, '(A)') 'avgIntAcoustic'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
-            !------- number of Samples --------------------
-            q_sf = q_cons_vf(2)%sf( &
-                   -offset_x%beg:m + offset_x%end, &
-                   -offset_y%beg:n + offset_y%end, &
-                   -offset_z%beg:p + offset_z%end)
+            !------- Avg heat intensity from viscous damping q_vis ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(qvis_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(N_hifu_idx)%sf(i,j,k))
+                    end do
+                end do
+            end do
 
-            write (varname, '(A)') 'numberSamples'
+            write (varname, '(A)') 'avgIntViscous'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
-            !-------  Analitical Temperature --------------------
-            q_sf = q_cons_vf(5)%sf( &
-                   -offset_x%beg:m + offset_x%end, &
-                   -offset_y%beg:n + offset_y%end, &
-                   -offset_z%beg:p + offset_z%end)
+            !------- Avg streming velocity x-dir---------------------------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(u_hifu_idx)%sf(i,j,k)
+                    end do
+                end do
+            end do
 
-            write (varname, '(A)') 'AnalitycalTemperature'
+            write (varname, '(A)') 'avgStreaming_x'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg streming velocity y-dir---------------------------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(v_hifu_idx)%sf(i,j,k)
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgStreaming_y'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Max Pressure --------------------
+            
+            !if (t_step == t_step_stop) then
+            !    unitFile = proc_rank+100
+            !    write (file_path, '(A,I0,A)') '/D/Pmax_distribution', proc_rank, '.dat'
+            !    file_path = trim(case_dir)//trim(file_path)
+            !    open (unitFile, FILE=trim(file_path), FORM='formatted', STATUS='unknown')
+            !end if
+
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(P_hifu_idx)%sf(i,j,k)
+                        !if (t_step == t_step_stop) then
+                        !    write (unitFile, '(6x,f24.8,f24.8,f24.8)') &
+                        !    x_cc(i), &
+                        !    y_cc(j), &
+                        !    q_sf(i,j,k)
+                        !end if
+                    end do
+                end do
+            end do
+
+            !if (t_step == t_step_stop) close(unitFile)
+
+            write (varname, '(A)') 'Pmax'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 

@@ -157,8 +157,15 @@ contains
                     end do
                 end do
             end do
-
-            call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
+            
+            
+            !call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
+            if (hifu_heateqnFlag) then
+                call s_write_probe_files(t_step, q_cons_ts(3)%vf, accel_mag)
+            else
+                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
+            end if
+            
         end if
 
     end subroutine s_compute_derived_variables ! ---------------------------

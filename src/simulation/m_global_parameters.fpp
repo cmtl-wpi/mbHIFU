@@ -151,6 +151,7 @@ module m_global_parameters
     type(mpi_io_var), public :: MPI_IO_DATA
     type(mpi_io_ib_var), public :: MPI_IO_IB_DATA
     type(mpi_io_airfoil_ib_var), public :: MPI_IO_airfoil_IB_DATA
+    type(mpi_io_var), public :: MPI_IO_HIFU_DATA
 
     !> @name MPI info for parallel IO with Lustre file systems
     !> @{
@@ -397,6 +398,13 @@ module m_global_parameters
     LOGICAL :: bubblesources
     INTEGER :: send_size        !< Number of variables to be sent in m_mpi_proxy
 
+    logical :: lipidCoatingModel                        !< Marmottant model lipid-coated bubble
+    real(kind(0d0)) :: R0_lipidCoat                     !< Initial radius R0
+    real(kind(0d0)) :: sigma0_lipidCoat                 !< Surface tension of the lipid-coated bubble when R=R0
+    real(kind(0d0)) :: surfaceElast_lipidCoat           !< Surface elasticity of the lipid monolayer
+    real(kind(0d0)) :: sigma_cleanInterface             !< Surface tension of the clean gas-liquid interface 
+    real(kind(0d0)) :: surfaceDilatVisc_lipidCoat       !< Surface dilatation viscosity of the lipid monolayer
+
     ! Particle Sampling data structures
     TYPE :: probedat
         INTEGER :: id
@@ -408,13 +416,20 @@ module m_global_parameters
 
     ! HIFU global parameters
 
-    real(kind(0d0)), target, allocatable, dimension(:,:) :: Pmax, Pmin
-    logical :: hifu_wrt
+    !real(kind(0d0)), target, allocatable, dimension(:,:) :: Pmax, Pmin
+    logical :: hifu
     logical :: hifu_intensityFlag, hifu_heateqnFlag, hifu_heatValidation
+    logical :: hifu_intPrms, hifu_streaming
     real(kind(0d0)) :: hifu_Tref  !Initial temperature in the domain to start heat eqn
     real(kind(0d0)) :: hifu_K     !Dimensionless thermal conductivity (refer to notes)
     real(kind(0d0)) :: hifu_alpha !Dimensionless thermal diffusivity (refer to notes)
     integer :: hifu_t_step_stopSource !Time step to stop the source heat
+    real(kind(0d0)) :: hifu_atmPres, hifu_absCoef !needed to find q_us from Prms
+    integer :: sys_size_hifu
+    integer :: T_hifu_idx, P_hifu_idx, N_hifu_idx 
+    integer :: qus_hifu_idx, qvis_hifu_idx !indexes
+    integer :: u_hifu_idx, v_hifu_idx
+    integer :: stepStreaming, stepsPerWave
 
     ! ======================================================================
 
@@ -504,6 +519,9 @@ contains
             fluid_pp(i)%mu_v = dflt_real
             fluid_pp(i)%k_v = dflt_real
             fluid_pp(i)%G = 0d0
+            fluid_pp(i)%rho_cp = 0d0
+            fluid_pp(i)%tdiff = 0d0
+            fluid_pp(i)%absCoef = 0d0
         end do
 
         ! Tait EOS
@@ -624,15 +642,29 @@ contains
         do_particles = .FALSE.
         bubblesources = .FALSE.
 
+        !Marmottant model
+        lipidCoatingModel = .FALSE.
+        R0_lipidCoat = dflt_real
+        sigma0_lipidCoat = dflt_real
+        surfaceElast_lipidCoat = dflt_real
+        sigma_cleanInterface = dflt_real
+        surfaceDilatVisc_lipidCoat = dflt_real
+
         !HIFU variables
-        hifu_wrt = .FALSE.
+        hifu = .FALSE.
         hifu_intensityFlag = .FALSE.
+        hifu_streaming = .FALSE.
         hifu_heateqnFlag = .FALSE.
         hifu_heatValidation = .FALSE.
         hifu_Tref = dflt_real
         hifu_K = dflt_real
         hifu_alpha = dflt_real
         hifu_t_step_stopSource = dflt_int
+        hifu_intPrms = .FALSE.
+        hifu_atmPres = dflt_real
+        hifu_absCoef = dflt_real
+        stepStreaming = dflt_int
+        stepsPerWave = dflt_int
 
     end subroutine s_assign_default_values_to_user_inputs ! ----------------
 
@@ -817,6 +849,20 @@ contains
                     sys_size = stress_idx%end
                 end if
 
+                if (hifu) then
+                    sys_size_hifu=max(sys_size,12)
+                    T_hifu_idx    = 1
+                    N_hifu_idx    = 3
+                    qus_hifu_idx  = 4
+                    qvis_hifu_idx = 5
+                    u_hifu_idx    = 6
+                    v_hifu_idx    = 9
+                    P_hifu_idx    = 12
+                    if (hifu_streaming) stepStreaming = 1
+                else
+                    sys_size_hifu = 0
+                end if
+
             else if (model_eqns == 3) then
                 cont_idx%beg = 1
                 cont_idx%end = num_fluids
@@ -945,6 +991,15 @@ contains
             END DO
         end if
 
+        if (hifu) then
+            allocate (MPI_IO_HIFU_DATA%view(1:sys_size_HIFU))
+            allocate (MPI_IO_HIFU_DATA%var(1:sys_size_HIFU))
+            do i = 1, sys_size_HIFU
+                allocate (MPI_IO_HIFU_DATA%var(i)%sf(0:m, 0:n, 0:p))
+                MPI_IO_HIFU_DATA%var(i)%sf => null()
+            end do
+        end if
+
         ! Configuring the WENO average flag that will be used to regulate
         ! whether any spatial derivatives are to computed in each cell by
         ! using the arithmetic mean of left and right, WENO-reconstructed,
@@ -992,12 +1047,9 @@ contains
         ! Particle-module correction for smearing function, Lagrangian solver
         ! If clusterflag is 0, required buff_size is CEILING(3*stddsv)
         ! If clusterflag is 3, required buff_size is CEILING(3*stddsv).
-        !buff_size = MAX(buff_size, INT(6d0))
-        !if (proc_rank==0) print*, 'buff_size before', buff_size
         IF (do_particles) THEN
             buff_size = MAX(buff_size, 6)
         END IF
-        !if (proc_rank==0) print*, 'buff_size after', buff_size
 
         startx = -buff_size
         starty = 0
@@ -1043,6 +1095,13 @@ contains
         @:ALLOCATE(y_cb(-1 - buff_size:n + buff_size))
         @:ALLOCATE(y_cc(-buff_size:n + buff_size))
         @:ALLOCATE(dy(-buff_size:n + buff_size))
+
+        !HIFU Allocate and Initialize Pmax matrix
+        !if (cyl_coord .and. p==0 .and. hifu_wrt) then
+            !ALLOCATE(Pmax(-buff_size:m + buff_size, -buff_size:n + buff_size))
+            !ALLOCATE(Pmin(-buff_size:m + buff_size, -buff_size:n + buff_size))
+            !ALLOCATE(intensity(-buff_size:m + buff_size, -buff_size:n + buff_size))
+        !end if
 
         if (p == 0) return; 
         @:ALLOCATE(z_cb(-1 - buff_size:p + buff_size))
@@ -1100,6 +1159,12 @@ contains
         if (n == 0) return; 
         @:DEALLOCATE(y_cb, y_cc, dy)
 
+        !if (cyl_coord .and. p==0 .and. hifu_wrt) then
+            !@:DEALLOCATE(Pmax, Pmin)
+            !@:DEALLOCATE(Pmin)
+            !DEALLOCATE(intensity)
+        !end if
+
         if (p == 0) return; 
         @:DEALLOCATE(z_cb, z_cc, dz)
 
@@ -1115,6 +1180,14 @@ contains
                     MPI_IO_DATA%var(i)%sf => null()
                 end do
             END IF
+
+            if (hifu) then
+                do i = 1, sys_size_HIFU
+                    MPI_IO_HIFU_DATA%var(i)%sf => null()
+                end do
+                deallocate (MPI_IO_HIFU_DATA%var)
+                deallocate (MPI_IO_HIFU_DATA%view)
+            end if
 
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)

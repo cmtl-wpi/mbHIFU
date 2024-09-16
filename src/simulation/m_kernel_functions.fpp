@@ -15,7 +15,7 @@ MODULE m_kernel_functions
   CONTAINS
 
 
-  SUBROUTINE smoothfunction ( updatedvar, center, cell, strength, kernelused, stddsv, strength2 )
+  SUBROUTINE smoothfunction ( updatedvar, center, cell, strength, kernelused, stddsv, strength2)
   
       !TYPE (field_position)           :: updatedvar
       TYPE(scalar_field)              :: updatedvar
@@ -73,8 +73,9 @@ MODULE m_kernel_functions
       
       ! For now conservative for restart when epsilonbaux < buff_size
       epsilonbaux(:) = 3
-    
-      CALL applygaussian ( updatedvar, center, cell, strength, epsilonbaux, stddsv, strength2 )
+
+      CALL applygaussian ( updatedvar, center, cell, strength, epsilonbaux, stddsv, strength2)
+
       !For symmetric BC
       IF((bc_x%beg.eq.-2 .or. bc_x%end.eq.-2 .or. bc_y%beg.eq.-2 .or. bc_y%end.eq.-2 .or. bc_z%beg.eq.-2 .or. bc_z%end.eq.-2).OR.(bc_x%beg.eq.proc_rank .or. bc_x%end.eq.proc_rank .or. bc_y%beg.eq.proc_rank .or. bc_y%end.eq.proc_rank .or. bc_z%beg.eq.proc_rank .or. bc_z%end.eq.proc_rank)) THEN
           CALL gaussian_symmetric_bc (updatedvar, center, cell, strength, epsilonbaux, stddsv, strength2)
@@ -545,6 +546,8 @@ MODULE m_kernel_functions
       ENDIF
       
        i=-epsilonbaux(1);j=-epsilonbaux(2)
+
+       !print*, -epsilonbaux
   
   3001 IF ((i.LE.epsilonbaux(1)).AND.(j.LE.epsilonbaux(2))) THEN
   
@@ -553,6 +556,8 @@ MODULE m_kernel_functions
            cellaux(1) = cell(1) + i
            cellaux(2) = cell(2) + j
            cellaux(3) = cell(3) + k
+
+           !if (cellaux(2).gt.507) print*, cellaux(2), cell(2), j, n, proc_rank 
   
               IF (cellaux(1).LT.-buff_size) THEN
                   celloutside = .TRUE.
@@ -566,10 +571,15 @@ MODULE m_kernel_functions
               ENDIF
   
               IF(cyl_coord.AND.DIM.NE.3) THEN
-                  IF (y_cc_lp(cellaux(2)).LT.0d0) THEN
+                if (.not.celloutside) then
+                  if (cellaux(2).gt.n+buff_size) then
                       celloutside = .TRUE.
                       j = j+1
-                  ENDIF
+                  else if (y_cc_lp(cellaux(2)).LT.0d0) then
+                      celloutside = .TRUE.
+                      j = j+1
+                  end if
+                end if
               END IF
   
               ! Temp
@@ -664,6 +674,8 @@ MODULE m_kernel_functions
                   updatedvar%sf(cellaux(1),cellaux(2),cellaux(3)) = updatedvar%sf(cellaux(1),cellaux(2),cellaux(3)) + func*strength*strength2
               ELSE
                   updatedvar%sf(cellaux(1),cellaux(2),cellaux(3)) = updatedvar%sf(cellaux(1),cellaux(2),cellaux(3)) + func*strength
+                  !if (present(hifu_id)) print*, 'In kernel function:',updatedvar%sf(cellaux(1),cellaux(2),cellaux(3)), &
+                  !        func, strength, x_cc(cellaux(1)), y_cc(cellaux(2))
               END IF
   
            IF (j.LT.epsilonbaux(2)) THEN

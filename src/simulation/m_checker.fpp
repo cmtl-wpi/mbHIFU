@@ -501,13 +501,12 @@ contains
 
         !  HIFU parameters =================================================
 
-        if (.not. hifu_wrt) then
-            if (hifu_intensityFlag .or. hifu_heateqnFlag) call s_mpi_abort('Unsupported HIFU flags. Exiting ...')
-        else if (hifu_wrt) then
+        if (hifu) then
             if (hifu_intensityFlag .and. hifu_heateqnFlag) call s_mpi_abort('Unsupported HIFU flags. Exiting ...')
-            if (.not. hifu_intensityFlag .and. .not. hifu_heateqnFlag) call s_mpi_abort('Unsupported HIFU flags. Exiting ...')
+            !if (.not. hifu_intensityFlag .and. .not. hifu_heateqnFlag) call s_mpi_abort('Unsupported HIFU flags. Exiting ...')
             if (p>0) call s_mpi_abort('HIFU works in axisymmetric mode only. Exiting ...')
             if (.not. cyl_coord) call s_mpi_abort('HIFU works in axisymmetric mode only. Exiting ...')
+            if (hifu_heateqnFlag .and. particleflag) call s_mpi_abort('particleflag must be False when solving bioheat HIFU')
         end if
 
         ! END: HIFU Parameters =============================================

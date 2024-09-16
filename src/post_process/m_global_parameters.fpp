@@ -126,6 +126,7 @@ module m_global_parameters
 #ifdef MFC_MPI
 
     type(mpi_io_var), public :: MPI_IO_DATA
+    type(mpi_io_var), public :: MPI_IO_HIFU_DATA
 
 #endif
 
@@ -251,7 +252,12 @@ module m_global_parameters
     LOGICAL :: second_dir
 
     ! HIFU
-    logical :: hifu_wrt
+    logical :: hifu
+    integer :: sys_size_hifu
+    integer :: T_hifu_idx, P_hifu_idx, N_hifu_idx
+    integer :: qus_hifu_idx, qvis_hifu_idx, dmb_hifu_idx !indexes
+    integer :: u_hifu_idx, v_hifu_idx
+!    integer :: umin_hifu_idx, vmin_hifu_idx
 
 
 contains
@@ -359,7 +365,7 @@ contains
         second_dir = .FALSE.
 
         !HIFU
-        hifu_wrt = .FALSE.
+        hifu = .FALSE.
 
     end subroutine s_assign_default_values_to_user_inputs ! ----------------
 
@@ -581,6 +587,18 @@ contains
         intxb = internalEnergies_idx%beg
         intxe = internalEnergies_idx%end
         ! ==================================================================
+        if (hifu) then !hifu_indexes
+            sys_size_hifu=max(sys_size,12)
+            T_hifu_idx    = 1
+            N_hifu_idx    = 3
+            qus_hifu_idx  = 4
+            qvis_hifu_idx = 5
+            u_hifu_idx    = 6
+            v_hifu_idx    = 9
+            P_hifu_idx    = 12
+        else
+            sys_size_hifu = 0
+        end if
 
 #ifdef MFC_MPI
         IF(avgdensflag .NEQV. .TRUE.) THEN
@@ -597,6 +615,15 @@ contains
             DO i = 1, sys_size+1
                 ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
                 MPI_IO_DATA%var(i)%sf => NULL()
+            END DO
+        END IF
+
+        IF (hifu) THEN
+            ALLOCATE(MPI_IO_HIFU_DATA%view(1:sys_size_hifu))
+            ALLOCATE(MPI_IO_HIFU_DATA%var(1:sys_size_hifu))
+            DO i = 1, sys_size_hifu
+                ALLOCATE(MPI_IO_HIFU_DATA%var(i)%sf(0:m,0:n,0:p))
+                MPI_IO_HIFU_DATA%var(i)%sf => NULL()
             END DO
         END IF
 
@@ -749,11 +776,21 @@ contains
             do i = 1, sys_size
                 MPI_IO_DATA%var(i)%sf => null()
             end do
-			
-			IF(avgdensflag) MPI_IO_DATA%var(sys_size+1)%sf => NULL()
+
+            IF(avgdensflag) MPI_IO_DATA%var(sys_size+1)%sf => NULL()
 
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)
+
+            if (hifu) then
+                do i = 1, sys_size_hifu
+                    MPI_IO_HIFU_DATA%var(i)%sf => null()
+                end do
+                deallocate (MPI_IO_HIFU_DATA%var)
+                deallocate (MPI_IO_HIFU_DATA%view)
+            end if
+
+
         end if
 
 #endif

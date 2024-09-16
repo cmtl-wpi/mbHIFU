@@ -220,10 +220,10 @@ contains
                                     !mono_mom_src(1,j,k,l) = s2
                                     !mono_mom_src(2,j,k,l) = s2
                                     if (support(q) == 5) then
-                                        mono_mom_src(1, j, k, l) = mono_mom_src(1, j, k, l) - s2*cos(abs(angle))
-                                        mono_mom_src(2, j, k, l) = mono_mom_src(2, j, k, l) - s2*sin(abs(angle))
-                                        !mono_mom_src(1, j, k, l) = mono_mom_src(1, j, k, l) + s2*cos(angle)
-                                        !mono_mom_src(2, j, k, l) = mono_mom_src(2, j, k, l) + s2*sin(angle)
+                                        !mono_mom_src(1, j, k, l) = mono_mom_src(1, j, k, l) - s2*cos(abs(angle))
+                                        !mono_mom_src(2, j, k, l) = mono_mom_src(2, j, k, l) - s2*sin(abs(angle))
+                                        mono_mom_src(1, j, k, l) = mono_mom_src(1, j, k, l) + s2*cos(angle)
+                                        mono_mom_src(2, j, k, l) = mono_mom_src(2, j, k, l) + s2*sin(angle)
                                     else
                                         mono_mom_src(1, j, k, l) = mono_mom_src(1, j, k, l) + s2*cos(dir(q))
                                         mono_mom_src(2, j, k, l) = mono_mom_src(2, j, k, l) + s2*sin(dir(q))

@@ -542,23 +542,24 @@ MODULE m_particles_types
       REAL(KIND(0.D0)), DIMENSION(3), OPTIONAL  :: scoord
       INTEGER, DIMENSION(3)            :: cell
       INTEGER :: i, j, k
-    
+   !print*, 'IN locate cell', cell, pos, x_cb(cell(1)-1), buff_size
       DO WHILE (pos(1).LT.x_cb(cell(1)-1))
         cell(1) = cell(1)-1
       ENDDO
-  
+  !print*, 'A1',cell, pos, x_cb(cell(1))
       DO WHILE (pos(1).GT.x_cb(cell(1))) 
         cell(1) = cell(1)+1
       ENDDO
-  
+  !print*, 'A2', cell, pos,  x_cb(cell(1)), cell(2)-1
       DO WHILE (pos(2).LT.y_cb(cell(2)-1)) 
         cell(2) = cell(2)-1
       ENDDO
-  
+  !print*, 'A3', cell, pos,  y_cb(cell(2)), cell(2), proc_rank
       DO WHILE (pos(2).GT.y_cb(cell(2))) 
         cell(2) = cell(2)+1
+        !print*, (cell(2))
       ENDDO
-   
+  !print*, 'A4'
       IF (p.gt.0) THEN
           DO WHILE (pos(3).LT.z_cb(cell(3)-1)) 
             cell(3) = cell(3)-1
@@ -567,14 +568,16 @@ MODULE m_particles_types
             cell(3) = cell(3)+1
           ENDDO
       ENDIF
-    
+   !print*, 'A5'
       !coordinates in computational space
       IF (PRESENT(scoord)) THEN
+          !print*, 'IN locate cell', pos, cell, scoord
           scoord(1) = cell(1) + (pos(1) - x_cb(cell(1)-1))/dx(cell(1))
           scoord(2) = cell(2) + (pos(2) - y_cb(cell(2)-1))/dy(cell(2))
           scoord(3) = 0.0d0
           IF (p.GT.0) scoord(3) = cell(3) + (pos(3) - z_cb(cell(3)-1))/dz(cell(3))
           cell(:) = get_cell_from_s (scoord)
+          !if (n==499) print*, 'IN locate cell', cell(2)
       ENDIF     
   
     END SUBROUTINE locate_cell
@@ -704,7 +707,8 @@ MODULE m_particles_types
     
       LOGICAL                        :: particle_in_domain
       REAL(KIND(0.D0)), DIMENSION(3) :: pos_part
-    
+        
+     !print*, 'X1', pos_part 
       ! 2D
       IF(p.eq.0 .AND. cyl_coord.NEQV..TRUE.) THEN
         ! For the old 2D kernel (see Fuster and Colonius, JFM, 2011))
@@ -724,6 +728,8 @@ MODULE m_particles_types
         ! cyl_coord
         particle_in_domain = ((pos_part(1).LT.x_cb(m+buff_size)).AND.(pos_part(1).GE.x_cb(-buff_size-1)).AND. &
                               (ABS(pos_part(2)).LT.y_cb(n+buff_size)).AND.(ABS(pos_part(2)).GE.MAX(y_cb(-buff_size-1),0d0)))
+
+!        print*, 'X1', pos_part
       ENDIF   
    
       ! 3D
@@ -732,6 +738,8 @@ MODULE m_particles_types
                              (pos_part(2).LT.y_cb(n+buff_size)).AND.(pos_part(2).GE.y_cb(-buff_size-1)).AND. &
                              (pos_part(3).LT.z_cb(p+buff_size)).AND.(pos_part(3).GE.z_cb(-buff_size-1)))
       ENDIF
+
+      !print*, 'X2', pos_part
     
       ! For symmetric boundary condition
       IF(bc_x%beg.eq.-2) THEN
@@ -746,6 +754,8 @@ MODULE m_particles_types
       IF(bc_y%end.eq.-2.AND.(.NOT.cyl_coord)) THEN
         particle_in_domain = (particle_in_domain.AND.(pos_part(2).LT.y_cb(n)))
       END IF
+
+      !print*, 'X3', pos_part
     
       IF (p > 0) THEN
          IF(bc_z%beg.eq.-2) THEN
@@ -756,6 +766,7 @@ MODULE m_particles_types
          END IF
       END IF
     
+      !print*, 'X4', pos_part
     END FUNCTION particle_in_domain  
     
     

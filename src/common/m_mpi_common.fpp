@@ -60,17 +60,24 @@ contains
 
     end subroutine s_mpi_initialize ! --------------------------------------
 
-    subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, beta) ! --------------------------
+    subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, beta, q_cons_hifu, hifu_id) ! --------------------------
 
         type(scalar_field), &
             dimension(sys_size), &
             intent(IN) :: q_cons_vf
+
         type(scalar_field), &
             intent(IN), optional :: beta
 
         type(integer_field), &
             optional, &
             intent(IN) :: ib_markers
+        
+        type(scalar_field), &
+            dimension(sys_size_hifu), &
+            intent(IN), optional :: q_cons_hifu
+
+        integer, optional :: hifu_id
 
         integer, dimension(num_dims) :: sizes_glb, sizes_loc
         integer, dimension(1) :: airfoil_glb, airfoil_loc, airfoil_start
@@ -83,16 +90,26 @@ contains
 
         if (present(beta)) then
                 alt_sys = sys_size + 1
+        else if (present(hifu_id)) then
+                alt_sys = sys_size_hifu
         else
                 alt_sys = sys_size
         end if
 
-        do i = 1, sys_size
-            MPI_IO_DATA%var(i)%sf => q_cons_vf(i)%sf(0:m, 0:n, 0:p)
-        end do
+        if (present(hifu_id)) then
+            do i = 1, sys_size_hifu
+                !if (proc_rank==0) print*, size(MPI_IO_HIFU_DATA%var), size(q_cons_hifu)
+                MPI_IO_HIFU_DATA%var(i)%sf => q_cons_hifu(i)%sf(0:m, 0:n, 0:p)
+            end do
+        else
 
-        if (present(beta)) then
+            do i = 1, sys_size
+                MPI_IO_DATA%var(i)%sf => q_cons_vf(i)%sf(0:m, 0:n, 0:p)
+            end do
+
+            if (present(beta)) then
                 MPI_IO_DATA%var(alt_sys)%sf => beta%sf(0:m,0:n,0:p)
+            end if
         end if
 
         !Additional variables pb and mv for non-polytropic qbmm
@@ -127,11 +144,19 @@ contains
         end if
 
         ! Define the view for each variable
-        do i = 1, alt_sys 
-            call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
+        if (present(hifu_id)) then
+            do i = 1, sys_size_hifu
+                call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
+                                          MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, MPI_IO_HIFU_DATA%view(i), ierr)
+                call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
+            end do
+        else
+            do i = 1, alt_sys 
+                call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
                                           MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(i), ierr)
-            call MPI_TYPE_COMMIT(MPI_IO_DATA%view(i), ierr)
-        end do
+                call MPI_TYPE_COMMIT(MPI_IO_DATA%view(i), ierr)
+            end do
+        end if
 
 #ifndef MFC_POST_PROCESS
         if (qbmm .and. .not. polytropic) then

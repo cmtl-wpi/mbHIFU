@@ -67,7 +67,7 @@ module m_time_steppers
 
     real(kind(0d0)), allocatable, dimension(:, :, :, :, :) :: rhs_mv
 
-    integer, private :: num_ts !<
+    integer, private :: num_ts, num_ts_hifu !<
     !! Number of time stages in the time-stepping scheme
 
     !$acc declare create(q_cons_ts,q_prim_vf,rhs_vf,q_prim_ts, rhs_mv, rhs_pb)
@@ -90,8 +90,8 @@ contains
         ! Setting number of time-stages for selected time-stepping scheme
         if (coupledflag) then !Euler-Lagrangian solver
             num_ts = 2
-        else if (hifu_wrt) then !HIFU space q_cons_ts(3)
-            num_ts = 3
+        !else if (hifu_intensityFlag .or. hifu_heateqnFlag) then !HIFU space q_cons_ts(3)
+        !    num_ts = 3
         else
             if (time_stepper == 1) then
                 num_ts = 1
@@ -99,6 +99,8 @@ contains
                 num_ts = 2
             end if
         end if
+
+        if (hifu_intensityFlag .or. hifu_heateqnFlag) num_ts_hifu = 3
 
         ! Setting the indical bounds in the x-, y- and z-directions
         ix_t%beg = -buff_size; ix_t%end = m + buff_size
@@ -117,8 +119,8 @@ contains
         end if
 
         ! Allocating the cell-average conservative variables
-        @:ALLOCATE(q_cons_ts(1:num_ts))
-
+        @:ALLOCATE(q_cons_ts(1:max(num_ts,num_ts_hifu)))        
+        
         do i = 1, num_ts
             @:ALLOCATE(q_cons_ts(i)%vf(1:sys_size))
         end do
@@ -129,6 +131,18 @@ contains
                     iy_t%beg:iy_t%end, &
                     iz_t%beg:iz_t%end))
             end do
+        end do
+
+        if (hifu_intensityFlag .or. hifu_heateqnFlag) then
+            @:ALLOCATE(q_cons_ts(num_ts_hifu)%vf(1:max(sys_size,sys_size_hifu)))
+            do j = 1, max(sys_size,sys_size_hifu)
+                @:ALLOCATE(q_cons_ts(num_ts_hifu)%vf(j)%sf(ix_t%beg:ix_t%end, &
+                    iy_t%beg:iy_t%end, &
+                    iz_t%beg:iz_t%end))
+            end do
+        end if
+        do i=1, num_ts_hifu
+           if (proc_rank==0) print*,'DiegoV: q',i, 'size: ', size(q_cons_ts(i)%vf), sys_size
         end do
 
         ! Allocating the cell-average primitive ts variables
@@ -267,6 +281,7 @@ contains
         integer :: unitFile
         character(LEN=path_len + 3*name_len) :: file_path !<
         logical :: axialCondition, radialCondition_extra, radialCondition, condition
+        real(kind(0d0)) :: xloc_focal
 
         ! Stage 1 of 1 =====================================================
 
@@ -274,7 +289,7 @@ contains
 
         call nvtxStartRange("Time_Step")
 
-        call s_rhs_heatEqn(q_cons_ts(3)%vf, t_step)
+        call s_rhs_heatEqn(q_cons_ts(3)%vf, q_cons_ts(1)%vf, t_step)
 
         if (t_step == t_step_stop-1) then
             !Intended only for validation of heatEqn solver with 2D diffusion rod problem
@@ -283,40 +298,18 @@ contains
                 call s_heatEqn_analyticalSol(q_cons_ts(3)%vf)
             end if
             close(unitFile)
-            !return
         end if
 
         if (t_step == t_step_stop) return
 
-        !Open file to save measured focal temperature
-        if (t_step==t_step_start) then
-                unitFile = 100+proc_rank
-                write (file_path, '(A,I0,A)') '/D/focalTemp_', proc_rank, '.dat'
-                file_path = trim(case_dir)//trim(file_path)
-                open (unitFile, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
-        end if
-
         l = 0
         do  j = 0, m
             do k = 0, n
-                q_cons_ts(3)%vf(3)%sf(j, k, l) = q_cons_ts(3)%vf(3)%sf(j, k, l) + q_cons_ts(3)%vf(4)%sf(j, k, l)*dt
+  
+                !Forward euler time scheme, explicit
+                q_cons_ts(3)%vf(T_hifu_idx)%sf(j, k, l) = q_cons_ts(3)%vf(T_hifu_idx)%sf(j, k, l) + q_cons_ts(3)%vf(T_hifu_idx+1)%sf(j, k, l)*dt
 
-                !Write focal temperature
-                axialCondition= (dy(k)>y_cc(k) .and. y_cc(k)>0.0)
-                radialCondition= (x_cb(j-1)<=mono(1)%foc_length .and. mono(1)%foc_length<=x_cb(j))
-                condition= (axialCondition .and. radialCondition)
-                if (condition) then
-                    write (unitFile, '(6x,I24,f24.8,f24.8,f24.8,I24,I24,I24)') &
-                                t_step, &
-                                x_cc(j), &
-                                y_cc(k), &
-                                q_cons_ts(3)%vf(3)%sf(j,k,l), &
-                                j, &
-                                k, &
-                                l
-                end if
-
-                if (ieee_is_nan(q_cons_ts(3)%vf(3)%sf(j, k, l))) then
+                if (ieee_is_nan(q_cons_ts(3)%vf(T_hifu_idx)%sf(j, k, l))) then
                     call s_mpi_abort('Temperature value is NaN!!')
                 end if
 
@@ -333,8 +326,8 @@ contains
                         if (proc_rank==0) print*, 'Starting analytical solution'
                         call s_heatEqn_analyticalSol(q_cons_ts(3)%vf)
                 end if
-                unitFile=100+proc_rank
-                close(unitFile)
+                !unitFile=100+proc_rank
+                !close(unitFile)
                 !return
         end if
 
@@ -657,10 +650,17 @@ contains
         end if
 
         if (hifu_intensityFlag) then !HIFU get heat generated
+            !> update Pmax
+            call s_update_Pmax(q_cons_ts(1)%vf, q_cons_ts(3)%vf, t_step)
             !> Heat deposition
-            call s_update_intensity_HIFU(q_cons_ts(1)%vf, q_prim_vf, t_step, q_cons_ts(3)%vf)
-            !> update Pmax and Pmin
-            call s_update_Pmax(q_cons_ts(1)%vf, t_step)
+            if (hifu_intPrms) then
+                if (t_step-t_step_start>0.8*(t_step_stop-t_step_start)) then
+                    call s_update_intensity_HIFU(q_cons_ts(1)%vf, q_prim_vf, t_step, q_cons_ts(3)%vf)
+                    if (proc_rank==0) print*, 'Updating q_us from Prms'
+                end if
+            else
+                call s_update_intensity_HIFU(q_cons_ts(1)%vf, q_prim_vf, t_step, q_cons_ts(3)%vf)
+            end if
         end if
 
         if (t_step == t_step_stop) return
@@ -939,6 +939,7 @@ contains
         INTEGER                       :: i,j,k
         REAL(KIND(0.D0)), INTENT(IN)  :: realtime
         INTEGER, INTENT(IN)           :: t_step
+        real(kind(0d0)) :: dmSum, tmp
 
         qtime = realtime
         dttarget = dt
@@ -980,6 +981,20 @@ contains
         IF (.NOT.stillparticlesflag.AND.(num_procs.GT.1)) CALL transfer_particles
         hnext = min(hnext,dt0)
 
+        if (hifu_intensityFlag) then !HIFU get heat generated
+            !> update Pmax
+            call s_update_Pmax(q_cons_ts(1)%vf, q_cons_ts(3)%vf, t_step)
+            !> Heat deposition
+            if (hifu_intPrms) then
+                if (t_step-t_step_start>0.4*(t_step_stop-t_step_start)) then
+                    call s_update_intensity_HIFU(q_cons_ts(1)%vf, q_prim_vf, t_step, q_cons_ts(3)%vf)
+                    if (proc_rank==0) print*, 'Updating q_us from Prms'
+                end if
+            else
+                call s_update_intensity_HIFU(q_cons_ts(1)%vf, q_prim_vf, t_step, q_cons_ts(3)%vf)
+            end if
+        end if
+
         RETURN
 
     END SUBROUTINE rkqs ! ------------------------------------------------------------------------
@@ -1019,7 +1034,7 @@ contains
             !> Second step
             if (proc_rank==0) print*, 'rkqs 2nd step at', qtime+A2*RKh
             call s_mpi_barrier()
-            CALL RKparticledyn(qtime+A2*RKh,2,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(2)%vf,largestep)
+            CALL RKparticledyn(qtime+A2*RKh,2,q_cons_ts(2)%vf,t_step,q_prim_vf,rhs_vp_adapt(2)%vf,largestep)          
             CALL update(RKh,2,RKcoef2,largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
 
             !> Third step
@@ -1095,14 +1110,25 @@ contains
         integer :: i, j !< Generic loop iterators
 
         ! Deallocating the cell-average conservative variables
-        do i = 1, num_ts
+        do i = 1, min(num_ts,num_ts_hifu)
 
             do j = 1, sys_size
                 @:DEALLOCATE(q_cons_ts(i)%vf(j)%sf)
             end do
 
-            @:DEALLOCATE(q_cons_ts(i)%vf)
+            !@:DEALLOCATE(q_cons_ts(i)%vf)
 
+        end do
+
+        if (hifu_intensityFlag .or. hifu_heateqnFlag) then
+            do j = 1, max(sys_size,sys_size_hifu)
+                @:DEALLOCATE(q_cons_ts(num_ts_hifu)%vf(j)%sf)
+            end do
+            !@:DEALLOCATE(q_cons_ts(num_ts_hifu)%vf)
+        end if
+
+        do i = 1, max(num_ts,num_ts_hifu)
+            @:DEALLOCATE(q_cons_ts(i)%vf)
         end do
 
         @:DEALLOCATE(q_cons_ts)

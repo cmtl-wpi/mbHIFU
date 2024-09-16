@@ -47,6 +47,7 @@ module m_data_input
     end interface ! ========================================================
 
     type(scalar_field), allocatable, dimension(:), public :: q_cons_vf !<
+    type(scalar_field), allocatable, dimension(:), public :: q_cons_hifu !<
     !! Conservative variables
 
     type(scalar_field), allocatable, dimension(:), public :: q_prim_vf !<
@@ -272,6 +273,8 @@ contains
 
         IF(avgdensflag) THEN
             alt_sys = sys_size +1
+        ELSE IF (present(hifu_id)) then
+            alt_sys = sys_size_hifu
         ELSE
             alt_sys = sys_size
         END IF
@@ -409,6 +412,8 @@ contains
                 ! Initialize MPI data I/O
                 IF(avgdensflag) THEN !Lagrangian solver
                     CALL s_initialize_mpi_data(q_cons_vf, beta=q_particle(1))
+                ELSE IF (present(hifu_id)) then
+                    CALL s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
                 ELSE
                     CALL s_initialize_mpi_data(q_cons_vf)
                 END IF
@@ -436,6 +441,18 @@ contains
                         call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(i), &
                                                'native', mpi_info_int, ierr)
                         call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
+                                               MPI_DOUBLE_PRECISION, status, ierr)
+                    end do
+                else if (present(hifu_id)) then
+                    do i = 1, sys_size_hifu
+                        var_MOK = int(i, MPI_OFFSET_KIND)
+
+                        ! Initial displacement to skip at beginning of file
+                        disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
+
+                        call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_HIFU_DATA%view(i), &
+                                               'native', mpi_info_int, ierr)
+                        call MPI_FILE_READ_ALL(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
                                                MPI_DOUBLE_PRECISION, status, ierr)
                     end do
                 else
@@ -1126,6 +1143,7 @@ contains
         allocate (q_prim_vf(1:sys_size))
 
         IF(avgdensflag) ALLOCATE(q_particle(1)) !Lagrangian solver
+        IF(hifu) ALLOCATE(q_cons_hifu(1:sys_size_hifu))
 
         ! Allocating the parts of the conservative and primitive variables
         ! that do require the direct knowledge of the dimensionality of the
@@ -1164,10 +1182,26 @@ contains
                                               0:0))
                 end do
 
+                if (hifu) then
+                    do i = 1, sys_size_hifu
+                        allocate (q_cons_hifu(i)%sf(-buff_size:m + buff_size, &
+                                                  -buff_size:n + buff_size, &
+                                                  0:0))
+                    end do
+                end if
+
                 IF(avgdensflag) THEN !Lagrangian solver
                     ALLOCATE(q_particle(1)%sf( -buff_size:m+buff_size, &
                                            -buff_size:n+buff_size, 0:0 ))
                 END IF
+
+                !if (hifu) then
+                !    do i = 1, sys_size
+                !        allocate (q_cons_hifu(i)%sf(-buff_size:m + buff_size, &
+                !                              -buff_size:n + buff_size, &
+                !                              0:0))
+                !    end do
+                !end if
 
             end if
 
@@ -1215,6 +1249,13 @@ contains
             DEALLOCATE(q_particle(1)%sf)
             DEALLOCATE(q_particle)
         END IF
+
+        if (hifu) then
+            do i = 1, sys_size_hifu
+                deallocate (q_cons_hifu(i)%sf)
+            end do
+            deallocate (q_cons_hifu)
+        end if
 
         s_read_data_files => null()
 

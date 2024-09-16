@@ -2,32 +2,12 @@
 
 <%namespace name="helpers" file="helpers.mako"/>
 
-% if engine == 'batch':
-#SBATCH --nodes=${nodes}
-#SBATCH --ntasks-per-node=${tasks_per_node}
-#SBATCH --cpus-per-task=1
-#SBATCH --job-name="${name}"
-#SBATCH --time=24:00:00
-% if partition:
-#SBATCH --partition=${partition}
-% endif
-% if account:
-#SBATCH --account="${account}"
-% endif
-% if gpu:
-#SBATCH --gpu-bind=verbose,closest
-#SBATCH --gres=gpu:v100-16:${tasks_per_node}
-% endif
-#SBATCH --output="${name}.out"
-#SBATCH --error="${name}.err"
-#SBATCH --export=ALL
-% if email:
-#SBATCH --mail-user=${email}
-#SBATCH --mail-type="BEGIN, END, FAIL"
-% endif
-% endif
-
 ${helpers.template_prologue()}
+
+% if engine == 'batch':
+    error "The$MAGENTA default$COLOR_RESET template does not support batch jobs. Please use a different template via the $MAGENTA--computer$COLOR_RESET option.\n"
+    exit 1
+% endif
 
 warn "This is the$MAGENTA default$COLOR_RESET template."
 warn "It is not intended to support all systems and execution engines."
@@ -65,7 +45,7 @@ warn "Consider using a different template via the $MAGENTA--computer$COLOR_RESET
                       "${target.get_install_binpath()}")
         elif [ "$binary" == "srun" ]; then
             (set -x; ${' '.join([f"'{x}'" for x in profiler ])}  \
-                srun --mpi=pmi2        \
+                srun --ntasks-per-node ${tasks_per_node}         \
                      ${' '.join([f"'{x}'" for x in ARG('--') ])} \
                      "${target.get_install_binpath()}")
         elif [ "$binary" == "mpirun" ]; then

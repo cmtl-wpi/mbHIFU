@@ -154,8 +154,9 @@ contains
             & 'parallel_io', 'hypoelasticity', 'bubbles', 'polytropic',        &
             & 'polydisperse', 'qbmm', 'monopole', 'probe_wrt', 'integral_wrt', &
             & 'prim_vars_wrt', 'weno_avg', 'file_per_process', 'relax', 'ib',  &
-            & 'num_ibs', 'hifu_wrt', 'hifu_intensityFlag', 'hifu_heateqnFlag', &
-            & 'hifu_heatValidation']
+            & 'num_ibs', 'hifu', 'hifu_intensityFlag', 'hifu_heateqnFlag',     &
+            & 'hifu_heatValidation', 'hifu_intPrms', 'hifu_streaming',         &
+            & 'lipidCoatingModel']
             call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
@@ -164,7 +165,9 @@ contains
             & 'bc_x%ve2','bc_x%ve2','bc_y%vb1','bc_y%vb2','bc_y%vb3','bc_y%ve1', &
             & 'bc_y%ve2','bc_y%ve3','bc_z%vb1','bc_z%vb2','bc_z%vb3','bc_z%ve1', &
             & 'bc_z%ve2','bc_z%ve3', 'palpha_eps', 'ptgalpha_eps', 'hifu_Tref',  &
-            & 'hifu_K', 'hifu_alpha' ]
+            & 'hifu_K', 'hifu_alpha', 'hifu_atmPres', 'hifu_absCoef', &
+            & 'sigma0_lipidCoat', 'surfaceDilatVisc_lipidCoat', 'R0_lipidCoat', & 
+            & 'surfaceElast_lipidCoat']
             call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
@@ -175,7 +178,7 @@ contains
 
         do i = 1, num_fluids_max
             #:for VAR in [ 'gamma','pi_inf','mul0','ss','pv','gamma_v','M_v',  &
-                & 'mu_v','k_v','G', 'cv', 'qv', 'qvp' ]
+                & 'mu_v','k_v','G', 'cv', 'qv', 'qvp','rho_cp', 'tdiff', 'absCoef' ]
                 call MPI_BCAST(fluid_pp(i)%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
             call MPI_BCAST(fluid_pp(i)%Re(1), 2, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)

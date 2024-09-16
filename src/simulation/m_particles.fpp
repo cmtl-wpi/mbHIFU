@@ -163,7 +163,16 @@ MODULE m_particles
             diffcoefvap = diffcoefvap/(Lref*csonref)
             sigmabubble = sigmabubble/(rholiqref*csonref**2*Lref)
             viscref = viscref/(rholiqref*csonref*Lref)
+
             IF (.NOT.avgdensFlag) solverapproach = 0
+
+            if (lipidCoatingModel) then
+                sigma0_lipidCoat = sigma0_lipidCoat / (rholiqref*csonref**2*Lref)
+                surfaceDilatVisc_lipidCoat = surfaceDilatVisc_lipidCoat / (rholiqref*csonref*Lref**2)
+                surfaceElast_lipidCoat = surfaceElast_lipidCoat / (rholiqref*csonref**2*Lref)
+                R0_lipidCoat = R0_lipidCoat / Lref
+            end if
+
 
         !> default values
         else
@@ -608,6 +617,7 @@ MODULE m_particles
     INTEGER, DIMENSION(3)                      :: cell
     REAL(KIND(0d0)), DIMENSION(2)              :: Re
     REAL(KIND(0d0)), DIMENSION( num_fluids, num_fluids ) :: We
+    REAL(KIND(0d0)) :: auxVar
  
     ALLOCATE(particleinfo)
     particleinfo%id        = id
@@ -622,14 +632,23 @@ MODULE m_particles
     particleinfo%dphidt    = 0.0d0
 
     IF(cyl_coord .AND. p.eq.0) THEN
+        !print*, 'add_particle subroutine'
         particleinfo%x(2) = DSQRT(particleinfo%x(2)**2d0+particleinfo%x(3)**2d0)
         !Storing azimuthal angle (-Pi to Pi)) into the third coordinate variable
         particleinfo%x(3) = ATAN2(inputparticle(3),inputparticle(2))
         particleinfo%xprev = particleinfo%x
+        !print*, particleinfo%x
     ENDIF
 
+    !print*, 'initial position x, y, z', inputparticle(1:3)
+    !print*, 'modified position x, r, theta', particleinfo%x, particleinfo%xprev
+
     cell    = -buff_size
+    
+    !print*, 'BEFORE locate cell', cell, particleinfo%x
     CALL locate_cell ( particleinfo%x,  cell, particleinfo%tmp%s )
+    !print*, 'AFTER locate cell', cell
+
 
     pliq = Interpolate( particleinfo%tmp%s, q_prim_vf(E_idx))
 
@@ -700,6 +719,7 @@ MODULE m_particles
     TYPE(scalar_field), DIMENSION(sys_size), INTENT(INOUT) :: q_prim_vf
     TYPE(particlenode), POINTER           :: particle
     REAL(KIND(0.D0)), DIMENSION(8)   :: inputparticle
+    REAL(KIND(0.D0)), DIMENSION(3)   :: partLoc
     REAL(KIND(0.D0))                 :: qtime
     INTEGER  :: i,j,k,l,nparticles
     LOGICAL  :: file_exist,indomain
@@ -743,7 +763,15 @@ MODULE m_particles
       IF (file_exist) THEN
         OPEN(unit=85,file='input/particles.dat',form='formatted')
         101 READ(85 ,*,end=102)  (inputparticle(i), i=1,8)
-        indomain = particle_in_domain(inputparticle(1:3))
+        
+        if (p.eq.0 .AND. cyl_coord) then
+            partLoc(1) = inputparticle(1)
+            partLoc(2) = sqrt(inputparticle(2)**2+inputparticle(3)**2)
+            indomain = particle_in_domain(partLoc)
+        else
+            indomain = particle_in_domain(inputparticle(1:3))
+        end if
+
         CALL get_part_id
         IF (indomain) THEN
           nparticles = nparticles + 1
@@ -772,6 +800,8 @@ MODULE m_particles
       DO WHILE(Associated(particle))
         CALL transfertotmp (particle%data)
         particle => particle%next
+        !print*, 'ORG INFO', particle%data%x
+        !print*, 'TMP INFO', particle%data%tmp%x, particle%data%tmp%s
       ENDDO
       CALL voidfraction(q_cons_vp)
       IF ( solverapproach.EQ.1 ) THEN
@@ -856,21 +886,24 @@ MODULE m_particles
   END SUBROUTINE get_stddsv
 
 
-  SUBROUTINE voidfraction (q)
+  SUBROUTINE voidfraction (q, q_cons_hifu)
 
     USE m_kernel_functions
 
     TYPE(particlenode),POINTER       :: particle
     TYPE(scalar_field), DIMENSION(sys_size), INTENT(IN) :: q
-    REAL(KIND(0.D0))               :: volpart, totmass, stddsv, volpart2
+    REAL(KIND(0.D0))               :: volpart, totmass, stddsv, volpart2, qvis, qvis_sum, dmSum, tmp
     REAL(KIND(0.D0)), DIMENSION(3) :: nodecoord
     INTEGER, DIMENSION(3)          :: cell
     INTEGER                        :: i, j, k, l, kernel
     INTEGER, DIMENSION(3,2)        :: rangecells
+    type(scalar_field), dimension(sys_size_hifu), intent(inout), optional :: q_cons_hifu
+    logical :: printFlag=.TRUE.
 
     q_particle(1)%sf = 0.0d0
     q_particle(2)%sf = 0.0d0
     nodecoord(3)     = 0
+    qvis_sum = 0.0d0
 
     rangecells(1:3,2) = -buff_size
     rangecells(1,1) = m
@@ -883,15 +916,25 @@ MODULE m_particles
       DO WHILE(Associated(particle))
         volpart = 4.0d0/3.0d0*pi*particle%data%tmp%y(1)**3
         cell = get_cell_from_s(particle%data%tmp%s)
+        !print*, cell, rangecells
         CALL update_rangecells (cell, rangecells)
         nodecoord(1) = particle%data%tmp%x(1)
         nodecoord(2) = particle%data%tmp%x(2)
+        !print*, 'x', cell(1), 
+        !print*, 'y', cell(2), n
         IF (p > 0) nodecoord(3) = particle%data%tmp%x(3)
         CALL get_stddsv(cell, kernel, volpart, stddsv)
         CALL smoothfunction ( q_particle(1), nodecoord, cell , volpart, kernel, stddsv)
+        !HIFU viscous damping
+        if (present(q_cons_hifu)) then
+            qvis = (4*pi*particle%data%tmp%y(1)**2)*(4*(1/fluid_pp(1)%Re(1))*(particle%data%tmp%y(2)**2)/(particle%data%tmp%y(1)))
+            CALL smoothfunction ( q_cons_hifu(qvis_hifu_idx), nodecoord, cell , qvis, kernel, stddsv)
+            !qvis_sum = qvis_sum + qvis
+            !print*, 'sum of qvis of particles' , qvis_sum, qvis, volpart, stddsv
+        end if
         particle => particle%next
       ENDDO
-	  
+  
       subrange(1)%beg=max(rangecells(1,1), -buff_size)
       subrange(1)%end=min(rangecells(1,2),m+buff_size)
       subrange(2)%beg=max(rangecells(2,1), -buff_size)
@@ -1027,7 +1070,22 @@ MODULE m_particles
         ENDDO
       ENDDO
     ENDDO
-	
+    
+    ! HIFU viscous damping
+    !if (present(q_cons_hifu)) then
+    !    dmSum = 0.0d0
+    !    DO k=0,p
+    !        DO j=0,n
+    !            DO i=0,m
+    !                dmSum = dmSum + q_cons_hifu(qvis_hifu_idx)%sf(i,j,k)
+    !                if (q_cons_hifu(qvis_hifu_idx)%sf(i,j,k)>0.0d0) print*, i, j, k, q_cons_hifu(qvis_hifu_idx)%sf(i,j,k)
+    !            END DO
+    !        END DO
+    !    END DO
+    !    tmp = dmSum
+    !    call s_mpi_allreduce_sum(tmp, dmSum)
+    !    if (proc_rank==0) print*, 'Summation with ghost cells', dmSum
+    !end if
 
   END SUBROUTINE voidfraction
 
@@ -1043,7 +1101,7 @@ MODULE m_particles
         DO j=0,n
           DO i=0,m
             IF (q_particle(1)%sf(i,j,k).GT.(1.0d0-valmaxvoid)) THEN
-              DO l=1,E_idx
+              DO l=cont_idx%end,E_idx
                 IF(clusterflag.GE.4) THEN
                    dq(l)%sf(i,j,k) = dq(l)%sf(i,j,k) + q(l)%sf(i,j,k)*(q_particle(2)%sf(i,j,k)+q_particle(5)%sf(i,j,k))
                 ELSE
@@ -1104,7 +1162,7 @@ MODULE m_particles
   INTEGER,DIMENSION(3)                      :: cell
   INTEGER                                   :: i,step,j,k
   INTEGER,INTENT(IN)                        :: t_step
-  LOGICAL,OPTIONAL                          :: largestep
+  LOGICAL,OPTIONAL                          :: largestep 
 
 
   IF (avgdensFlag) THEN
@@ -1218,9 +1276,35 @@ MODULE m_particles
 
   FUNCTION pressureliq_int( pbubble, radius, bubblevel )
 
-    REAL(KIND(0.D0)) :: pressureliq_int, radius,bubblevel, pbubble
+    REAL(KIND(0.D0)) :: pressureliq_int, radius, bubblevel, pbubble
+    real(kind(0.d0)) :: Rbuck, Rrupt, sigma_lipidCoat
 
-    pressureliq_int=  pbubble -  2.0d0*sigmabubble/radius - 4.*viscref*bubblevel/radius
+    pressureliq_int=  pbubble - 4.*viscref*bubblevel/radius
+
+    if (lipidCoatingModel) then
+        
+        !Marmottant model (surface tension for  buckling, rupture, oscillation)
+        Rbuck = R0_lipidCoat / sqrt(1.0d0+sigma0_lipidCoat/surfaceElast_lipidCoat)
+        Rrupt = Rbuck*sqrt(1.0d0+sigmabubble/surfaceElast_lipidCoat)    !sigmabubble is the clean interface sigma
+        
+        if (radius <= Rbuck ) then
+            sigma_lipidCoat = 0.0d0
+
+        else if (radius >= Rrupt) then
+            sigma_lipidCoat = sigmabubble
+
+        else
+            sigma_lipidCoat = surfaceElast_lipidCoat*((radius/Rbuck)**2-1.0d0)
+        end if
+
+        pressureliq_int = pressureliq_int &
+                        - 2.0d0*sigma_lipidCoat/radius &
+                        - 4.0d0*surfaceDilatVisc_lipidCoat*bubblevel/(radius**2)
+
+    else
+        pressureliq_int = pressureliq_int - 2.0d0*sigmabubble/radius
+
+    end if
 
   END FUNCTION pressureliq_int
 
@@ -1428,11 +1512,22 @@ MODULE m_particles
                   !j = j+abs(cellaux(2)-(-buff_size))
               ENDIF
   
+              !IF(cyl_coord.AND.DIM.NE.3) THEN
+              !    IF (y_cc_lp(cellaux(2)).LT.0d0) THEN
+              !        celloutside = .TRUE.
+              !        j = j+1
+              !    ENDIF
+              !END IF
               IF(cyl_coord.AND.DIM.NE.3) THEN
-                  IF (y_cc_lp(cellaux(2)).LT.0d0) THEN
+                if (.not.celloutside) then
+                  if (cellaux(2).gt.n+buff_size) then
                       celloutside = .TRUE.
                       j = j+1
-                  ENDIF
+                  else if (y_cc_lp(cellaux(2)).LT.0d0) then
+                      celloutside = .TRUE.
+                      j = j+1
+                  end if
+                end if
               END IF
   
               ! Temp
@@ -1782,6 +1877,7 @@ MODULE m_particles
       TYPE(particlenode), POINTER          :: particle
       TYPE(vector_field), DIMENSION(:), OPTIONAL :: q
       TYPE(scalar_field), DIMENSION(:), OPTIONAL :: q_prim
+
       INTEGER                              :: i
       REAL(KIND(0.D0))                     :: pinf, pcrit
       LOGICAL                              :: update_fields, release_part
@@ -1814,7 +1910,11 @@ MODULE m_particles
       ENDIF
 
       IF (avgdensFlag) THEN
-        CALL voidfraction(q(1)%vf)
+        if (hifu_intensityFlag) then
+            CALL voidfraction(q(1)%vf,q(3)%vf)
+        else
+            CALL voidfraction(q(1)%vf)
+        end if
       ENDIF
 
   END SUBROUTINE updateRK

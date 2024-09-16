@@ -228,6 +228,9 @@ module m_derived_types
         real(kind(0d0)) :: mu_v    !< Bubble constants (see Preston (2007), Ando (2010))
         real(kind(0d0)) :: k_v     !< Bubble constants (see Preston (2007), Ando (2010))
         real(kind(0d0)) :: G
+        real(kind(0d0)) :: rho_cp  !< HIFU specific heat * reference density
+        real(kind(0d0)) :: tdiff   !< HIFU thermal diffusivity
+        real(kind(0d0)) :: absCoef !< HIFU absorption coefficient
     end type physical_parameters
 
     !> Derived type annexing the flow probe location

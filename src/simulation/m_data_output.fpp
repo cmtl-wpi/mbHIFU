@@ -54,9 +54,9 @@ module m_data_output
         !> Write data files
         !! @param q_cons_vf Conservative variables
         !! @param t_step Current time step
-        subroutine s_write_abstract_data_files(q_cons_vf, q_prim_vf, t_step, beta, hifu_id)
+        subroutine s_write_abstract_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
 
-            import :: scalar_field, sys_size, pres_field
+            import :: scalar_field, sys_size, pres_field, sys_size_hifu
 
             type(scalar_field), &
                 dimension(sys_size), &
@@ -72,6 +72,10 @@ module m_data_output
             TYPE(scalar_field), OPTIONAL :: beta
 
             ! HIFU
+            type(scalar_field), &
+                dimension(sys_size_hifu), &
+                intent(IN), optional :: q_cons_hifu
+
             integer, intent(IN), optional :: hifu_id
 
         end subroutine s_write_abstract_data_files ! -------------------
@@ -443,7 +447,7 @@ contains
         !!      conservative variables data files for given time-step.
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param t_step Current time-step
-    subroutine s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta, hifu_id) ! -------------
+    subroutine s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id) ! -------------
 
         type(scalar_field), dimension(sys_size), intent(IN) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_prim_vf
@@ -454,6 +458,7 @@ contains
         TYPE(scalar_field), OPTIONAL :: beta
 
         ! HIFU vars (only in parallel)
+        type(scalar_field), dimension(sys_size_hifu), intent(IN), optional :: q_cons_hifu
         integer, intent(IN), optional :: hifu_id
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
@@ -829,7 +834,7 @@ contains
         !!      conservative variables data files for given time-step.
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param t_step Current time-step
-    subroutine s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, hifu_id) ! ----
+    subroutine s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id) ! ----
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -845,6 +850,7 @@ contains
         TYPE(scalar_field), OPTIONAL :: beta
 
         ! HIFU vars
+        type(scalar_field), dimension(sys_size_hifu), intent(IN), optional :: q_cons_hifu
         integer, intent(IN), optional :: hifu_id
 
 #ifdef MFC_MPI
@@ -867,6 +873,8 @@ contains
 
         IF (PRESENT(beta)) THEN
             alt_sys = sys_size + 1
+        ELSE IF (present(hifu_id)) THEN
+            alt_sys = sys_size_hifu
         ELSE
             alt_sys = sys_size
         END IF
@@ -949,15 +957,15 @@ contains
             call MPI_FILE_CLOSE(ifile, ierr)
         else
             ! Initialize MPI data I/O
-
             IF(PRESENT(beta)) THEN !lagrangian solver
                 CALL s_initialize_mpi_data(q_cons_vf, beta=beta)
-            ELSE
+            ELSE IF (present(hifu_id)) then
+                CALL s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
+            else
                 CALL s_initialize_mpi_data(q_cons_vf)
             END IF
 
             ! Open the file to write all flow variables
-            
             if (present(hifu_id)) then
                 write (file_loc, '(I0,A)') t_step, 'hifu.dat'
             else
@@ -983,7 +991,6 @@ contains
             MOK = int(1d0, MPI_OFFSET_KIND)
             str_MOK = int(name_len, MPI_OFFSET_KIND)
             NVARS_MOK = int(alt_sys, MPI_OFFSET_KIND)
-
             if (bubbles) then
                 ! Write the data for each variable
                 do i = 1, sys_size
@@ -1011,7 +1018,21 @@ contains
                                                 MPI_DOUBLE_PRECISION, status, ierr)
                     end do
                 end if
+            else if (present(hifu_id)) then
+                do i = 1, sys_size_hifu
+                    var_MOK = int(i, MPI_OFFSET_KIND)
+
+                    ! Initial displacement to skip at beginning of file
+                    disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
+
+                    call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_HIFU_DATA%view(i), &
+                                           'native', mpi_info_int, ierr)
+                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
+                                            MPI_DOUBLE_PRECISION, status, ierr)
+                end do
+
             else
+
                 do i = 1, sys_size !TODO: check if correct (sys_size
                     var_MOK = int(i, MPI_OFFSET_KIND)
 
@@ -1100,6 +1121,7 @@ contains
         real(kind(0d0)) :: E_e
         real(kind(0d0)), dimension(6) :: tau_e
         real(kind(0d0)) :: G
+        real(kind(0d0)) :: Temp, x_loc0, x_loc1, x_loc2
 
         integer :: i, j, k, l, s, q !< Generic loop iterator
 
@@ -1152,6 +1174,13 @@ contains
             do s = 1, (num_dims*(num_dims + 1))/2
                 tau_e(s) = 0d0
             end do
+
+            if (hifu_heateqnFlag) then
+                Temp=0d0
+                x_loc0=0d0
+                x_loc1=0d0
+                x_loc2=0d0
+            end if
 
             ! Find probe location in terms of indices on a
             ! specific processor
@@ -1271,6 +1300,17 @@ contains
                         if (k == 1) k = 2 ! Pick first point if probe is at edge
                         l = 0
 
+                        ! Temperature hifu
+                        if (hifu_heateqnFlag) then
+                            !print*, 'Tracking point'
+                            Temp = Temp + q_cons_vf(T_hifu_idx)%sf(j-2,k-2,l)
+                            x_loc0 = x_loc0 + x_cc(j)
+                            x_loc1 = x_loc1 + x_cc(j-1)
+                            x_loc2 = x_loc2 + x_cc(j-2)
+                            !Add any other properties to retieve
+
+                        else
+
                         ! Computing/Sharing necessary state variables
                         call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l, &
                                                             rho, gamma, pi_inf, qv, &
@@ -1324,6 +1364,7 @@ contains
                                                       ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, c)
 
                         accel = accel_mag(j - 2, k - 2, l)
+                        end if
                     end if
                 end if
             else ! 3D simulation
@@ -1380,6 +1421,13 @@ contains
                     tmp = vel(s)
                     call s_mpi_allreduce_sum(tmp, vel(s))
                 end do
+
+                if (hifu_heateqnFlag) then
+                    #:for VAR in ['Temp','x_loc0','x_loc1','x_loc2']
+                        tmp = ${VAR}$
+                        call s_mpi_allreduce_sum(tmp, ${VAR}$)
+                    #:endfor
+                end if
 
                 if (bubbles) then
                     #:for VAR in ['alf','alfgr','nbub','nR(1)','nRdot(1)','M00','R(1)','Rdot(1)','ptilde','ptot']
@@ -1477,7 +1525,14 @@ contains
                             pres
                     end if
                 elseif (p == 0) then
-                    if (bubbles) then
+                    if (hifu_heateqnFlag) then
+                        write (i + 30, '(6X,5F24.8)') &
+                            nondim_time, &
+                            Temp,&
+                            x_loc0,&
+                            x_loc1,&
+                            x_loc2
+                    else if (bubbles) then
                         write (i + 30, '(6X,10F24.8)') &
                             nondim_time, &
                             rho, &
@@ -1502,10 +1557,11 @@ contains
                             tau_e(3)
                     else
 
-                        write (i + 30, '(6X,F12.8,F24.8,F24.8,F24.8,F24.8)') &
+                        write (i + 30, '(6X,F12.8,F24.8,F24.8,F24.8,F24.8,F24.8)') &
                             nondim_time, &
                             rho, &
                             vel(1), &
+                            vel(2), &
                             pres
                     end if
                 else
