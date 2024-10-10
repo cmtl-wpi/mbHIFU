@@ -1103,7 +1103,7 @@ contains
     subroutine rkqs(realtime, hnext, hdid, t_step)
 
         logical :: largestep
-        real(kind(0.d0)) :: newtime, errmax, qtime, hdid, hnext, dttarget
+        real(kind(0.d0)) :: newtime, errmax, errmax_glb, qtime, hdid, hnext, dttarget
         real(kind(0.d0)) :: RKh, RKh_glb, htemp, SAFETY = 0.9d0, PGROW = -0.2d0, &
                             PSHRNK = -0.25d0, ERRCON = 1.89d-4
         integer :: i, j, k
@@ -1118,8 +1118,6 @@ contains
         end if
 
         !> Starting adaptive Runge-Kutta
-501     continue
-
         RKh = min(hnext, dttarget)
         RKh = max(Rkh, 1.0d-12)
         if (num_procs > 1) then
@@ -1137,9 +1135,10 @@ contains
         !> Take a step
 502     errmax = 0.0d0
         call rkck(qtime, RKh, errmax, largestep, t_step)
-        if (largestep) then
+
+        if (largestep) then ! Negative radius, need to reduce time step
             if (cfl_dt) then
-                if (RKh.gt.1.0d-14) then
+                if (RKh .gt. 1.0d-14) then
                     RKh = RKh/2.0d0
                     if (proc_rank==0) print*, '>>>>> WARNING: Reducing dt and restarting time step, now dt: ', RKh
                     largestep = .false.
@@ -1151,6 +1150,32 @@ contains
                 call s_mpi_abort('Time step too large, please reduce dt or enable cfl_adapt_dt')
             end if
         end if
+
+        if (cfl_dt) then !Check truncation error
+            errmax = min(errmax,1.0d0)
+            if (num_procs > 1) then
+                call s_mpi_allreduce_max(errmax, errmax_glb)
+                errmax=errmax_glb
+            end if
+            errmax=errmax/RKeps !Scale relative to USER required tolerance.
+            if ((errmax .gt. 1.0d0)) then !Truncation error too large, reduce stepsize.
+                htemp=SAFETY*RKh*(errmax**PSHRNK)
+                RKh=sign(max(abs(htemp),0.1d0*abs(RKh)),RKh)  ! No more than a factor of 10.
+                if (proc_rank==0) print*, '>>>>> WARNING: Truncation error found. Reducing dt and restaring time step, now dt: ', RKh
+                goto 502         
+            else ! Step succeeded. Compute size of next step.
+                if (errmax .gt. ERRCON) then
+                    hnext=SAFETY*RKh*(errmax**PGROW) ! No more than a factor of 5 increase. 
+                else    
+                    hnext=2.0d0*RKh !Truncation error too small (< 1.89e-4), increase time step
+                end if    
+            end if 
+            hnext = min(hnext, dt0)
+            
+        else
+            hnext = RKh
+        end if
+
         hdid = RKh
 
         !> Update values
@@ -1159,8 +1184,6 @@ contains
 
         if (avgdensflag) call s_write_void_evol(qtime)
         if (particlestatFlag) call s_calculate_particle_stats()
-
-        hnext = hdid
 
         return
 
