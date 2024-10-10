@@ -19,7 +19,7 @@ module m_boundary_conditions
     implicit none
 
     private; 
-    public :: s_populate_primitive_variables_buffers, &
+    public :: s_populate_variables_buffers, &
               s_populate_capillary_buffers
 
 contains
@@ -27,12 +27,12 @@ contains
     !>  The purpose of this procedure is to populate the buffers
     !!      of the primitive variables, depending on the selected
     !!      boundary conditions.
-    !! @param q_prim_vf Primitive variable
-    subroutine s_populate_primitive_variables_buffers(q_prim_vf, pb, mv, q_particle)
+    !!  @param q_particle Eulerian void fraction from lagrangian bubbles
+    subroutine s_populate_variables_buffers(q_prim_vf, pb, mv, q_particle)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: pb, mv
-        TYPE(scalar_field), dimension(:), OPTIONAL :: q_particle
+        type(scalar_field), dimension(:), optional :: q_particle
         integer :: bc_loc, bc_dir
 
         ! Population of Buffers in x-direction =============================
@@ -49,13 +49,13 @@ contains
         case (-16)    ! No-slip wall BC at beginning
             call s_no_slip_wall(q_prim_vf, pb, mv, 1, -1)
         case default ! Processor BC at beginning
-            IF(particleflag) THEN !Lagrangian solver
+            if (particleflag) then
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 1, -1, q_particle=q_particle)
-            ELSE
+                    q_prim_vf, pb, mv, 1, -1, q_particle=q_particle)
+            else
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 1, -1)
-            END IF
+                    q_prim_vf, pb, mv, 1, -1)
+            end if
         end select
 
         select case (bc_x%end)
@@ -70,13 +70,13 @@ contains
         case (-16)    ! No-slip wall bc at end
             call s_no_slip_wall(q_prim_vf, pb, mv, 1, 1)
         case default ! Processor BC at end
-            IF(particleflag) THEN !Lagrangian solver
+            if (particleflag) then
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 1, 1, q_particle=q_particle)
-            ELSE 
+                    q_prim_vf, pb, mv, 1, 1, q_particle=q_particle)
+            else
                 call s_mpi_sendrecv_variables_buffers( &
-                q_prim_vf, pb, mv, 1, 1)
-            END IF
+                    q_prim_vf, pb, mv, 1, 1)
+            end if
         end select
 
         if (qbmm .and. .not. polytropic) then
@@ -119,13 +119,13 @@ contains
         case (-16)    ! No-slip wall BC at beginning
             call s_no_slip_wall(q_prim_vf, pb, mv, 2, -1)
         case default ! Processor BC at beginning
-            IF(particleflag) THEN !Lagrangian solver
+            if (particleflag) then
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 2, -1, q_particle=q_particle)
-            ELSE
+                    q_prim_vf, pb, mv, 2, -1, q_particle=q_particle)
+            else
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 2, -1)
-            END IF
+                    q_prim_vf, pb, mv, 2, -1)
+            end if
         end select
 
         select case (bc_y%end)
@@ -140,13 +140,13 @@ contains
         case (-16)    ! No-slip wall BC at end
             call s_no_slip_wall(q_prim_vf, pb, mv, 2, 1)
         case default ! Processor BC at end
-            IF(particleflag) THEN !Lagrangian solver
+            if (particleflag) then
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 2, 1, q_particle=q_particle)
-            ELSE
+                    q_prim_vf, pb, mv, 2, 1, q_particle=q_particle)
+            else
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 2, 1)
-            END IF
+                    q_prim_vf, pb, mv, 2, 1)
+            end if
         end select
 
         if (qbmm .and. .not. polytropic) then
@@ -189,13 +189,13 @@ contains
         case (-16)    ! No-slip wall BC at beginning
             call s_no_slip_wall(q_prim_vf, pb, mv, 3, -1)
         case default ! Processor BC at beginning
-            IF(particleflag) THEN !Lagrangian solver
+            if (particleflag) then
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 3, -1, q_particle=q_particle)
-            ELSE
+                    q_prim_vf, pb, mv, 3, -1, q_particle=q_particle)
+            else
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 3, -1)
-            END IF
+                    q_prim_vf, pb, mv, 3, -1)
+            end if
         end select
 
         select case (bc_z%end)
@@ -210,13 +210,13 @@ contains
         case (-16)    ! No-slip wall BC at end
             call s_no_slip_wall(q_prim_vf, pb, mv, 3, 1)
         case default ! Processor BC at end
-            IF(particleflag) THEN !Lagrangian solver
+            if (particleflag) then
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 3, 1, q_particle=q_particle)
-            ELSE
+                    q_prim_vf, pb, mv, 3, 1, q_particle=q_particle)
+            else
                 call s_mpi_sendrecv_variables_buffers( &
-                        q_prim_vf, pb, mv, 3, 1)
-            END IF
+                    q_prim_vf, pb, mv, 3, 1)
+            end if
         end select
 
         if (qbmm .and. .not. polytropic) then
@@ -243,7 +243,7 @@ contains
 
         ! END: Population of Buffers in z-direction ========================
 
-    end subroutine s_populate_primitive_variables_buffers
+    end subroutine s_populate_variables_buffers
 
     subroutine s_ghost_cell_extrapolation(q_prim_vf, pb, mv, bc_dir, bc_loc)
 

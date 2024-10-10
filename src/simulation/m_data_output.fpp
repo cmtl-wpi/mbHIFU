@@ -3,7 +3,6 @@
 !! @brief Contains module m_data_output
 
 #:include 'macros.fpp'
-#:include 'inline_conversions.fpp'
 
 !> @brief The primary purpose of this module is to output the grid and the
 !!              conservative variables data at the chosen time-step interval. In
@@ -26,6 +25,8 @@ module m_data_output
     use m_compile_specific
 
     use m_helper
+
+    use m_sim_helpers
 
     use m_delay_file_access
 
@@ -53,6 +54,7 @@ module m_data_output
         !! @param q_cons_vf Conservative variables
         !! @param q_prim_vf Primitive variables
         !! @param t_step Current time step
+        !! @param beta Eulerian void fraction from lagrangian bubbles
         subroutine s_write_abstract_data_files(q_cons_vf, q_prim_vf, t_step, beta)
 
             import :: scalar_field, sys_size, pres_field
@@ -67,8 +69,7 @@ module m_data_output
 
             integer, intent(in) :: t_step
 
-            ! Lagrangian particle
-            TYPE(scalar_field), OPTIONAL :: beta
+            type(scalar_field), optional :: beta
 
         end subroutine s_write_abstract_data_files
     end interface ! ========================================================
@@ -104,8 +105,6 @@ module m_data_output
 
 contains
 
-    @:s_compute_speed_of_sound()
-
     !>  The purpose of this subroutine is to open a new or pre-
         !!          existing run-time information file and append to it the
         !!      basic header information relevant to current simulation.
@@ -123,51 +122,50 @@ contains
         character(LEN=8) :: file_date !<
             !! Creation date of the run-time information file
 
-        logical :: file_exist !<
-            !! Logical used to check existence of run-time information file
-
         ! Opening the run-time information file
         file_path = trim(case_dir)//'/'//trim(file_name)
 
-        inquire (FILE=trim(file_path), EXIST=file_exist)
-
-        open (1, FILE=trim(file_path), &
+        open (3, FILE=trim(file_path), &
               FORM='formatted', &
-              POSITION='append', &
-              STATUS='unknown')
+              STATUS='replace')
 
-        ! Generating file header for a new run-time information file
-        if (file_exist .neqv. .true.) then
+        write (3, '(A)') 'Description: Stability information at '// &
+            'each time-step of the simulation. This'
+        write (3, '(13X,A)') 'data is composed of the inviscid '// &
+            'Courant–Friedrichs–Lewy (ICFL)'
+        write (3, '(13X,A)') 'number, the viscous CFL (VCFL) number, '// &
+            'the capillary CFL (CCFL)'
+        write (3, '(13X,A)') 'number and the cell Reynolds (Rc) '// &
+            'number. Please note that only'
+        write (3, '(13X,A)') 'those stability conditions pertinent '// &
+            'to the physics included in'
+        write (3, '(13X,A)') 'the current computation are displayed.'
 
-            write (1, '(A)') 'Description: Stability information at '// &
-                'each time-step of the simulation. This'
-            write (1, '(13X,A)') 'data is composed of the inviscid '// &
-                'Courant–Friedrichs–Lewy (ICFL)'
-            write (1, '(13X,A)') 'number, the viscous CFL (VCFL) number, '// &
-                'the capillary CFL (CCFL)'
-            write (1, '(13X,A)') 'number and the cell Reynolds (Rc) '// &
-                'number. Please note that only'
-            write (1, '(13X,A)') 'those stability conditions pertinent '// &
-                'to the physics included in'
-            write (1, '(13X,A)') 'the current computation are displayed.'
+        call date_and_time(DATE=file_date)
 
-            call date_and_time(DATE=file_date)
+        write (3, '(A)') 'Date: '//file_date(5:6)//'/'// &
+            file_date(7:8)//'/'// &
+            file_date(3:4)
 
-            write (1, '(A)') 'Date: '//file_date(5:6)//'/'// &
-                file_date(7:8)//'/'// &
-                file_date(3:4)
-
-        end if
-
-        write (1, '(A)') ''; write (1, '(A)') ''
+        write (3, '(A)') ''; write (3, '(A)') ''
 
         ! Generating table header for the stability criteria to be outputted
-        if (any(Re_size > 0)) then
-            write (1, '(A)') '==== Time-steps ====== Time ======= ICFL '// &
-                'Max ==== VCFL Max ====== Rc Min ======='
+        if (cfl_dt) then
+            if (any(Re_size > 0)) then
+                write (3, '(A)') '==== Time-steps ====== dt ===== Time ======= ICFL '// &
+                    'Max ==== VCFL Max ====== Rc Min ======='
+            else
+                write (3, '(A)') '=========== Time-steps ============== dt ===== Time '// &
+                    '============== ICFL Max ============='
+            end if
         else
-            write (1, '(A)') '=========== Time-steps ============== Time '// &
-                '============== ICFL Max ============='
+            if (any(Re_size > 0)) then
+                write (3, '(A)') '==== Time-steps ====== Time ======= ICFL '// &
+                    'Max ==== VCFL Max ====== Rc Min ======='
+            else
+                write (3, '(A)') '=========== Time-steps ============== Time '// &
+                    '============== ICFL Max ============='
+            end if
         end if
 
     end subroutine s_open_run_time_information_file
@@ -266,107 +264,15 @@ contains
             do k = 0, n
                 do j = 0, m
 
-                    do i = 1, num_fluids
-                        alpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
-                        alpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
-                    end do
-
-                    if (bubbles) then
-                        call s_convert_species_to_mixture_variables_bubbles_acc(rho, gamma, pi_inf, qv, alpha, alpha_rho, Re, j, k, l)
-                    else
-                        call s_convert_species_to_mixture_variables_acc(rho, gamma, pi_inf, qv, alpha, alpha_rho, Re, j, k, l)
-                    end if
-
-                    do i = 1, num_dims
-                        vel(i) = q_prim_vf(contxe + i)%sf(j, k, l)
-                    end do
-
-                    vel_sum = 0d0
-                    do i = 1, num_dims
-                        vel_sum = vel_sum + vel(i)**2d0
-                    end do
-
-                    pres = q_prim_vf(E_idx)%sf(j, k, l)
-
-                    E = gamma*pres + pi_inf + 5d-1*rho*vel_sum + qv
-
-                    H = (E + pres)/rho
+                    call s_compute_enthalpy(q_prim_vf, pres, rho, gamma, pi_inf, Re, H, alpha, vel, vel_sum, j, k, l)
 
                     ! Compute mixture sound speed
                     call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, c)
 
-                    if (grid_geometry == 3) then
-                        if (k == 0) then
-                            fltr_dtheta = 2d0*pi*y_cb(0)/3d0
-                        elseif (k <= fourier_rings) then
-                            Nfq = min(floor(2d0*real(k, kind(0d0))*pi), (p + 1)/2 + 1)
-                            fltr_dtheta = 2d0*pi*y_cb(k - 1)/real(Nfq, kind(0d0))
-                        else
-                            fltr_dtheta = y_cb(k - 1)*dz(l)
-                        end if
-                    end if
-
-                    if (p > 0) then
-                        !3D
-                        if (grid_geometry == 3) then
-                            icfl_sf(j, k, l) = dt/min(dx(j)/(abs(vel(1)) + c), &
-                                                      dy(k)/(abs(vel(2)) + c), &
-                                                      fltr_dtheta/(abs(vel(3)) + c))
-                        else
-                            icfl_sf(j, k, l) = dt/min(dx(j)/(abs(vel(1)) + c), &
-                                                      dy(k)/(abs(vel(2)) + c), &
-                                                      dz(l)/(abs(vel(3)) + c))
-                        end if
-
-                        if (any(Re_size > 0)) then
-
-                            if (grid_geometry == 3) then
-                                vcfl_sf(j, k, l) = maxval(dt/Re/rho) &
-                                                   /min(dx(j), dy(k), fltr_dtheta)**2d0
-
-                                Rc_sf(j, k, l) = min(dx(j)*(abs(vel(1)) + c), &
-                                                     dy(k)*(abs(vel(2)) + c), &
-                                                     fltr_dtheta*(abs(vel(3)) + c)) &
-                                                 /maxval(1d0/Re)
-                            else
-                                vcfl_sf(j, k, l) = maxval(dt/Re/rho) &
-                                                   /min(dx(j), dy(k), dz(l))**2d0
-
-                                Rc_sf(j, k, l) = min(dx(j)*(abs(vel(1)) + c), &
-                                                     dy(k)*(abs(vel(2)) + c), &
-                                                     dz(l)*(abs(vel(3)) + c)) &
-                                                 /maxval(1d0/Re)
-                            end if
-
-                        end if
-
-                    elseif (n > 0) then
-                        !2D
-                        icfl_sf(j, k, l) = dt/min(dx(j)/(abs(vel(1)) + c), &
-                                                  dy(k)/(abs(vel(2)) + c))
-
-                        if (any(Re_size > 0)) then
-
-                            vcfl_sf(j, k, l) = maxval(dt/Re/rho)/min(dx(j), dy(k))**2d0
-
-                            Rc_sf(j, k, l) = min(dx(j)*(abs(vel(1)) + c), &
-                                                 dy(k)*(abs(vel(2)) + c)) &
-                                             /maxval(1d0/Re)
-
-                        end if
-
+                    if (any(Re_size > 0)) then
+                        call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf, vcfl_sf, Rc_sf)
                     else
-                        !1D
-                        icfl_sf(j, k, l) = (dt/dx(j))*(abs(vel(1)) + c)
-
-                        if (any(Re_size > 0)) then
-
-                            vcfl_sf(j, k, l) = maxval(dt/Re/rho)/dx(j)**2d0
-
-                            Rc_sf(j, k, l) = dx(j)*(abs(vel(1)) + c)/maxval(1d0/Re)
-
-                        end if
-
+                        call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf)
                     end if
 
                 end do
@@ -429,13 +335,13 @@ contains
         ! Outputting global stability criteria extrema at current time-step
         if (proc_rank == 0) then
             if (any(Re_size > 0)) then
-                write (1, '(6X,I8,6X,F10.6,6X,F9.6,6X,F9.6,6X,F10.6)') &
-                    t_step, t_step*dt, icfl_max_glb, &
+                write (3, '(6X,I8,F10.6,6X,6X,F10.6,6X,F9.6,6X,F9.6,6X,F10.6)') &
+                    t_step, dt, t_step*dt, icfl_max_glb, &
                     vcfl_max_glb, &
                     Rc_min_glb
             else
-                write (1, '(13X,I8,14X,F10.6,13X,F9.6)') &
-                    t_step, t_step*dt, icfl_max_glb
+                write (3, '(13X,I8,14X,F10.6,14X,F10.6,13X,F9.6)') &
+                    t_step, dt, t_step*dt, icfl_max_glb
             end if
 
             if (icfl_max_glb /= icfl_max_glb) then
@@ -444,6 +350,11 @@ contains
                 print *, 'icfl', icfl_max_glb
                 call s_mpi_abort('ICFL is greater than 1.0. Exiting ...')
             end if
+
+            do i = chemxb, chemxe
+                !@:ASSERT(all(q_prim_vf(i)%sf(:,:,:) >= -1d0), "bad conc")
+                !@:ASSERT(all(q_prim_vf(i)%sf(:,:,:) <=  2d0), "bad conc")
+            end do
 
             if (vcfl_max_glb /= vcfl_max_glb) then
                 call s_mpi_abort('VCFL is NaN. Exiting ...')
@@ -462,14 +373,13 @@ contains
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param q_prim_vf Cell-average primitive variables
         !!  @param t_step Current time-step
+        !!  @param beta Eulerian void fraction from lagrangian bubbles
     subroutine s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         integer, intent(in) :: t_step
-
-        ! Lagrangian solver
-        TYPE(scalar_field), OPTIONAL :: beta
+        type(scalar_field), optional :: beta
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the current time-step directory
@@ -495,7 +405,7 @@ contains
         write (t_step_dir, '(A,I0,A,I0)') trim(case_dir)//'/p_all'
 
         ! Creating or overwriting the current time-step directory
-        write (t_step_dir, '(A,I0,A,I0)') trim(case_dir)//'/p_all/p', &
+        write (t_step_dir, '(a,i0,a,i0)') trim(case_dir)//'/p_all/p', &
             proc_rank, '/', t_step
 
         file_path = trim(t_step_dir)//'/.'
@@ -624,10 +534,8 @@ contains
 
                     open (2, FILE=trim(file_path))
                     do j = 0, m
-                        if (((i >= cont_idx%beg) .and. (i <= cont_idx%end)) &
-                            .or. &
-                            ((i >= adv_idx%beg) .and. (i <= adv_idx%end)) &
-                            ) then
+                        ! todo: revisit change here
+                        if (((i >= adv_idx%beg) .and. (i <= adv_idx%end))) then
                             write (2, FMT) x_cb(j), q_cons_vf(i)%sf(j, 0, 0)
                         else
                             write (2, FMT) x_cb(j), q_prim_vf(i)%sf(j, 0, 0)
@@ -733,6 +641,8 @@ contains
                             if (((i >= cont_idx%beg) .and. (i <= cont_idx%end)) &
                                 .or. &
                                 ((i >= adv_idx%beg) .and. (i <= adv_idx%end)) &
+                                .or. &
+                                ((i >= chemxb) .and. (i <= chemxe)) &
                                 ) then
                                 write (2, FMT) x_cb(j), y_cb(k), q_cons_vf(i)%sf(j, k, 0)
                             else
@@ -814,6 +724,8 @@ contains
                                 if (((i >= cont_idx%beg) .and. (i <= cont_idx%end)) &
                                     .or. &
                                     ((i >= adv_idx%beg) .and. (i <= adv_idx%end)) &
+                                    .or. &
+                                    ((i >= chemxb) .and. (i <= chemxe)) &
                                     ) then
                                     write (2, FMT) x_cb(j), y_cb(k), z_cb(l), q_cons_vf(i)%sf(j, k, l)
                                 else
@@ -829,14 +741,12 @@ contains
             end if
         end if
 
-        ! Writing beta, lagrangian solver
-        IF(PRESENT(beta)) THEN
-            WRITE(file_path,'(A,I0,A)') TRIM(t_step_dir) // '/q_cons_vf', adv_idx%end+1, '.dat'
-            OPEN(2, FILE   = TRIM(file_path), &
-            FORM   = 'unformatted'  , &
-            STATUS = 'new'            )
-            WRITE(2) beta%sf(0:m,0:n,0:p); CLOSE(2)
-        END IF
+        if (present(beta)) then
+            write (file_path, '(A,I0,A)') trim(t_step_dir)//'/q_cons_vf', adv_idx%end + 1, '.dat'
+            open (2, FILE=trim(file_path), FORM='unformatted', STATUS='new')
+            write (2) beta%sf(0:m, 0:n, 0:p)
+            close (2)
+        end if
 
     end subroutine s_write_serial_data_files
 
@@ -845,14 +755,13 @@ contains
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param q_prim_vf Cell-average primitive variables
         !!  @param t_step Current time-step
+        !!  @param beta Eulerian void fraction from lagrangian bubbles
     subroutine s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         integer, intent(in) :: t_step
-
-        ! Lagrangian solver
-        TYPE(scalar_field), OPTIONAL :: beta
+        type(scalar_field), optional :: beta
 
 #ifdef MFC_MPI
 
@@ -870,13 +779,13 @@ contains
 
         integer :: i !< Generic loop iterator
 
-        INTEGER :: alt_sys !< System size including lagrangian particles
+        integer :: alt_sys !< Altered system size for the lagrangian subgrid bubble model
 
-        IF (PRESENT(beta)) THEN
+        if (present(beta)) then
             alt_sys = sys_size + 1
-        ELSE
+        else
             alt_sys = sys_size
-        END IF
+        end if
 
         if (file_per_process) then
 
@@ -957,13 +866,12 @@ contains
         else
             ! Initialize MPI data I/O
 
-            IF(PRESENT(beta)) THEN !lagrangian solver
-                CALL s_initialize_mpi_data(q_cons_vf, beta=beta)
-            ELSE
-                CALL s_initialize_mpi_data(q_cons_vf)
-            END IF
+            if (present(beta)) then
+                call s_initialize_mpi_data(q_cons_vf, beta=beta)
+            else
+                call s_initialize_mpi_data(q_cons_vf)
+            end if
 
-            ! Open the file to write all flow variables
             write (file_loc, '(I0,A)') t_step, '.dat'
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
@@ -1026,24 +934,22 @@ contains
                 end do
             end if
 
-            ! Correction for lagrangian solver
-            IF (present(beta)) THEN
-                var_MOK = INT(sys_size+1, MPI_OFFSET_KIND)
+            ! Correction for the lagrangian subgrid bubble model
+            if (present(beta)) then
+                var_MOK = int(sys_size + 1, MPI_OFFSET_KIND)
 
                 ! Initial displacement to skip at beginning of file
-                disp = m_MOK*MAX(MOK,n_MOK)*MAX(MOK,p_MOK)*WP_MOK*(var_MOK-1)
+                disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
-                CALL MPI_FILE_SET_VIEW(ifile,disp,MPI_DOUBLE_PRECISION,MPI_IO_DATA%view(sys_size+1), &
-                                                                        'native',mpi_info_int,ierr)
-                CALL MPI_FILE_WRITE_ALL(ifile,MPI_IO_DATA%var(sys_size+1)%sf,data_size, &
-                                                     MPI_DOUBLE_PRECISION,status,ierr)
-            END IF
-
+                call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(sys_size + 1), &
+                                       'native', mpi_info_int, ierr)
+                call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(sys_size + 1)%sf, data_size, &
+                                        MPI_DOUBLE_PRECISION, status, ierr)
+            end if
 
             call MPI_FILE_CLOSE(ifile, ierr)
         end if
 
-        call MPI_FILE_CLOSE(ifile, ierr)
 #endif
 
     end subroutine s_write_parallel_data_files
@@ -1091,7 +997,7 @@ contains
         real(kind(0d0)) :: G
         real(kind(0d0)) :: dyn_p
 
-        integer :: i, j, k, l, s, q !< Generic loop iterator
+        integer :: i, j, k, l, s, q, d !< Generic loop iterator
 
         real(kind(0d0)) :: nondim_time !< Non-dimensional time
 
@@ -1104,6 +1010,8 @@ contains
         integer :: npts !< Number of included integral points
         real(kind(0d0)) :: rad, thickness !< For integral quantities
         logical :: trigger !< For integral quantities
+
+        real(kind(0d0)) :: rhoYks(1:num_species)
 
         ! Non-dimensional time calculation
         if (time_stepper == 23) then
@@ -1156,6 +1064,12 @@ contains
                     k = 0
                     l = 0
 
+                    if (chemistry) then
+                        do d = 1, num_species
+                            rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k, l)
+                        end do
+                    end if
+
                     ! Computing/Sharing necessary state variables
                     if (hypoelasticity) then
                         call s_convert_to_mixture_variables(q_cons_vf, j - 2, k, l, &
@@ -1175,14 +1089,14 @@ contains
                         call s_compute_pressure( &
                             q_cons_vf(1)%sf(j - 2, k, l), &
                             q_cons_vf(alf_idx)%sf(j - 2, k, l), &
-                            dyn_p, pi_inf, gamma, rho, qv, pres, &
+                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, &
                             q_cons_vf(stress_idx%beg)%sf(j - 2, k, l), &
                             q_cons_vf(mom_idx%beg)%sf(j - 2, k, l), G)
                     else
                         call s_compute_pressure( &
                             q_cons_vf(1)%sf(j - 2, k, l), &
                             q_cons_vf(alf_idx)%sf(j - 2, k, l), &
-                            dyn_p, pi_inf, gamma, rho, qv, pres)
+                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres)
                     end if
 
                     if (model_eqns == 4) then
@@ -1245,6 +1159,12 @@ contains
                     accel = accel_mag(j - 2, k, l)
                 end if
             elseif (p == 0) then ! 2D simulation
+                if (chemistry) then
+                    do d = 1, num_species
+                        rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k - 2, l)
+                    end do
+                end if
+
                 if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
                     if ((probe(i)%y >= y_cb(-1)) .and. (probe(i)%y <= y_cb(n))) then
                         do s = -1, m
@@ -1276,13 +1196,16 @@ contains
                             call s_compute_pressure( &
                                 q_cons_vf(1)%sf(j - 2, k - 2, l), &
                                 q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                dyn_p, pi_inf, gamma, rho, qv, pres, &
+                                dyn_p, pi_inf, gamma, rho, qv, &
+                                rhoYks, &
+                                pres, &
                                 q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
                                 q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
                         else
                             call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
                                                     q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                                    dyn_p, pi_inf, gamma, rho, qv, pres)
+                                                    dyn_p, pi_inf, gamma, rho, qv, &
+                                                    rhoYks, pres)
                         end if
 
                         if (model_eqns == 4) then
@@ -1355,17 +1278,25 @@ contains
 
                             dyn_p = 0.5d0*rho*dot_product(vel, vel)
 
+                            if (chemistry) then
+                                do d = 1, num_species
+                                    rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k - 2, l - 2)
+                                end do
+                            end if
+
                             if (hypoelasticity) then
                                 call s_compute_pressure( &
                                     q_cons_vf(1)%sf(j - 2, k - 2, l - 2), &
                                     q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
-                                    dyn_p, pi_inf, gamma, rho, qv, pres, &
+                                    dyn_p, pi_inf, gamma, rho, qv, &
+                                    rhoYks, pres, &
                                     q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l - 2), &
                                     q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l - 2), G)
                             else
                                 call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l - 2), &
                                                         q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
-                                                        dyn_p, pi_inf, gamma, rho, qv, pres)
+                                                        dyn_p, pi_inf, gamma, rho, qv, &
+                                                        rhoYks, pres)
                             end if
 
                             ! Compute mixture sound speed
@@ -1672,59 +1603,6 @@ contains
 
     end subroutine s_write_probe_files
 
-    !>  Used to initialize the lagrangian solver in serial
-        !!  @param beta Lagrangian void fraction
-    SUBROUTINE s_write_initial_conc_serial(beta) ! ---------------------
-
-            ! Current time-step
-            INTEGER :: t_step
-
-            ! Bubble void fraction
-            TYPE(scalar_field), INTENT(IN)  :: beta
-
-            ! Relative path to the current time-step directory
-            CHARACTER(LEN = path_len + 2*name_len) :: t_step_dir
-
-            ! Relative path to the grid and conservative variables data files
-            CHARACTER(LEN = path_len + 3*name_len) :: file_path
-
-            ! Logical used to check existence of current time-step directory
-            LOGICAL :: file_exist
-
-            t_step = 0
-
-            ! Creating or overwriting the current time-step directory
-            WRITE(t_step_dir,'(A,I0,A,I0)') TRIM(case_dir) // '/p', &
-                                            proc_rank, '/', t_step
-
-            file_path = TRIM(t_step_dir) // '/.'
-
-            !INQUIRE( DIRECTORY = TRIM(file_path), & ! Intel compiler
-            !         EXIST     = file_exist       )
-            INQUIRE( FILE      = TRIM(file_path), & ! NAG/PGI/GCC compiler
-                     EXIST     = file_exist       )
-
-            !fixme: no need to delete other data?
-            !IF(file_exist) CALL SYSTEM('rm -rf ' // TRIM(t_step_dir))
-
-            !CALL SYSTEM('mkdir -p ' // TRIM(t_step_dir))
-
-            !fixme: deleting the existing particle data
-            !CALL SYSTEM('rm -rf ' // TRIM(t_step_dir) // '/q_cons_vf', &
-            !                            adv_idx%end+1, '.dat')
-
-            ! Writing beta
-            WRITE(file_path,'(A,I0,A)') TRIM(t_step_dir) // '/q_cons_vf', &
-                                        adv_idx%end+1, '.dat'
-
-            OPEN(2, FILE   = TRIM(file_path), &
-                    FORM   = 'unformatted'  , &
-                    STATUS = 'new'            )
-
-            WRITE(2) beta%sf(0:m,0:n,0:p); CLOSE(2)
-
-        END SUBROUTINE s_write_initial_conc_serial ! -------------------------
-
     !>  The goal of this subroutine is to write to the run-time
         !!      information file basic footer information applicable to
         !!      the current computation and to close the file when done.
@@ -1733,23 +1611,22 @@ contains
     subroutine s_close_run_time_information_file
 
         real(kind(0d0)) :: run_time !< Run-time of the simulation
-
         ! Writing the footer of and closing the run-time information file
-        write (1, '(A)') '----------------------------------------'// &
+        write (3, '(A)') '----------------------------------------'// &
             '----------------------------------------'
-        write (1, '(A)') ''
+        write (3, '(A)') ''
 
-        write (1, '(A,F9.6)') 'ICFL Max: ', icfl_max
-        if (any(Re_size > 0)) write (1, '(A,F9.6)') 'VCFL Max: ', vcfl_max
-        if (any(Re_size > 0)) write (1, '(A,F10.6)') 'Rc Min: ', Rc_min
+        write (3, '(A,F9.6)') 'ICFL Max: ', icfl_max
+        if (any(Re_size > 0)) write (3, '(A,F9.6)') 'VCFL Max: ', vcfl_max
+        if (any(Re_size > 0)) write (3, '(A,F10.6)') 'Rc Min: ', Rc_min
 
         call cpu_time(run_time)
 
-        write (1, '(A)') ''
-        write (1, '(A,I0,A)') 'Run-time: ', int(anint(run_time)), 's'
-        write (1, '(A)') '========================================'// &
+        write (3, '(A)') ''
+        write (3, '(A,I0,A)') 'Run-time: ', int(anint(run_time)), 's'
+        write (3, '(A)') '========================================'// &
             '========================================'
-        close (1)
+        close (3)
 
     end subroutine s_close_run_time_information_file
 

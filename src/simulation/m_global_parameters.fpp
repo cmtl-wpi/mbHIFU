@@ -19,6 +19,8 @@ module m_global_parameters
 
     use m_derived_types        !< Definitions of the derived types
 
+    use m_helper_basic         !< Functions to compare floating point numbers
+
 #ifdef MFC_OpenACC
     use openacc
 #endif
@@ -98,6 +100,16 @@ module m_global_parameters
     integer :: t_step_start, t_step_stop, t_step_save
     !> @}
 
+    !> @name Starting time, stopping time, and time between backups, simulation time,
+    !! and prescribed cfl respectively
+    !> @{
+    real(kind(0d0)) :: t_stop, t_save, cfl_target
+    integer :: n_start
+    !> @}
+    !$acc declare create(cfl_target)
+
+    logical :: cfl_adap_dt, cfl_const_dt, cfl_dt
+
     integer :: t_step_print !< Number of time-steps between printouts
 
     ! ==========================================================================
@@ -109,7 +121,6 @@ module m_global_parameters
     #:else
         integer :: num_dims       !< Number of spatial dimensions
     #:endif
-    logical :: adv_alphan     !< Advection of the last volume fraction
     logical :: mpp_lim        !< Mixture physical parameters (MPP) limits
     integer :: time_stepper   !< Time-stepper algorithm
     logical :: prim_vars_wrt
@@ -138,12 +149,14 @@ module m_global_parameters
     logical :: weno_avg       ! Average left/right cell-boundary states
     logical :: weno_Re_flux   !< WENO reconstruct velocity gradients for viscous stress tensor
     integer :: riemann_solver !< Riemann solver algorithm
+    integer :: low_Mach       !< Low Mach number fix to HLLC Riemann solver
     integer :: wave_speeds    !< Wave speeds estimation method
     integer :: avg_state      !< Average state evaluation method
     logical :: alt_soundspeed !< Alternate mixture sound speed
     logical :: null_weights   !< Null undesired WENO weights
     logical :: mixture_err    !< Mixture properties correction
     logical :: hypoelasticity !< hypoelasticity modeling
+    logical, parameter :: chemistry = .${chemistry}$. !< Chemistry modeling
     logical :: cu_tensor
 
     logical :: bodyForces
@@ -151,7 +164,7 @@ module m_global_parameters
     !< amplitude, frequency, and phase shift sinusoid in each direction
     #:for dir in {'x', 'y', 'z'}
         #:for param in {'k','w','p','g'}
-            real :: ${param}$_${dir}$
+            real(kind(0d0)) :: ${param}$_${dir}$
         #:endfor
     #:endfor
     real(kind(0d0)), dimension(3) :: accel_bf
@@ -163,7 +176,7 @@ module m_global_parameters
         !$acc declare create(num_dims, weno_polyn, weno_order, num_fluids, wenojs, mapped_weno, wenoz, teno)
     #:endif
 
-    !$acc declare create(mpp_lim, model_eqns, mixture_err, alt_soundspeed, avg_state, mp_weno, weno_eps, teno_CT, hypoelasticity)
+    !$acc declare create(mpp_lim, model_eqns, mixture_err, alt_soundspeed, avg_state, mp_weno, weno_eps, teno_CT, hypoelasticity, low_Mach)
 
     logical :: relax          !< activate phase change
     integer :: relax_model    !< Relaxation model
@@ -193,6 +206,7 @@ module m_global_parameters
     type(mpi_io_var), public :: MPI_IO_DATA
     type(mpi_io_ib_var), public :: MPI_IO_IB_DATA
     type(mpi_io_airfoil_ib_var), public :: MPI_IO_airfoil_IB_DATA
+    real(kind(0d0)), allocatable, dimension(:, :), public :: MPI_IO_DATA_particle
 
     !> @name MPI info for parallel IO with Lustre file systems
     !> @{
@@ -218,6 +232,8 @@ module m_global_parameters
     integer :: pi_inf_idx                !< Index of liquid stiffness func. eqn.
     type(int_bounds_info) :: stress_idx                !< Indexes of first and last shear stress eqns.
     integer :: c_idx         ! Index of the color function
+    type(int_bounds_info) :: chemistry_idx          !< Indexes of first & last concentration eqns.
+    type(int_bounds_info) :: temperature_idx       !< Indexes of first & last temperature eqns.
     !> @}
 
     !$acc declare create(bub_idx)
@@ -270,7 +286,7 @@ module m_global_parameters
 
     integer :: startx, starty, startz
 
-    !$acc declare create(sys_size, buff_size, startx, starty, startz, E_idx, gamma_idx, pi_inf_idx, alf_idx, n_idx, stress_idx)
+    !$acc declare create(sys_size, buff_size, startx, starty, startz, E_idx, gamma_idx, pi_inf_idx, alf_idx, n_idx, stress_idx, chemistry_idx)
 
     ! END: Simulation Algorithm Parameters =====================================
 
@@ -392,6 +408,9 @@ module m_global_parameters
 #endif
     !> @}
 
+    type(chemistry_parameters) :: chem_params
+    !$acc declare create(chem_params)
+
     !> @name Physical bubble parameters (see Ando 2010, Preston 2007)
     !> @{
     real(kind(0d0)) :: R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, pv, M_n, M_v
@@ -412,13 +431,13 @@ module m_global_parameters
 
     !$acc declare create(mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
 
-    !> @name Acoustic monopole parameters
+    !> @name Acoustic acoustic_source parameters
     !> @{
-    logical :: monopole !< Monopole switch
-    type(mono_parameters), dimension(num_probes_max) :: mono !< Monopole parameters
-    integer :: num_mono !< Number of monopoles
+    logical :: acoustic_source !< Acoustic source switch
+    type(acoustic_parameters), dimension(num_probes_max) :: acoustic !< Acoustic source parameters
+    integer :: num_source !< Number of acoustic sources
     !> @}
-    !$acc declare create(monopole, mono, num_mono)
+    !$acc declare create(acoustic_source, acoustic, num_source)
 
     !> @name Surface tension parameters
     !> @{
@@ -432,7 +451,10 @@ module m_global_parameters
     integer :: intxb, intxe
     integer :: bubxb, bubxe
     integer :: strxb, strxe
-!$acc declare create(momxb, momxe, advxb, advxe, contxb, contxe, intxb, intxe, bubxb, bubxe, strxb, strxe)
+    integer :: chemxb, chemxe
+    integer :: tempxb, tempxe
+
+!$acc declare create(momxb, momxe, advxb, advxe, contxb, contxe, intxb, intxe, bubxb, bubxe, strxb, strxe,  chemxb, chemxe, tempxb, tempxe)
 
 #ifdef CRAY_ACC_WAR
     @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:), gammas, gs_min, pi_infs, ps_inf, cvs, qvs, qvps)
@@ -461,60 +483,42 @@ module m_global_parameters
     !$acc declare create(pb_ts, mv_ts)
 #endif
 
-    ! ======================================================================
-    !< Global variables used in the Lagrangian solver
-
-    logical :: particleflag             !< lagrangian particle switch
-    logical :: avgdensFlag              !< density correction switch
-    logical :: particleoutFlag          !< output bubble radius evolution
-    logical :: particlestatFlag         !< output global stats about bubbles
-    logical :: RPflag                   !< Rayleigh-Plesset equation
+    !> @name lagrangian subgrid bubble parameters
+    !> @{!
+    logical :: particleflag             !< Lagrangian subgrid bubble model switch
+    logical :: avgdensFlag              !< Activate density correction
+    logical :: particleoutFlag          !< Write files to track the bubble evolution each time step
+    logical :: particlestatFlag         !< Write the maximum and minimum radius of each bubble
+    logical :: RPflag                   !< Bubble dynamics model: Rayleigh-Plesset equation
+    logical :: coupledFlag              !< Coupled liquid solver
+    logical :: correctpresFlag          !< Cell pressure correction term
+    logical :: bubblesources
     integer :: clusterflag              !< Cluster model
-    logical :: stillparticlesflag       !< keep bubbles at initial location (Always specify T)
-    integer :: heatflag                 !< Heat transfer model
-    integer :: massflag                 !< Mass transfer model
-    real(kind(0d0)) :: csonref          !< char. liquid speed of sound
-    real(kind(0d0)) :: rholiqref        !< char. liquid density
-    real(kind(0d0)) :: Lref             !< char. length
-    real(kind(0d0)) :: Tini                     !< Initial temperature
-    real(kind(0d0)) :: Runiv                    !< Universal Gas Constant
-    real(kind(0d0)) :: gammagas, gammavapor     !< Gas and vapour gamma 
-    real(kind(0d0)) :: pvap             !< Vapour pressure at the reference temperature 
-    real(kind(0d0)) :: cpgas, cpvapor   !< Gas and vapor specific heat capacity 
-    real(kind(0d0)) :: kgas, kvapor     !< Gas and vapor thermal conductivity
-    real(kind(0d0)) :: MWgas, MWvap     !< Gas and vapour molecular weight
-    real(kind(0d0)) :: diffcoefvap      !< Vapor diffusivity in gas
-    real(kind(0d0)) :: sigmabubble      !< Surface tension 
-    real(kind(0d0)) :: viscref          !< Liquid viscosity
-    real(kind(0d0)) :: RKeps            !< Adaptive RK accuracy
-    integer :: ratiodt                  !< Timestep ratio
+    integer :: heatflag                 !< Activate HEAT transfer model at the bubble-liquid interface
+    integer :: massflag                 !< Activate MASS transfer model at the bubble-liquid interface
+    integer :: solverapproach           !< Solver type (1: simple approach, 2: source terms)!< Solver type (1: One-way coupling, 2: two-way coupling)
     integer :: projectiontype           !< Projection type
     integer :: smoothtype               !< Smoothing function (1: Gaussian, 2:Delta 3x3 )
     real(kind(0d0)) :: epsilonb         !< stddsv for the gaussian (in number of cells, for the delta is 1)
-    logical :: coupledFlag              !< Coupled liquid solver
-    integer :: solverapproach           !< Solver type (1: simple approach, 2: source terms)
-    logical :: correctpresFlag          !< Cell pressure correction term
+
+    real(kind(0d0)) :: csonhost          !< char. liquid speed of sound
+    real(kind(0d0)) :: vischost         !< Liquid viscosity
+    real(kind(0d0)) :: gammagas, gammavapor     !< Gas and vapour gamma
+    real(kind(0d0)) :: pvap             !< Vapour pressure at the reference temperature
+    real(kind(0d0)) :: cpgas, cpvapor   !< Gas and vapor specific heat capacity
+    real(kind(0d0)) :: kgas, kvapor     !< Gas and vapor thermal conductivity
+    real(kind(0d0)) :: Rgas, Rvap       !< Gas and vapour specific gas constant
+    real(kind(0d0)) :: diffcoefvap      !< Vapor diffusivity in gas
+    real(kind(0d0)) :: sigmabubble      !< Surface tension
+
+    integer :: tot_step
+    integer :: ratiodt                  !< Timestep ratio
+    real(kind(0d0)) :: RKeps            !< Adaptive RK accuracy
     real(kind(0d0)) :: charwidth        !< domain depth (size of the domain in the z direction, for 2D simulations)
     real(kind(0d0)) :: valmaxvoid       !< maximum void fraction permitted
     real(kind(0d0)) :: dtmaxpart        !< maxdtpart (typically set zero)
-    LOGICAL :: do_particles
-    LOGICAL :: do_sources
-    LOGICAL :: do_sampling
-    LOGICAL :: bubblesources
-    INTEGER :: send_size        !< Number of variables to be sent in m_mpi_proxy
-
-    ! Particle Sampling data structures
-    TYPE :: probedat
-        INTEGER :: id
-        INTEGER, DIMENSION(3) :: ip
-    END TYPE probedat
-
-    TYPE (probedat), ALLOCATABLE, DIMENSION(:) :: prb
-    INTEGER :: nsamples, totsamples     !< Number of samples in each proc and total number of samples
-
-    INTEGER :: time_tmp
-    INTEGER :: tot_step
-    REAL(KIND(0.d0)) :: time_real, time_prev, dtnext, dtdid, dt_next_inp, dt0
+    real(kind(0d0)) :: time_real, time_prev, dtnext, dtdid, dt_next_inp, dt0
+    !> @}
 
     ! ======================================================================
 
@@ -539,14 +543,22 @@ contains
 
         dt = dflt_real
 
+        cfl_adap_dt = .false.
+        cfl_const_dt = .false.
+        cfl_dt = .false.
+        cfl_target = dflt_real
+
         t_step_start = dflt_int
         t_step_stop = dflt_int
         t_step_save = dflt_int
         t_step_print = 1
 
+        n_start = dflt_int
+        t_stop = dflt_real
+        t_save = dflt_real
+
         ! Simulation algorithm parameters
         model_eqns = dflt_int
-        adv_alphan = .false.
         mpp_lim = .false.
         time_stepper = dflt_int
         weno_eps = dflt_real
@@ -555,6 +567,7 @@ contains
         weno_avg = .false.
         weno_Re_flux = .false.
         riemann_solver = dflt_int
+        low_Mach = 0
         wave_speeds = dflt_int
         avg_state = dflt_int
         alt_soundspeed = .false.
@@ -577,6 +590,10 @@ contains
             wenoz = .false.
             teno = .false.
         #:endif
+
+        chem_params%advection = .false.
+        chem_params%diffusion = .false.
+        chem_params%reactions = .false.
 
         bc_x%beg = dflt_int; bc_x%end = dflt_int
         bc_y%beg = dflt_int; bc_y%end = dflt_int
@@ -648,9 +665,9 @@ contains
         Web = dflt_real
         poly_sigma = dflt_real
 
-        ! Monopole source
-        monopole = .false.
-        num_mono = 1
+        ! Acoustic source
+        acoustic_source = .false.
+        num_source = dflt_int
 
         ! Surface tension
         sigma = dflt_real
@@ -668,22 +685,29 @@ contains
         #:endfor
 
         do j = 1, num_probes_max
+            acoustic(j)%pulse = dflt_int
+            acoustic(j)%support = dflt_int
+            acoustic(j)%dipole = .false.
             do i = 1, 3
-                mono(j)%loc(i) = dflt_real
+                acoustic(j)%loc(i) = dflt_real
             end do
-            mono(j)%mag = dflt_real
-            mono(j)%length = dflt_real
-            mono(j)%delay = dflt_real
-            mono(j)%dir = 1.d0
-            mono(j)%npulse = 1.d0
-            mono(j)%pulse = 1
-            mono(j)%support = 1
-            mono(j)%foc_length = dflt_real
-            mono(j)%aperture = dflt_real
-            ! The author suggested the support width is typically on the order of
-            ! the width of the characteristic cells. Here, we choose 2.5 cell width
-            ! as the default value.
-            mono(j)%support_width = 2.5d0
+            acoustic(j)%mag = dflt_real
+            acoustic(j)%length = dflt_real
+            acoustic(j)%height = dflt_real
+            acoustic(j)%wavelength = dflt_real
+            acoustic(j)%frequency = dflt_real
+            acoustic(j)%gauss_sigma_dist = dflt_real
+            acoustic(j)%gauss_sigma_time = dflt_real
+            acoustic(j)%npulse = dflt_real
+            acoustic(j)%dir = dflt_real
+            acoustic(j)%delay = dflt_real
+            acoustic(j)%foc_length = dflt_real
+            acoustic(j)%aperture = dflt_real
+            acoustic(j)%element_spacing_angle = dflt_real
+            acoustic(j)%element_polygon_ratio = dflt_real
+            acoustic(j)%rotate_angle = dflt_real
+            acoustic(j)%num_elements = dflt_int
+            acoustic(j)%element_on = dflt_int
         end do
 
         fd_order = dflt_int
@@ -707,21 +731,17 @@ contains
             integral(i)%ymax = dflt_real
         end do
 
-        !Lagrangian solver variables
-        particleflag = .FALSE.
-        avgdensFlag = .FALSE.
-        particleoutFlag = .FALSE.
-        particlestatFlag = .FALSE.
-        RPflag = .FALSE.
+        !lagrangian subgrid bubble model
+        particleflag = .false.
+        avgdensFlag = .false.
+        particleoutFlag = .false.
+        particlestatFlag = .false.
+        RPflag = .false.
         clusterflag = dflt_int
-        stillparticlesflag= .FALSE.
-        heatflag= dflt_int
-        massflag= dflt_int
-        csonref = dflt_real
-        rholiqref = dflt_real
-        Lref = dflt_real
-        Tini = dflt_real
-        Runiv = dflt_real
+        heatflag = dflt_int
+        massflag = dflt_int
+        csonhost = dflt_real
+        vischost = dflt_real
         gammagas = dflt_real
         gammavapor = dflt_real
         pvap = dflt_real
@@ -729,24 +749,23 @@ contains
         cpvapor = dflt_real
         kgas = dflt_real
         kvapor = dflt_real
-        MWgas = dflt_real
-        MWvap = dflt_real
+        Rgas = dflt_real
+        Rvap = dflt_real
         diffcoefvap = dflt_real
         sigmabubble = dflt_real
-        viscref = dflt_real
+
         RKeps = dflt_real
         ratiodt = dflt_int
         projectiontype = dflt_int
         smoothtype = dflt_int
-        epsilonb= dflt_real
-        coupledFlag = .FALSE.
+        epsilonb = dflt_real
+        coupledFlag = .false.
         solverapproach = 2
-        correctpresFlag = .FALSE.
+        correctpresFlag = .false.
         charwidth = dflt_real
         valmaxvoid = dflt_real
         dtmaxpart = dflt_real
-        do_particles = .FALSE.
-        bubblesources = .FALSE.
+        bubblesources = .false.
 
     end subroutine s_assign_default_values_to_user_inputs
 
@@ -816,17 +835,6 @@ contains
                 else
                     alf_idx = 1
                 end if
-
-                !MPI send size for lagrangian solver
-                IF (particleflag) THEN
-                  IF ((solverapproach.EQ.2).AND.avgdensFlag) THEN
-                    send_size = adv_idx%end + 2
-                  ELSE
-                    send_size = adv_idx%end + 1
-                  END IF
-                ELSE
-                    send_size = adv_idx%end
-                END IF
 
                 if (bubbles) then
                     bub_idx%beg = sys_size + 1
@@ -1049,8 +1057,9 @@ contains
             allocate (MPI_IO_DATA%view(1:sys_size + 2*nb*4))
             allocate (MPI_IO_DATA%var(1:sys_size + 2*nb*4))
         else if (particleflag) then !Lagrangian solver
-            ALLOCATE(MPI_IO_DATA%view(1:sys_size+1))
-            ALLOCATE(MPI_IO_DATA%var(1:sys_size+1))
+            allocate (MPI_IO_DATA%view(1:sys_size + 1))
+            allocate (MPI_IO_DATA%var(1:sys_size + 1))
+
         else
             allocate (MPI_IO_DATA%view(1:sys_size))
             allocate (MPI_IO_DATA%var(1:sys_size))
@@ -1066,10 +1075,10 @@ contains
                 MPI_IO_DATA%var(i)%sf => null()
             end do
         else if (particleflag) then !Lagrangian solver
-            DO i = 1, sys_size+1
-                ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
-                MPI_IO_DATA%var(i)%sf => NULL()
-            END DO
+            do i = 1, sys_size + 1
+                allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
+                MPI_IO_DATA%var(i)%sf => null()
+            end do
         end if
 
         ! Configuring the WENO average flag that will be used to regulate
@@ -1121,15 +1130,10 @@ contains
             buff_size = buff_size + fd_number
         end if
 
-        ! Particle-module correction for smearing function, Lagrangian solver
-        ! If clusterflag is 0, required buff_size is CEILING(3*stddsv)
-        ! If clusterflag is 3, required buff_size is CEILING(3*stddsv).
-        !buff_size = MAX(buff_size, INT(6d0))
-        !if (proc_rank==0) print*, 'buff_size before', buff_size
-        IF (do_particles) THEN
-            buff_size = MAX(buff_size, 6)
-        END IF
-        !if (proc_rank==0) print*, 'buff_size after', buff_size
+        ! Buffer size correction for smearing function in the lagrangian subgrid bubble model
+        if (particleflag) then
+            buff_size = max(buff_size, 6)
+        end if
 
         startx = -buff_size
         starty = 0
@@ -1151,6 +1155,16 @@ contains
             grid_geometry = 3
         end if
 
+        if (chemistry) then
+            chemistry_idx%beg = sys_size + 1
+            chemistry_idx%end = sys_size + num_species
+            sys_size = chemistry_idx%end
+
+            temperature_idx%beg = sys_size + 1
+            temperature_idx%end = sys_size + 1
+            sys_size = temperature_idx%end
+        end if
+
         momxb = mom_idx%beg
         momxe = mom_idx%end
         advxb = adv_idx%beg
@@ -1163,12 +1177,17 @@ contains
         strxe = stress_idx%end
         intxb = internalEnergies_idx%beg
         intxe = internalEnergies_idx%end
+        chemxb = chemistry_idx%beg
+        chemxe = chemistry_idx%end
+        tempxb = temperature_idx%beg
+        tempxe = temperature_idx%end
 
-        !$acc update device(momxb, momxe, advxb, advxe, contxb, contxe, bubxb, bubxe, intxb, intxe, sys_size, buff_size, E_idx, alf_idx, n_idx, adv_n, adap_dt, pi_fac, strxb, strxe)
-        !$acc update device(m, n, p)
+        !$acc update device(momxb, momxe, advxb, advxe, contxb, contxe, bubxb, bubxe, intxb, intxe, sys_size, buff_size, E_idx, alf_idx, n_idx, adv_n, adap_dt, pi_fac, strxb, strxe, chemxb, chemxe, tempxb, tempxe)
+        !$acc update device(chemistry_idx)
+        !$acc update device(cfl_target, m, n, p)
 
-        !$acc update device(alt_soundspeed, monopole, num_mono)
-        !$acc update device(dt, sys_size, buff_size, pref, rhoref, gamma_idx, pi_inf_idx, E_idx, alf_idx, stress_idx, mpp_lim, bubbles, hypoelasticity, alt_soundspeed, avg_state, num_fluids, model_eqns, num_dims, mixture_err, grid_geometry, cyl_coord, mp_weno, weno_eps, teno_CT)
+        !$acc update device(alt_soundspeed, acoustic_source, num_source)
+        !$acc update device(dt, sys_size, buff_size, pref, rhoref, gamma_idx, pi_inf_idx, E_idx, alf_idx, stress_idx, mpp_lim, bubbles, hypoelasticity, alt_soundspeed, avg_state, num_fluids, model_eqns, num_dims, mixture_err, grid_geometry, cyl_coord, mp_weno, weno_eps, teno_CT, low_Mach)
 
         #:if not MFC_CASE_OPTIMIZATION
             !$acc update device(wenojs, mapped_weno, wenoz, teno)
@@ -1243,15 +1262,15 @@ contains
         deallocate (proc_coords)
         if (parallel_io) then
             deallocate (start_idx)
-            IF(particleflag) THEN
-                DO i = 1, sys_size + 1   !< Altered sys_size for lagrangian solver
-                    MPI_IO_DATA%var(i)%sf => NULL()
-                END DO
-            ELSE
+            if (particleflag) then !lagrangian solver
+                do i = 1, sys_size + 1
+                    MPI_IO_DATA%var(i)%sf => null()
+                end do
+            else
                 do i = 1, sys_size
                     MPI_IO_DATA%var(i)%sf => null()
                 end do
-            END IF
+            end if
 
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)

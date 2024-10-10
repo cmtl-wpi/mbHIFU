@@ -2,6 +2,7 @@
 !! @file m_rhs.f90
 !! @brief Contains module m_rhs
 
+#:include 'case.fpp'
 #:include 'macros.fpp'
 
 !> @brief The module contains the subroutines used to calculate the right-
@@ -39,7 +40,7 @@ module m_rhs
 
     use m_hypoelastic
 
-    use m_monopole
+    use m_acoustic_src
 
     use m_viscous
 
@@ -55,19 +56,16 @@ module m_rhs
 
     use m_body_forces
 
-    use ieee_arithmetic
-
-    use m_mpi_common
-    
+    use m_chemistry
     ! ==========================================================================
 
     implicit none
 
     !private; public :: s_initialize_rhs_module, &
     public :: s_initialize_rhs_module, &
- s_compute_rhs, &
- s_pressure_relaxation_procedure, &
- s_finalize_rhs_module
+              s_compute_rhs, &
+              s_pressure_relaxation_procedure, &
+              s_finalize_rhs_module
 
     !! This variable contains the WENO-reconstructed values of the cell-average
     !! conservative variables, which are located in q_cons_vf, at cell-interior
@@ -229,11 +227,8 @@ module m_rhs
     !$acc declare create(nbub)
 #endif
 
-    ! Variable for sub-grid particle concentration, lagrangian solver
-    ! 1: one minus the voidfraction (1-beta)
-    ! 2: Temporal derivative of the void fraction
-    ! 3-5: Extra-allocated variables in those cases where source terms are required
-    TYPE(scalar_field), ALLOCATABLE, DIMENSION(:) :: q_particle
+    type(scalar_field), allocatable, dimension(:) :: q_particle
+    !! Variable for sub-grid particle concentration, lagrangian solver
 
 contains
 
@@ -612,6 +607,16 @@ contains
                                  & iz%beg:iz%end))
                     end do
                 end if
+
+                if (chemistry) then
+                    do l = chemxb, chemxe
+                        @:ALLOCATE(flux_src_n(i)%vf(l)%sf( &
+                                 & ix%beg:ix%end, &
+                                 & iy%beg:iy%end, &
+                                 & iz%beg:iz%end))
+                    end do
+                end if
+
             else
                 do l = 1, sys_size
                     @:ALLOCATE(flux_gsrc_n(i)%vf(l)%sf( &
@@ -721,8 +726,8 @@ contains
         real(kind(0d0)) :: t_start, t_finish
         real(kind(0d0)) :: gp_sum
 
-	REAL(KIND(0.D0)), OPTIONAL :: qtime !< Current time for the Lagrangian solver
-        
+        real(kind(0.d0)), optional :: qtime !< Current time for the 4th/5th order Runge-Kutta-Cash-Karp time stepper
+
         real(kind(0d0)) :: top, bottom  !< Numerator and denominator when evaluating flux limiter function
         real(kind(0d0)), dimension(num_fluids) :: myalpha_rho, myalpha
 
@@ -738,11 +743,11 @@ contains
         real(kind(0d0)), dimension(0:m, 0:n, 0:p) :: nbub
         integer :: ndirs
 
-        real(kind(0d0)) :: mytime, sound
+        real(kind(0d0)) :: sound
         real(kind(0d0)) :: start, finish
         real(kind(0d0)) :: s2, const_sos, s1
 
-        integer :: i, j, k, l, q, ii, id !< Generic loop iterators
+        integer :: i, c, j, k, l, q, ii, id !< Generic loop iterators
         integer :: term_index
 
         ! Configuring Coordinate Direction Indexes =========================
@@ -756,23 +761,25 @@ contains
         call cpu_time(t_start)
         ! Association/Population of Working Variables ======================
         !$acc parallel loop collapse(4) gang vector default(present)
-        !if (particleflag) then
-        !    do i = 1, sys_size
-        !        q_cons_qp%vf(i)%sf => q_cons_vf(i)%sf
-        !    end do
-        !else
-            do i = 1, sys_size
-                do l = iz%beg, iz%end
-                    do k = iy%beg, iy%end
-                        do j = ix%beg, ix%end
-                            !if (proc_rank==0) print*, 'rhs1:', i, j, k, l
-                            !if (proc_rank==0) print*, 'rhs2:', q_cons_vf(i)%sf(j, k, l)
-                            q_cons_qp%vf(i)%sf(j, k, l) = q_cons_vf(i)%sf(j, k, l)
-                        end do
+        do i = 1, sys_size
+            do l = iz%beg, iz%end
+                do k = iy%beg, iy%end
+                    do j = ix%beg, ix%end
+                        !if (proc_rank==0) print*, 'rhs1:', i, j, k, l
+                        !if (proc_rank==0) print*, 'rhs2:', q_cons_vf(i)%sf(j, k, l)
+                        q_cons_qp%vf(i)%sf(j, k, l) = q_cons_vf(i)%sf(j, k, l)
                     end do
                 end do
             end do
+        end do
         !end if
+
+        if (chemistry) then
+            !$acc parallel loop default(present)
+            do i = chemxb, chemxe
+                rhs_vf(i)%sf(:, :, :) = 0d0
+            end do
+        end if
 
         ! ==================================================================
 
@@ -798,32 +805,38 @@ contains
         end if
 
         call nvtxStartRange("RHS-CONVERT")
-        IF(particleflag) THEN !Lagrangian solver
+        if (particleflag) then 
             call s_convert_conservative_to_primitive_variables( &
-                                                  q_cons_qp%vf, &
-                                                  q_prim_qp%vf, &
-                                                gm_alpha_qp%vf, &
-                                                    ix, iy, iz, &
-                                                   q_particle(1))
-        ELSE
+                q_cons_qp%vf, &
+                q_prim_qp%vf, &
+                gm_alpha_qp%vf, &
+                ix, iy, iz, &
+                q_particle(1))
+        else
             call s_convert_conservative_to_primitive_variables( &
-                                                  q_cons_qp%vf, &
-                                                  q_prim_qp%vf, &
-                                                gm_alpha_qp%vf, &
-                                                      ix, iy, iz)
-        END IF
+                q_cons_qp%vf, &
+                q_prim_qp%vf, &
+                gm_alpha_qp%vf, &
+                ix, iy, iz)
+        end if
 
         call nvtxEndRange
 
         call nvtxStartRange("RHS-MPI")
-        if (particleflag) then !Lagrangian solver
-            call s_populate_primitive_variables_buffers(q_prim_qp%vf, pb, mv, q_particle)
+        if (particleflag) then
+            call s_populate_variables_buffers(q_prim_qp%vf, pb, mv, q_particle)
         else
-            call s_populate_primitive_variables_buffers(q_prim_qp%vf, pb, mv)
+            call s_populate_variables_buffers(q_prim_qp%vf, pb, mv)
         end if
+
         call nvtxEndRange
 
-        if (t_step == t_step_stop) return
+        if (cfl_dt) then
+            if (mytime >= t_stop) return
+        else
+            if (t_step == t_step_stop) return
+        end if
+
         ! ==================================================================
 
         if (qbmm) call s_mom_inv(q_cons_qp%vf, q_prim_qp%vf, mom_sp, mom_3d, pb, rhs_pb, mv, rhs_mv, ix, iy, iz, nbub)
@@ -1007,6 +1020,26 @@ contains
             call nvtxEndRange
             ! END: Additional physics and source terms =========================
 
+            #:if chemistry
+                if (chem_params%advection) then
+                    call nvtxStartRange("RHS_Chem_Advection")
+
+                    #:for NORM_DIR, XYZ in [(1, 'x'), (2, 'y'), (3, 'z')]
+
+                        if (id == ${NORM_DIR}$) then
+                            call s_compute_chemistry_rhs_${XYZ}$ ( &
+                                flux_n, &
+                                rhs_vf, &
+                                flux_src_n(${NORM_DIR}$)%vf, &
+                                q_prim_vf)
+                        end if
+
+                    #:endfor
+
+                    call nvtxEndRange
+                end if
+            #:endif
+
         end do
         ! END: Dimensional Splitting Loop =================================
 
@@ -1027,21 +1060,19 @@ contains
 
         ! Additional Physics and Source Temrs ==================================
         ! Additions for monopole
-        call nvtxStartRange("RHS_monopole")
-        if (monopole) then
-            if (PRESENT(qtime)) then !Lagrangian solver
-                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
-                                                   q_prim_qp%vf(1:sys_size), &
-                                                   t_step, &
-                                                   num_dims, &
-                                                   rhs_vf, &
-                                                   qtime)
+        call nvtxStartRange("RHS_acoustic_src")
+        if (acoustic_source) then
+            if (present(qtime)) then 
+                call s_acoustic_src_calculations(q_cons_qp%vf(1:sys_size), &
+                                                 q_prim_qp%vf(1:sys_size), &
+                                                 t_step, &
+                                                 rhs_vf, &
+                                                 qtime)
             else
-                call s_monopole_calculations(q_cons_qp%vf(1:sys_size), &
-                                                   q_prim_qp%vf(1:sys_size), &
-                                                   t_step, &
-                                                   num_dims, &
-                                                   rhs_vf)
+                call s_acoustic_src_calculations(q_cons_qp%vf(1:sys_size), &
+                                                 q_prim_qp%vf(1:sys_size), &
+                                                 t_step, &
+                                                 rhs_vf)
             end if
         end if
         call nvtxEndRange
@@ -1054,6 +1085,15 @@ contains
             t_step, &
             rhs_vf)
         call nvtxEndRange
+
+        #:if chemistry
+            if (chem_params%reactions) then
+                call nvtxStartRange("RHS_Chem_Reactions")
+                call s_compute_chemistry_reaction_flux(rhs_vf, q_cons_vf, q_prim_qp%vf)
+                call nvtxEndRange
+            end if
+        #:endif
+
         ! END: Additional pphysics and source terms ============================
 
         if (run_time_info .or. probe_wrt .or. ib) then
@@ -1065,25 +1105,20 @@ contains
             !$acc update device(ix, iy, iz)
 
             !$acc parallel loop collapse(4) gang vector default(present)
-            !if (particleflag) then
-            !    do i = 1, sys_size
-            !        q_prim_vf(i)%sf => q_prim_qp%vf(i)%sf
-            !    end do
-            !else
-                do i = 1, sys_size
-                    do l = iz%beg, iz%end
-                        do k = iy%beg, iy%end
-                            do j = ix%beg, ix%end
-                                q_prim_vf(i)%sf(j, k, l) = q_prim_qp%vf(i)%sf(j, k, l)
-                            end do
+            do i = 1, sys_size
+                do l = iz%beg, iz%end
+                    do k = iy%beg, iy%end
+                        do j = ix%beg, ix%end
+                            q_prim_vf(i)%sf(j, k, l) = q_prim_qp%vf(i)%sf(j, k, l)
                         end do
                     end do
                 end do
+            end do
             !end if
         end if
         call cpu_time(t_finish)
         if (t_step >= 4) then
-            time_avg = (abs(t_finish - t_start)/((ix%end - ix%beg)*(iy%end - iy%beg)*(iz%end - iz%beg)) + (t_step - 4)*time_avg)/(t_step - 3)
+            time_avg = (abs(t_finish - t_start) + (t_step - 4)*time_avg)/(t_step - 3)
         else
             time_avg = 0d0
         end if
@@ -2284,12 +2319,10 @@ contains
             !$acc exit data detach(q_prim_qp%vf(j)%sf)
             nullify (q_prim_qp%vf(j)%sf)
         end do
-        
+
         do j = mom_idx%beg, E_idx
-            !if (.not.particleflag) then
-                @:DEALLOCATE(q_cons_qp%vf(j)%sf)
-                @:DEALLOCATE(q_prim_qp%vf(j)%sf)
-            !end if
+            @:DEALLOCATE(q_cons_qp%vf(j)%sf)
+            @:DEALLOCATE(q_prim_qp%vf(j)%sf)
         end do
 
         @:DEALLOCATE(q_cons_qp%vf, q_prim_qp%vf)
@@ -2432,3 +2465,4 @@ contains
     end subroutine s_finalize_rhs_module
 
 end module m_rhs
+

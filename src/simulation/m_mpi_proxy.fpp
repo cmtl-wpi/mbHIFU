@@ -17,6 +17,8 @@ module m_mpi_proxy
     use mpi                    !< Message passing interface (MPI) module
 #endif
 
+    use m_helper_basic         !< Functions to compare floating point numbers
+
     use m_helper
 
     use m_derived_types        !< Definitions of the derived types
@@ -41,36 +43,35 @@ module m_mpi_proxy
     !$acc declare link(ib_buff_send, ib_buff_recv)
     !$acc declare link(c_divs_buff_send, c_divs_buff_recv)
 #else
-    real(kind(0d0)), private, allocatable, dimension(:) :: q_cons_buff_send !<
+    real(kind(0d0)), private, allocatable, dimension(:), target :: q_cons_buff_send !<
     !! This variable is utilized to pack and send the buffer of the cell-average
     !! conservative variables, for a single computational domain boundary at the
     !! time, to the relevant neighboring processor.
 
-    real(kind(0d0)), private, allocatable, dimension(:) :: q_cons_buff_recv !<
+    real(kind(0d0)), private, allocatable, dimension(:), target :: q_cons_buff_recv !<
     !! q_cons_buff_recv is utilized to receive and unpack the buffer of the cell-
     !! average conservative variables, for a single computational domain boundary
     !! at the time, from the relevant neighboring processor.
 
-    real(kind(0d0)), private, allocatable, dimension(:) :: c_divs_buff_send !<
+    real(kind(0d0)), private, allocatable, dimension(:), target :: c_divs_buff_send !<
     !! c_divs_buff_send is utilized to send and unpack the buffer of the cell-
     !! centered color function derivatives, for a single computational domain
     !! boundary at the time, to the the relevant neighboring processor
 
-    real(kind(0d0)), private, allocatable, dimension(:) :: c_divs_buff_recv
+    real(kind(0d0)), private, allocatable, dimension(:), target :: c_divs_buff_recv
     !! c_divs_buff_recv is utilized to receiver and unpack the buffer of the cell-
     !! centered color function derivatives, for a single computational domain
     !! boundary at the time, from the relevant neighboring processor
 
-    integer, private, allocatable, dimension(:) :: ib_buff_send !<
+    integer, private, allocatable, dimension(:), target :: ib_buff_send !<
     !! This variable is utilized to pack and send the buffer of the immersed
     !! boundary markers, for a single computational domain boundary at the
     !! time, to the relevant neighboring processor.
 
-    integer, private, allocatable, dimension(:) :: ib_buff_recv !<
+    integer, private, allocatable, dimension(:), target :: ib_buff_recv !<
     !! q_cons_buff_recv is utilized to receive and unpack the buffer of the
     !! immersed boundary markers, for a single computational domain boundary
     !! at the time, from the relevant neighboring processor.
-
 
     !$acc declare create(q_cons_buff_send, q_cons_buff_recv)
     !$acc declare create( ib_buff_send, ib_buff_recv)
@@ -88,9 +89,6 @@ module m_mpi_proxy
 
     integer :: nVars !< nVars for surface tension communication
     !$acc declare create(nVars)
-
-     integer :: MPI_COMM_CART !<
-            !! Cartesian processor topology communicator
 
 contains
 
@@ -126,11 +124,15 @@ contains
             v_size = sys_size + 2*nb*4
         else
 
-            IF (particleflag) THEN
-                v_size = send_size !< Lagrangian solver: send/receive size
-            ELSE
+            if (particleflag) then
+                if ((solverapproach == 2) .and. avgdensFlag) then
+                    v_size = adv_idx%end + 2
+                else
+                    v_size = adv_idx%end + 1
+                end if
+            else
                 v_size = sys_size
-            END IF
+            end if
 
             if (n > 0) then
                 if (p > 0) then
@@ -178,7 +180,7 @@ contains
 
     !>  Since only the processor with rank 0 reads and verifies
         !!      the consistency of user inputs, these are initially not
-        !!      available to the other processors. Then, the purpose of
+        !!      available to the other processors. then, the purpose of
         !!      this subroutine is to distribute the user inputs to the
         !!      remaining processors in the communicator.
     subroutine s_mpi_bcast_user_inputs
@@ -196,23 +198,49 @@ contains
 
         #:for VAR in ['t_step_old', 'm', 'n', 'p', 'm_glb', 'n_glb', 'p_glb',  &
             & 't_step_start','t_step_stop','t_step_save','t_step_print',       &
-            & 'model_eqns','time_stepper', 'riemann_solver',                   &
+            & 'model_eqns','time_stepper', 'riemann_solver', 'low_Mach',       &
             & 'wave_speeds', 'avg_state', 'precision', 'bc_x%beg', 'bc_x%end', &
             & 'bc_y%beg', 'bc_y%end', 'bc_z%beg', 'bc_z%end',  'fd_order',     &
             & 'num_probes', 'num_integrals', 'bubble_model', 'thermal',        &
-            & 'R0_type', 'num_mono', 'relax_model', 'num_ibs']
+            & 'R0_type', 'num_source', 'relax_model', 'num_ibs', 'n_start']
             call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
-        #:for VAR in [ 'run_time_info','cyl_coord', 'adv_alphan', 'mpp_lim',    &
-            & 'mp_weno', 'rdma_mpi', 'weno_flat', 'riemann_flat',                &
+        #:for VAR in [ 'run_time_info','cyl_coord', 'mpp_lim',     &
+            &  'mp_weno', 'rdma_mpi', 'weno_flat', 'riemann_flat', &
             & 'weno_Re_flux', 'alt_soundspeed', 'null_weights', 'mixture_err',   &
             & 'parallel_io', 'hypoelasticity', 'bubbles', 'polytropic',          &
-            & 'polydisperse', 'qbmm', 'monopole', 'probe_wrt', 'integral_wrt',   &
+            & 'polydisperse', 'qbmm', 'acoustic_source', 'probe_wrt', 'integral_wrt',   &
             & 'prim_vars_wrt', 'weno_avg', 'file_per_process', 'relax',          &
-            & 'adv_n', 'adap_dt', 'ib', 'bodyForces', 'bf_x', 'bf_y', 'bf_z' ]
+            & 'adv_n', 'adap_dt', 'ib', 'bodyForces', 'bf_x', 'bf_y', 'bf_z',    &
+            & 'cfl_adap_dt', 'cfl_const_dt', 'cfl_dt', 'particleflag']
             call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         #:endfor
+
+        if (chemistry) then
+            #:for VAR in [ 'advection', 'diffusion', 'reactions' ]
+                call MPI_BCAST(chem_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+        end if
+
+        if (particleflag) then
+            #:for VAR in [ 'avgdensFlag', 'particleoutFlag', 'particlestatFlag',   &
+                & 'RPflag', 'coupledflag', 'correctpresFlag' ]
+                call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+
+            #:for VAR in [ 'clusterflag', 'heatflag', 'massflag', 'ratiodt',       &
+                & 'smoothtype', 'projectiontype', 'solverapproach']
+                call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+
+            #:for VAR in [ 'csonhost', 'vischost', 'gammagas', 'gammavapor',       &
+                & 'pvap', 'cpgas', 'cpvapor', 'kgas', 'kvapor', 'Rgas', 'Rvap',    &
+                & 'diffcoefvap', 'sigmabubble', 'RKeps', 'epsilonb',    &
+                & 'charwidth', 'valmaxvoid', 'dtmaxpart']
+                call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+        end if
 
         #:for VAR in [ 'dt','weno_eps','teno_CT','pref','rhoref','R0ref','Web','Ca', 'sigma', &
             & 'Re_inv', 'poly_sigma', 'palpha_eps', 'ptgalpha_eps', 'pi_fac',    &
@@ -220,7 +248,7 @@ contains
             & 'bc_y%vb1','bc_y%vb2','bc_y%vb3','bc_y%ve1','bc_y%ve2','bc_y%ve3', &
             & 'bc_z%vb1','bc_z%vb2','bc_z%vb3','bc_z%ve1','bc_z%ve2','bc_z%ve3', &
             & 'x_domain%beg', 'x_domain%end', 'y_domain%beg', 'y_domain%end',    &
-            & 'z_domain%beg', 'z_domain%end']
+            & 'z_domain%beg', 'z_domain%end', 't_stop',  't_save', 'cfl_target']
             call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
@@ -251,12 +279,20 @@ contains
 
         do j = 1, num_probes_max
             do i = 1, 3
-                call MPI_BCAST(mono(j)%loc(i), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+                call MPI_BCAST(acoustic(j)%loc(i), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             end do
 
-            #:for VAR in [ 'mag', 'length', 'delay', 'dir', 'npulse', 'pulse',  &
-                'support', 'foc_length', 'aperture', 'support_width' ]
-                call MPI_BCAST(mono(j)%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(acoustic(j)%dipole, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+
+            #:for VAR in [ 'pulse', 'support', 'num_elements', 'element_on' ]
+                call MPI_BCAST(acoustic(j)%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+
+            #:for VAR in [ 'mag', 'length', 'height', &
+                'wavelength', 'frequency', 'gauss_sigma_dist', 'gauss_sigma_time', &
+                'npulse', 'dir', 'delay', 'foc_length', 'aperture', &
+                'element_spacing_angle', 'element_polygon_ratio', 'rotate_angle' ]
+                call MPI_BCAST(acoustic(j)%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
             #:for VAR in [ 'x','y','z' ]
@@ -291,7 +327,7 @@ contains
         real(kind(0d0)) :: fct_min !<
             !! Processor factorization (fct) minimization parameter
 
-       ! integer :: MPI_COMM_CART !<
+        integer :: MPI_COMM_CART !<
             !! Cartesian processor topology communicator
 
         integer :: rem_cells !<
@@ -838,6 +874,7 @@ contains
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param mpi_dir MPI communication coordinate direction
         !!  @param pbc_loc Processor boundary condition (PBC) location
+        !!  @param q_particle Eulerian void fraction from lagrangian bubbles
     subroutine s_mpi_sendrecv_variables_buffers(q_cons_vf, &
                                                 pb, mv, &
                                                 mpi_dir, &
@@ -847,9 +884,7 @@ contains
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout), optional :: pb, mv
         integer, intent(in) :: mpi_dir, pbc_loc
-
-        ! Lagrangian solver
-        TYPE(scalar_field), DIMENSION(:), OPTIONAL :: q_particle
+        type(scalar_field), dimension(:), optional :: q_particle
 
         integer :: i, j, k, l, r, q, s !< Generic loop iterators
 
@@ -863,6 +898,8 @@ contains
 
         integer :: pack_offsets(1:3), unpack_offsets(1:3)
         integer :: pack_offset, unpack_offset
+        real(kind(0d0)), pointer :: p_send, p_recv
+        integer, pointer, dimension(:) :: p_i_send, p_i_recv
 
 #ifdef MFC_MPI
 
@@ -924,13 +961,13 @@ contains
                                     r = (i - 1) + v_size*(j + buff_size*(k + (n + 1)*l))
                                     q_cons_buff_send(r) = q_cons_vf(i)%sf(j + pack_offset, k, l)
                                 end do
-                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
-                                   DO s = 1, send_size-adv_idx%end
-                                      r = (adv_idx%end + s-1) + send_size * &
-                                          (j + buff_size*(k + (n+1)*l))
-                                      q_cons_buff_send(r) = q_particle(s)%sf(j + pack_offset, k, l)
-                                   END DO
-                                END IF
+                                if (present(q_particle)) then
+                                    do s = 1, v_size - adv_idx%end
+                                        r = (adv_idx%end + s - 1) + v_size* &
+                                            (j + buff_size*(k + (n + 1)*l))
+                                        q_cons_buff_send(r) = q_particle(s)%sf(j + pack_offset, k, l)
+                                    end do
+                                end if
                             end do
                         end do
                     end do
@@ -977,14 +1014,14 @@ contains
                                          (k + buff_size*l))
                                     q_cons_buff_send(r) = q_cons_vf(i)%sf(j, k + pack_offset, l)
                                 end do
-                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
-                                    DO s = 1, send_size-adv_idx%end
-                                       r = (adv_idx%end + s-1) + send_size * &
-                                          ((j+buff_size) + (m+2*buff_size+1) * &
-                                          (k + buff_size*l))
-                                       q_cons_buff_send(r) = q_particle(s)%sf(j, k + pack_offset, l)
-                                    END DO
-                                END IF
+                                if (present(q_particle)) then
+                                    do s = 1, v_size - adv_idx%end
+                                        r = (adv_idx%end + s - 1) + v_size* &
+                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                             (k + buff_size*l))
+                                        q_cons_buff_send(r) = q_particle(s)%sf(j, k + pack_offset, l)
+                                    end do
+                                end if
                             end do
                         end do
                     end do
@@ -1033,14 +1070,14 @@ contains
                                          ((k + buff_size) + (n + 2*buff_size + 1)*l))
                                     q_cons_buff_send(r) = q_cons_vf(i)%sf(j, k, l + pack_offset)
                                 end do
-                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
-                                    DO s = 1, send_size-adv_idx%end
-                                       r = (adv_idx%end + s-1) + send_size * &
-                                           ((j+buff_size) + (m+2*buff_size+1) * &
-                                           ((k+buff_size) + (n+2*buff_size+1)*l))
-                                       q_cons_buff_send(r) = q_particle(s)%sf(j, k, l + pack_offset)
-                                    END DO
-                                 END IF
+                                if (present(q_particle)) then
+                                    do s = 1, v_size - adv_idx%end
+                                        r = (adv_idx%end + s - 1) + v_size* &
+                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                             ((k + buff_size) + (n + 2*buff_size + 1)*l))
+                                        q_cons_buff_send(r) = q_particle(s)%sf(j, k, l + pack_offset)
+                                    end do
+                                end if
                             end do
                         end do
                     end do
@@ -1085,19 +1122,23 @@ contains
         ! Send/Recv
         #:for rdma_mpi in [False, True]
             if (rdma_mpi .eqv. ${'.true.' if rdma_mpi else '.false.'}$) then
+                p_send => q_cons_buff_send(0)
+                p_recv => q_cons_buff_recv(0)
                 #:if rdma_mpi
-                    !$acc host_data use_device(q_cons_buff_recv, q_cons_buff_send, ib_buff_recv, ib_buff_send)
+                    !$acc data attach(p_send, p_recv)
+                    !$acc host_data use_device(p_send, p_recv)
                 #:else
                     !$acc update host(q_cons_buff_send, ib_buff_send)
                 #:endif
 
                 call MPI_SENDRECV( &
-                    q_cons_buff_send(0), buffer_count, MPI_DOUBLE_PRECISION, dst_proc, send_tag, &
-                    q_cons_buff_recv(0), buffer_count, MPI_DOUBLE_PRECISION, src_proc, recv_tag, &
+                    p_send, buffer_count, MPI_DOUBLE_PRECISION, dst_proc, send_tag, &
+                    p_recv, buffer_count, MPI_DOUBLE_PRECISION, src_proc, recv_tag, &
                     MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                 #:if rdma_mpi
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 #:else
                     !$acc update device(q_cons_buff_recv)
@@ -1124,14 +1165,14 @@ contains
                                     end if
 #endif
                                 end do
-                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
-                                    DO s = 1, send_size-adv_idx%end
-                                    	r = (adv_idx%end + s-1) + send_size * &
-                                          (j + buff_size*((k+1) + (n+1)*l))
-                                    	q_particle(s)%sf(j + unpack_offset, k, l) = q_cons_buff_recv(r)
-                                    END DO
-                            	END IF
-			    end do
+                                if (present(q_particle)) then
+                                    do s = 1, v_size - adv_idx%end
+                                        r = (adv_idx%end + s - 1) + v_size* &
+                                            (j + buff_size*((k + 1) + (n + 1)*l))
+                                        q_particle(s)%sf(j + unpack_offset, k, l) = q_cons_buff_recv(r)
+                                    end do
+                                end if
+                            end do
                         end do
                     end do
 
@@ -1183,14 +1224,14 @@ contains
                                     end if
 #endif
                                 end do
-                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
-                                    DO s = 1, send_size-adv_idx%end
-                                    	r = (adv_idx%end + s-1) + send_size * &
-                                     	((j+buff_size) + (m+2*buff_size+1) * &
-                                             ((k+buff_size) + buff_size*l))
-                                    	q_particle(s)%sf(j, k + unpack_offset, l) = q_cons_buff_recv(r)
-                                    END DO
-                            	END IF
+                                if (present(q_particle)) then
+                                    do s = 1, v_size - adv_idx%end
+                                        r = (adv_idx%end + s - 1) + v_size* &
+                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                             ((k + buff_size) + buff_size*l))
+                                        q_particle(s)%sf(j, k + unpack_offset, l) = q_cons_buff_recv(r)
+                                    end do
+                                end if
                             end do
                         end do
                     end do
@@ -1247,15 +1288,15 @@ contains
                                     end if
 #endif
                                 end do
-                                IF(PRESENT(q_particle)) THEN !Lagrangian solver
-                                    DO s = 1, send_size-adv_idx%end
-                                    	r = (adv_idx%end + s-1) + send_size * &
-                                      	 ((j+buff_size) + (m+2*buff_size+1) * &
-                                       	 ((k+buff_size) + (n+2*buff_size+1) * &
-                                                            (l+buff_size)))
-                                    	q_particle(s)%sf(j, k, l + unpack_offset) = q_cons_buff_recv(r)
-                                    END DO
-                            	END IF
+                                if (present(q_particle)) then
+                                    do s = 1, v_size - adv_idx%end
+                                        r = (adv_idx%end + s - 1) + v_size* &
+                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                             ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                              (l + buff_size)))
+                                        q_particle(s)%sf(j, k, l + unpack_offset) = q_cons_buff_recv(r)
+                                    end do
+                                end if
                             end do
                         end do
                     end do
@@ -1312,6 +1353,7 @@ contains
         integer, intent(in) :: gp_layers
 
         integer :: i, j, k, l, r !< Generic loop iterators
+        integer, pointer, dimension(:) :: p_i_send, p_i_recv
 
 #ifdef MFC_MPI
 
@@ -1353,19 +1395,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send, ib_buff_recv, ib_buff_send)
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%end, 0, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%beg, 0, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1403,19 +1450,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%beg, 1, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%beg, 0, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1475,19 +1527,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%beg, 1, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%end, 1, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1523,19 +1580,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%end, 0, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(n + 1)*(p + 1), &
                         MPI_INTEGER, bc_x%end, 1, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1597,19 +1659,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%end, 0, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%beg, 0, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1648,19 +1715,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%beg, 1, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%beg, 0, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1723,19 +1795,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%beg, 1, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%end, 1, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1774,19 +1851,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%end, 0, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(p + 1), &
                         MPI_INTEGER, bc_y%end, 1, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1852,19 +1934,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%end, 0, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%beg, 0, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1903,19 +1990,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%beg, 1, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%beg, 0, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -1979,19 +2071,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%beg, 1, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%end, 1, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -2030,19 +2127,24 @@ contains
 
 #if defined(MFC_OpenACC)
                 if (rdma_mpi) then
-                    !$acc host_data use_device( ib_buff_recv, ib_buff_send )
+                    p_i_send => ib_buff_send
+                    p_i_recv => ib_buff_recv
+
+                    !$acc data attach(p_i_send, p_i_recv)
+                    !$acc host_data use_device(p_i_send, p_i_recv)
 
                     ! Send/receive buffer to/from bc_x%end/bc_x%beg
                     call MPI_SENDRECV( &
-                        ib_buff_send(0), &
+                        p_i_send(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%end, 0, &
-                        ib_buff_recv(0), &
+                        p_i_recv(0), &
                         gp_layers*(m + 2*gp_layers + 1)*(n + 2*gp_layers + 1), &
                         MPI_INTEGER, bc_z%end, 1, &
                         MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 else
 #endif
@@ -2108,6 +2210,7 @@ contains
 
         integer :: pack_offsets(1:3), unpack_offsets(1:3)
         integer :: pack_offset, unpack_offset
+        real(kind(0d0)), pointer :: p_send, p_recv
 
 #ifdef MFC_MPI
 
@@ -2202,19 +2305,24 @@ contains
         ! Send/Recv
         #:for rdma_mpi in [False, True]
             if (rdma_mpi .eqv. ${'.true.' if rdma_mpi else '.false.'}$) then
+                p_send => c_divs_buff_send(0)
+                p_recv => c_divs_buff_recv(0)
+
                 #:if rdma_mpi
-                    !$acc host_data use_device(c_divs_buff_recv, c_divs_buff_send)
+                    !$acc data attach(p_send, p_recv)
+                    !$acc host_data use_device(p_send, p_recv)
                 #:else
                     !$acc update host(c_divs_buff_send)
                 #:endif
 
                 call MPI_SENDRECV( &
-                    c_divs_buff_send(0), buffer_count, MPI_DOUBLE_PRECISION, dst_proc, send_tag, &
-                    c_divs_buff_recv(0), buffer_count, MPI_DOUBLE_PRECISION, src_proc, recv_tag, &
+                    p_send, buffer_count, MPI_DOUBLE_PRECISION, dst_proc, send_tag, &
+                    p_recv, buffer_count, MPI_DOUBLE_PRECISION, src_proc, recv_tag, &
                     MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
 
                 #:if rdma_mpi
                     !$acc end host_data
+                    !$acc end data
                     !$acc wait
                 #:else
                     !$acc update device(c_divs_buff_recv)

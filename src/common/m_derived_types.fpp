@@ -8,7 +8,8 @@
 !!              types used in the pre-process code.
 module m_derived_types
 
-    use m_constants !< Constants
+    use m_constants  !< Constants
+    use m_thermochem !< Thermodynamic properties
 
     implicit none
 
@@ -192,6 +193,7 @@ module m_derived_types
         !! id for hard coded initial condition
 
         real(kind(0d0)) :: cf_val !! color function value
+        real(kind(0d0)) :: Y(1:num_species)
 
     end type ic_patch_parameters
 
@@ -254,20 +256,38 @@ module m_derived_types
         real(kind(0d0)) :: zmax !< Max. boundary third coordinate direction
     end type integral_parameters
 
-    !> Monopole acoustic source parameters
-    type mono_parameters
+    !> Acoustic source parameters
+    type acoustic_parameters
+        integer :: pulse !< Type of pulse
+        integer :: support !< Type of support
+        logical :: dipole !< Whether the source is a dipole or monopole
         real(kind(0d0)), dimension(3) :: loc !< Physical location of acoustic source
-        real(kind(0d0)) :: mag !< Magnitude
-        real(kind(0d0)) :: length !< Length of line source
+        real(kind(0d0)) :: mag !< Acoustic pulse magnitude
+        real(kind(0d0)) :: length !< Length of planar source (2D/3D)
+        real(kind(0d0)) :: height !< Height of planar source (3D)
+        real(kind(0d0)) :: wavelength !< Wave length of pulse
+        real(kind(0d0)) :: frequency !< Frequency of pulse
+        real(kind(0d0)) :: gauss_sigma_dist !< sigma of Gaussian pulse multiplied by speed of sound
+        real(kind(0d0)) :: gauss_sigma_time !< sigma of Gaussian pulse
         real(kind(0d0)) :: npulse !< Number of cycles of pulse
         real(kind(0d0)) :: dir !< Direction of pulse
         real(kind(0d0)) :: delay !< Time-delay of pulse start
-        integer :: pulse
-        integer :: support
-        real(kind(0d0)) :: aperture
-        real(kind(0d0)) :: foc_length
-        real(kind(0d0)) :: support_width
-    end type mono_parameters
+        real(kind(0d0)) :: foc_length ! < Focal length of transducer
+        real(kind(0d0)) :: aperture ! < Aperture diameter of transducer
+        real(kind(0d0)) :: element_spacing_angle !< Spacing between aperture elements in 2D acoustic array
+        real(kind(0d0)) :: element_polygon_ratio !< Ratio of aperture element diameter to side length of polygon connecting their centers, in 3D acoustic array
+        real(kind(0d0)) :: rotate_angle !< Angle of rotation of the entire circular 3D acoustic array
+        integer :: num_elements !< Number of elements in the acoustic array
+        integer :: element_on !< Element in the acoustic array to turn on
+    end type acoustic_parameters
+
+    !> Acoustic source source_spatial pre-calculated values
+    type source_spatial_type
+        integer, dimension(:, :), allocatable :: coord !< List of grid points indices with non-zero source_spatial values
+        real(kind(0d0)), dimension(:), allocatable :: val !< List of non-zero source_spatial values
+        real(kind(0d0)), dimension(:), allocatable :: angle !< List of angles with x-axis for mom source term vector
+        real(kind(0d0)), dimension(:, :), allocatable :: xyz_to_r_ratios !< List of [xyz]/r for mom source term vector
+    end type source_spatial_type
 
     !> Ghost Point for Immersed Boundaries
     type ghost_point
@@ -281,5 +301,71 @@ module m_derived_types
         integer, dimension(3) :: DB
 
     end type ghost_point
+
+    !> Species parameters
+    type species_parameters
+        character(LEN=name_len) :: name !< Name of species
+    end type species_parameters
+
+    !> Chemistry parameters
+    type chemistry_parameters
+        character(LEN=name_len) :: cantera_file !< Path to Cantera file
+
+        logical :: advection
+        logical :: diffusion
+        logical :: reactions
+    end type chemistry_parameters
+
+    !> Lagrangian subgrid model parameters
+    type cellwbcoord
+        integer, dimension(3) :: coord
+    end type cellwbcoord
+    type cellwb
+        type(cellwb), pointer :: next, prev
+        type(cellwbcoord), pointer :: data
+    end type cellwb
+    type dirlist
+        type(dirlist), pointer :: next
+        integer :: dir
+    end type dirlist
+    type cellListinfo
+        type(cellwb), pointer :: List
+        integer :: nb ! number of cells in the list. It is useful to construct the sublists
+    end type cellListinfo
+    type particlederivative
+        real(kind(0.d0)), dimension(3) :: dxdt, dudt, dMdt
+        real(kind(0.d0)), dimension(2) :: dydt
+        real(kind(0.d0)) :: dpbdt, dmvdt, dphidt
+    end type particlederivative
+    type particletmp                        ! if this list is modified,transfertotmp has to be also modified
+        real(kind(0.d0)), dimension(3) :: x, s, u ! x: real eoord, s: comp coord, u: vel of the particle
+        real(kind(0.d0)), dimension(2) :: y ! y(1): radius, y(2): radial velocity
+        real(kind(0.d0)) :: p, mv
+    end type particletmp
+    type particledata
+        integer :: id
+        real(kind(0.d0)), dimension(3) :: x, xprev      !physical and computational position
+        real(kind(0.d0)), dimension(3) :: u             !physical particle velocity
+        real(kind(0.d0)), dimension(2) :: y             !particle variables (rb,drbdt)
+        real(kind(0.d0)) :: R0, p, mg, mv ! initial values (mg = mass of noncondensable gas, Cvap: mass vapor fraction)
+        real(kind(0.d0)) :: betaC, betaT, dphidt
+        real(kind(0.d0)) :: Rmax, Rmin !statistical data
+        logical :: equilibrium
+        type(particletmp) :: tmp        !temporal variable for intermediate steps
+        type(particlederivative) :: dbdt(6)    !derivatives. It could be an allocable pointer
+    end type particledata
+    type particlenode   ! This structure is just required if we want to create different lists to the same elements
+        type(particlenode), pointer :: next, prev !pointer to the next element
+        type(particledata), pointer :: data
+    end type particlenode
+    type particleListinfo
+        type(particlenode), pointer :: List
+        integer :: nb    !number of particles in the list. It is useful to construct the cell list
+        type(cellwb), pointer :: cellpointer !pointer to the list of the cells (to speed up the process of updating)
+        type(particleListinfo), pointer :: next, prev
+    end type particleListinfo
+    type :: list3D
+        type(particleListinfo), allocatable :: fp(:, :, :)
+    end type list3D
 
 end module m_derived_types

@@ -34,9 +34,11 @@ module m_start_up
 
     use m_cbc                  !< Characteristic boundary conditions (CBC)
 
-    use m_monopole             !< Monopole calculations
+    use m_acoustic_src         !< Acoustic source calculations
 
     use m_rhs                  !< Right-hand-side (RHS) evaluation procedures
+
+    use m_chemistry            !< Chemistry module
 
     use m_data_output          !< Run-time info & solution data output procedures
 
@@ -57,6 +59,8 @@ module m_start_up
 
     use ieee_arithmetic
 
+    use m_helper_basic         !< Functions to compare floating point numbers
+
 #ifdef MFC_OpenACC
     use openacc
 #endif
@@ -74,8 +78,6 @@ module m_start_up
     use m_body_forces
 
     use m_particles
-
-    use m_mpi_particles
 
     ! ==========================================================================
 
@@ -128,18 +130,15 @@ contains
         integer :: iostatus
             !! Integer to check iostat of file read
 
-        CHARACTER(len=511) :: CRAY_ACC_MODULE
-
         character(len=1000) :: line
 
         ! Namelist of the global parameters which may be specified by user
         namelist /user_inputs/ case_dir, run_time_info, m, n, p, dt, &
             t_step_start, t_step_stop, t_step_save, t_step_print, &
-            model_eqns, adv_alphan, &
-            mpp_lim, time_stepper, weno_eps, weno_flat, &
+            model_eqns, mpp_lim, time_stepper, weno_eps, weno_flat, &
             riemann_flat, rdma_mpi, cu_tensor, &
             teno_CT, mp_weno, weno_avg, &
-            riemann_solver, wave_speeds, avg_state, &
+            riemann_solver, low_Mach, wave_speeds, avg_state, &
             bc_x, bc_y, bc_z, &
             x_domain, y_domain, z_domain, &
             hypoelasticity, &
@@ -149,12 +148,12 @@ contains
             alt_soundspeed, mixture_err, weno_Re_flux, &
             null_weights, precision, parallel_io, cyl_coord, &
             rhoref, pref, bubbles, bubble_model, &
-            R0ref, &
+            R0ref, chem_params, &
 #:if not MFC_CASE_OPTIMIZATION
             nb, mapped_weno, wenoz, teno, weno_order, num_fluids, &
 #:endif
             Ca, Web, Re_inv, &
-            monopole, mono, num_mono, &
+            acoustic_source, acoustic, num_source, &
             polytropic, thermal, &
             integral, integral_wrt, num_integrals, &
             polydisperse, poly_sigma, qbmm, &
@@ -163,14 +162,14 @@ contains
             R0_type, file_per_process, sigma, &
             pi_fac, adv_n, adap_dt, bf_x, bf_y, bf_z, &
             k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, &
-            g_x, g_y, g_z, &
+            g_x, g_y, g_z, n_start, t_save, t_stop, &
+            cfl_adap_dt, cfl_const_dt, cfl_target, &
             particleflag, avgdensFlag, particleoutFlag, &
             particlestatFlag, RPflag, clusterflag, &
-            stillparticlesflag, heatflag, massflag, &
-            csonref, rholiqref, Lref, Tini, Runiv, &
+            heatflag, massflag, csonhost, vischost, &
             gammagas, gammavapor, pvap, cpgas, cpvapor, &
-            kgas, kvapor, MWgas, MWvap, diffcoefvap, &
-            sigmabubble, viscref, RKeps, ratiodt, &
+            kgas, kvapor, Rgas, Rvap, diffcoefvap, &
+            sigmabubble, RKeps, ratiodt, &
             projectiontype, smoothtype, epsilonb, &
             coupledFlag, solverapproach, correctpresFlag, &
             charwidth, valmaxvoid, dtmaxpart
@@ -205,21 +204,11 @@ contains
             n_glb = n
             p_glb = p
 
-            ! Lagrangian solver non-dimensionalize inputs
-            call s_particles_nondimensionalize_inputs()
+            if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
+
         else
             call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
         end if
-
-#ifdef _CRAYFTN
-#ifdef MFC_OpenACC
-        call get_environment_variable("CRAY_ACC_MODULE", CRAY_ACC_MODULE)
-
-        if (CRAY_ACC_MODULE == "") then
-            call s_mpi_abort("CRAY_ACC_MODULE is not set. Exiting...")
-        end if
-#endif
-#endif
 
     end subroutine s_read_input_file
 
@@ -274,8 +263,13 @@ contains
 
         ! Confirming that the directory from which the initial condition and
         ! the grid data files are to be read in exists and exiting otherwise
-        write (t_step_dir, '(A,I0,A,I0)') &
-            trim(case_dir)//'/p_all/p', proc_rank, '/', t_step_start
+        if (cfl_dt) then
+            write (t_step_dir, '(A,I0,A,I0)') &
+                trim(case_dir)//'/p_all/p', proc_rank, '/', n_start
+        else
+            write (t_step_dir, '(A,I0,A,I0)') &
+                trim(case_dir)//'/p_all/p', proc_rank, '/', t_step_start
+        end if
 
         file_path = trim(t_step_dir)//'/.'
         call my_inquire(file_path, file_exist)
@@ -572,9 +566,14 @@ contains
         end if
 
         if (file_per_process) then
-            call s_int_to_str(t_step_start, t_step_start_string)
-            ! Open the file to read conservative variables
-            write (file_loc, '(I0,A1,I7.7,A)') t_step_start, '_', proc_rank, '.dat'
+            if (cfl_dt) then
+                call s_int_to_str(n_start, t_step_start_string)
+                write (file_loc, '(I0,A1,I7.7,A)') n_start, '_', proc_rank, '.dat'
+            else
+                call s_int_to_str(t_step_start, t_step_start_string)
+                write (file_loc, '(I0,A1,I7.7,A)') t_step_start, '_', proc_rank, '.dat'
+            end if
+
             file_loc = trim(case_dir)//'/restart_data/lustre_'//trim(t_step_start_string)//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -659,9 +658,12 @@ contains
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
             end if
         else
-
             ! Open the file to read conservative variables
-            write (file_loc, '(I0,A)') t_step_start, '.dat'
+            if (cfl_dt) then
+                 write (file_loc, '(I0,A)') n_start, '.dat'
+            else
+                write (file_loc, '(I0,A)') t_step_start, '.dat'
+            end if
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -1058,7 +1060,9 @@ contains
         real(kind(0d0)), dimension(2) :: Re
         real(kind(0d0)) :: pres
 
-        integer :: i, j, k, l
+        integer :: i, j, k, l, c
+
+        real(kind(0d0)), dimension(num_species) :: rhoYks
 
         do j = 0, m
             do k = 0, n
@@ -1072,8 +1076,14 @@ contains
                                    /max(rho, sgm_eps)
                     end do
 
+                    if (chemistry) then
+                        do c = 1, num_species
+                            rhoYks(c) = v_vf(chemxb + c - 1)%sf(j, k, l)
+                        end do
+                    end if
+
                     call s_compute_pressure(v_vf(E_idx)%sf(j, k, l), 0d0, &
-                                            dyn_pres, pi_inf, gamma, rho, qv, pres)
+                                            dyn_pres, pi_inf, gamma, rho, qv, rhoYks, pres)
 
                     do i = 1, num_fluids
                         v_vf(i + internalEnergies_idx%beg - 1)%sf(j, k, l) = v_vf(i + adv_idx%beg - 1)%sf(j, k, l)* &
@@ -1097,16 +1107,46 @@ contains
         real(kind(0d0)), intent(inout) :: start, finish
         integer, intent(inout) :: nt
 
+        real(kind(0d0)) :: dt_init
+
         integer :: i, j, k, l
 
-        if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
-            print '(" ["I3"%]  Time step "I8" of "I0" @ t_step = "I0"")', &
-                int(ceiling(100d0*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
-                t_step - t_step_start + 1, &
-                t_step_stop - t_step_start + 1, &
-                t_step
+        if (cfl_dt) then
+            if (cfl_const_dt .and. t_step == 1) call s_compute_dt()
+
+            if (t_step == 0) dt_init = dt
+
+            if (.not. particleflag) then
+
+                if (cfl_adap_dt) call s_compute_dt()
+                if (dt < 1d-3*dt_init) call s_mpi_abort("Delta t has become too small")
+
+            end if
         end if
-        mytime = mytime + dt
+
+        if (cfl_dt) then
+            if ((mytime + dt) >= t_stop) dt = t_stop - mytime
+        else
+            if ((mytime + dt) >= finaltime) dt = finaltime - mytime
+        end if
+
+        if (cfl_dt) then
+            if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
+                print '(" ["I3"%] Time "ES16.6" dt = "ES16.6" @ Time Step = "I8"")', &
+                    int(ceiling(100d0*(mytime/t_stop))), &
+                    mytime, &
+                    dt, &
+                    t_step
+            end if
+        else
+            if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
+                print '(" ["I3"%]  Time step "I8" of "I0" @ t_step = "I0"")', &
+                   int(ceiling(100d0*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
+                    t_step - t_step_start + 1, &
+                    t_step_stop - t_step_start + 1, &
+                t_step
+            end if
+        end if
 
         if (probe_wrt) then
             do i = 1, sys_size
@@ -1119,32 +1159,38 @@ contains
 #ifdef DEBUG
         print *, 'Computed derived vars'
 #endif
-        ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-	IF(.NOT.coupledflag .and. .not.particleflag) THEN
+        time_prev = mytime
+        mytime = mytime + dt
+
+        if(particleflag) then 
+            ! (Adaptive) 4th and 5th order Runge-Kutta-Cash-Karp time-stepper           
+            dtnext = dt
+            call rkqs(time_prev, dtnext, dtdid, t_step)
+            if(particleoutFlag) call s_write_particles(time_prev)
+            mytime = time_prev + dtdid
+            dt = dtnext
+
+        else
+            ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
             if (time_stepper == 1) then
                 call s_1st_order_tvd_rk(t_step, time_avg)
             elseif (time_stepper == 2) then
                 call s_2nd_order_tvd_rk(t_step, time_avg)
             elseif (time_stepper == 3 .and. (.not. adap_dt)) then
-                call s_3rd_order_tvd_rk(t_step, time_avg, dt)
+                call s_3rd_order_tvd_rk(t_step, time_avg)
             elseif (time_stepper == 3 .and. adap_dt) then
                 call s_strang_splitting(t_step, time_avg)
             end if
-	END IF
-
-        IF(particleflag) THEN !Cash-Karp Runge-Kutta time-stepper, Lagrangian solver
-            dt = dtnext
-            time_prev = time_real
-            CALL rkqs(time_real, dtnext, dtdid, t_step)
-            IF(particleoutFlag) CALL write_particles(time_real)
-            time_real = time_prev + dtdid
-            dt_next_inp = dtnext
-        END IF
+        end if
 
         if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
 
+        if (chemistry) then
+            call s_chemistry_normalize_cons(q_cons_ts(1)%vf)
+        end if
+
         ! Time-stepping loop controls
-        if ((mytime + dt) >= finaltime) dt = finaltime - mytime
+
         t_step = t_step + 1
 
     end subroutine s_perform_time_step
@@ -1159,6 +1205,8 @@ contains
         logical, intent(inout) :: file_exists
         real(kind(0d0)), intent(inout) :: start, finish
         integer, intent(inout) :: nt
+
+        real(kind(0d0)) :: grind_time
 
         call s_mpi_barrier()
 
@@ -1178,28 +1226,32 @@ contains
                 time_final = maxval(proc_time)
                 io_time_final = maxval(io_proc_time)
             end if
-            print *, "Performance: ", time_final*1.0d9/sys_size, " ns/gp/eq/rhs"
+
+            grind_time = time_final*1.0d9/(sys_size*maxval((/1,m_glb/))*maxval((/1,n_glb/))*maxval((/1,p_glb/)))
+
+            print *, "Performance:", grind_time, "ns/gp/eq/rhs"
             inquire (FILE='time_data.dat', EXIST=file_exists)
             if (file_exists) then
-                open (11, file='time_data.dat', position='append', status='old')
-                write (11, *) num_procs, time_final
-                close (11)
+                open (1, file='time_data.dat', position='append', status='old')
             else
-                open (11, file='time_data.dat', status='new')
-                write (11, *) num_procs, time_final
-                close (11)
+                open (1, file='time_data.dat', status='new')
+                write (1, '(A10, A15, A15)') "Ranks", "s/step", "ns/gp/eq/rhs"
             end if
+
+            write (1, '(I10, 2(F15.8))') num_procs, time_final, grind_time
+
+            close (1)
 
             inquire (FILE='io_time_data.dat', EXIST=file_exists)
             if (file_exists) then
-                open (11, file='io_time_data.dat', position='append', status='old')
-                write (11, *) num_procs, io_time_final
-                close (11)
+                open (1, file='io_time_data.dat', position='append', status='old')
             else
-                open (11, file='io_time_data.dat', status='new')
-                write (11, *) num_procs, io_time_final
-                close (11)
+                open (1, file='io_time_data.dat', status='new')
+                write (1, '(A10, A15)') "Ranks", "s/step"
             end if
+
+            write (1, '(I10, F15.8)') num_procs, io_time_final
+            close (1)
 
         end if
 
@@ -1209,51 +1261,58 @@ contains
         integer, intent(inout) :: t_step
         real(kind(0d0)), intent(inout) :: start, finish, io_time_avg
         integer, intent(inout) :: nt
-        
+
         integer :: i, j, k, l
 
-        if (mod(t_step - t_step_start, t_step_save) == 0 .or. t_step == t_step_stop) then
+        integer :: save_count
 
-            call cpu_time(start)
-            !  call nvtxStartRange("I/O")
-            do i = 1, sys_size
-                !$acc update host(q_cons_ts(1)%vf(i)%sf)
-                do l = 0, p
-                    do k = 0, n
-                        do j = 0, m
-                            if (ieee_is_nan(q_cons_ts(1)%vf(i)%sf(j, k, l))) then
-                                print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
-                                error stop "NaN(s) in timestep output."
-                            end if
-                        end do
+        call cpu_time(start)
+        !  call nvtxStartRange("I/O")
+        do i = 1, sys_size
+            !$acc update host(q_cons_ts(1)%vf(i)%sf)
+            do l = 0, p
+                do k = 0, n
+                    do j = 0, m
+                        if (ieee_is_nan(q_cons_ts(1)%vf(i)%sf(j, k, l))) then
+                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
+                            error stop "NaN(s) in timestep output."
+                        end if
                     end do
                 end do
             end do
+        end do
 
-            if (qbmm .and. .not. polytropic) then
-                !$acc update host(pb_ts(1)%sf)
-                !$acc update host(mv_ts(1)%sf)
-            end if
+        if (qbmm .and. .not. polytropic) then
+            !$acc update host(pb_ts(1)%sf)
+            !$acc update host(mv_ts(1)%sf)
+        end if
 
-            IF(particleflag) THEN !Lagrangean solver
-                CALL s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step, q_particle(1))
-                IF (parallel_io .NEQV. .TRUE.) THEN
-                    CALL write_restart_particles (t_step)
-                ELSE
-                    CALL write_restart_particles_parallel (t_step)
-                END IF
-            ELSE
-                CALL s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step)
-            END IF
+        if (cfl_dt) then
+            save_count = int(mytime/t_save)
+        else
+            save_count = t_step
+        end if
 
-            !  call nvtxEndRange
-            call cpu_time(finish)
+        if(particleflag) then
+            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count, q_particle(1))
+            call s_write_restart_particles(save_count) !parallel 
+            if (particlestatFlag) call s_write_particle_stats
+        else
+            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count)
+        end if
+        
+        !  call nvtxEndRange
+        call cpu_time(finish)
+        if (cfl_dt) then
+            nt = mytime/t_save
+        else
             nt = int((t_step - t_step_start)/(t_step_save))
-            if (nt == 1) then
-                io_time_avg = abs(finish - start)
-            else
-                io_time_avg = (abs(finish - start) + io_time_avg*(nt - 1))/nt
-            end if
+        end if
+
+        if (nt == 1) then
+            io_time_avg = abs(finish - start)
+        else
+            io_time_avg = (abs(finish - start) + io_time_avg*(nt - 1))/nt
         end if
 
     end subroutine s_save_data
@@ -1292,8 +1351,8 @@ contains
         call acc_present_dump()
 #endif
 
-        if (monopole) then
-            call s_initialize_monopole_module()
+        if (acoustic_source) then
+            call s_initialize_acoustic_src()
         end if
 
         if (any(Re_size > 0)) then
@@ -1310,6 +1369,8 @@ contains
 
         if (hypoelasticity) call s_initialize_hypoelastic_module()
         if (relax) call s_initialize_phasechange_module()
+        if (chemistry) call s_initialize_chemistry_module()
+
         call s_initialize_data_output_module()
         call s_initialize_derived_variables_module()
         call s_initialize_time_steppers_module()
@@ -1333,6 +1394,7 @@ contains
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
         if (ib) call s_ibm_setup()
         if (bodyForces) call s_initialize_body_forces_module()
+        if (acoustic_source) call s_precalculate_acoustic_spatial_sources()
 
         ! Populating the buffers of the grid variables using the boundary conditions
         call s_populate_grid_variables_buffers()
@@ -1350,6 +1412,8 @@ contains
         call s_initialize_cbc_module()
 
         call s_initialize_derived_variables()
+
+        if (particleflag) call s_initialize_lagrangian_solver(q_cons_ts(1)%vf, q_prim_vf)
 
     end subroutine s_initialize_modules
 
@@ -1411,7 +1475,6 @@ contains
 #else
                 "on CPUs"
 #endif
-            if(particleflag) do_particles=.true. !Lagrangian solver
 
         end if
 
@@ -1425,8 +1488,6 @@ contains
 
         call s_mpi_decompose_computational_domain()
 
-        CALL s_mpi_bcast_user_particles() !Lagrangian solver
-
     end subroutine s_initialize_mpi_domain
 
     subroutine s_initialize_gpu_vars
@@ -1438,10 +1499,10 @@ contains
         if (qbmm .and. .not. polytropic) then
             !$acc update device(pb_ts(1)%sf, mv_ts(1)%sf)
         end if
-        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac)
+        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac, low_Mach)
         !$acc update device(R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, pv, M_n, M_v, k_n, k_v, pb0, mass_n0, mass_v0, Pe_T, Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN , mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
 
-        !$acc update device(monopole, num_mono)
+        !$acc update device(acoustic_source, num_source)
         !$acc update device(sigma)
 
         !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
@@ -1475,7 +1536,7 @@ contains
         call s_finalize_mpi_proxy_module()
         call s_finalize_global_parameters_module()
         if (relax) call s_finalize_relaxation_solver_module()      
-        IF(particleflag) CALL s_deallocate_particles() !Lagrangian solver
+        if(particleflag) call s_deallocate_particles() 
 
         if (any(Re_size > 0)) then
             call s_finalize_viscous_module()

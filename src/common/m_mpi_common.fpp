@@ -62,6 +62,7 @@ contains
 
     !! @param q_cons_vf Conservative variables
     !! @param ib_markers track if a cell is within the immersed boundary
+    !! @param beta Eulerian void fraction from lagrangian bubbles
     subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, beta)
 
         type(scalar_field), &
@@ -69,7 +70,7 @@ contains
             intent(in) :: q_cons_vf
 
         type(scalar_field), &
-            intent(IN), optional :: beta
+            intent(in), optional :: beta
 
         type(integer_field), &
             optional, &
@@ -82,12 +83,14 @@ contains
 
         ! Generic loop iterator
         integer :: i, j, q, k, l
-        integer :: alt_sys !Altered system size when lagrangian particles exist
+
+        !Altered system size for the lagrangian subgrid bubble model
+        integer :: alt_sys
 
         if (present(beta)) then
-                alt_sys = sys_size + 1
+            alt_sys = sys_size + 1
         else
-                alt_sys = sys_size
+            alt_sys = sys_size
         end if
 
         do i = 1, sys_size
@@ -95,7 +98,7 @@ contains
         end do
 
         if (present(beta)) then
-                MPI_IO_DATA%var(alt_sys)%sf => beta%sf(0:m,0:n,0:p)
+            MPI_IO_DATA%var(alt_sys)%sf => beta%sf(0:m, 0:n, 0:p)
         end if
 
         !Additional variables pb and mv for non-polytropic qbmm
@@ -130,7 +133,7 @@ contains
         end if
 
         ! Define the view for each variable
-        do i = 1, alt_sys 
+        do i = 1, alt_sys
             call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
                                           MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(i), ierr)
             call MPI_TYPE_COMMIT(MPI_IO_DATA%view(i), ierr)

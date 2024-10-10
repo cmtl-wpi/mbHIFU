@@ -158,17 +158,18 @@ contains
             & 't_step_start', 't_step_stop', 't_step_save', 'weno_order',      &
             & 'model_eqns', 'num_fluids', 'bc_x%beg', 'bc_x%end', 'bc_y%beg',  &
             & 'bc_y%end', 'bc_z%beg', 'bc_z%end', 'flux_lim', 'format',        &
-            & 'precision', 'fd_order', 'thermal', 'nb', 'relax_model' ]
+            & 'precision', 'fd_order', 'thermal', 'nb', 'relax_model',         &
+            & 'n_start' ]
             call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
-        #:for VAR in [ 'cyl_coord', 'adv_alphan', 'mpp_lim', 'mixture_err',    &
+        #:for VAR in [ 'cyl_coord', 'mpp_lim', 'mixture_err',                  &
             & 'alt_soundspeed', 'hypoelasticity', 'parallel_io', 'rho_wrt',    &
             & 'E_wrt', 'pres_wrt', 'gamma_wrt',                                &
             & 'heat_ratio_wrt', 'pi_inf_wrt', 'pres_inf_wrt', 'cons_vars_wrt', &
             & 'prim_vars_wrt', 'c_wrt', 'qm_wrt','schlieren_wrt', 'bubbles', 'qbmm',   &
             & 'polytropic', 'polydisperse', 'file_per_process', 'relax', 'cf_wrt',     &
-            & 'adv_n' ]
+            & 'adv_n', 'ib', 'cfl_adap_dt', 'cfl_const_dt', 'cfl_dt' ]
             call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
@@ -189,17 +190,17 @@ contains
         end do
 
         #:for VAR in [ 'pref', 'rhoref', 'R0ref', 'poly_sigma', 'Web', 'Ca', &
-            & 'Re_inv', 'sigma' ]
+            & 'Re_inv', 'sigma', 't_save', 't_stop' ]
             call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         #:endfor
         call MPI_BCAST(schlieren_alpha(1), num_fluids_max, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
+        call MPI_BCAST(fd_order, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
         !Lagrangian solver
-        CALL MPI_BCAST(fd_order, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-        CALL MPI_BCAST(particleflag, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        CALL MPI_BCAST(avgdensFlag, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        CALL MPI_BCAST(do_particles, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-        CALL MPI_BCAST(solverapproach, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        call MPI_BCAST(particleflag, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call MPI_BCAST(avgdensFlag, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call MPI_BCAST(solverapproach, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 #endif
 
     end subroutine s_mpi_bcast_user_inputs
@@ -854,7 +855,7 @@ contains
         !!  @param pbc_loc Processor boundary condition (PBC) location
         !!  @param sweep_coord Coordinate direction normal to the processor boundary
     subroutine s_mpi_sendrecv_cons_vars_buffer_regions(q_cons_vf, pbc_loc, &
-                                                       sweep_coord)
+                                                       sweep_coord, q_particle)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -863,6 +864,9 @@ contains
         character(LEN=3), intent(in) :: pbc_loc
 
         character, intent(in) :: sweep_coord
+
+        type(scalar_field), &
+            intent(inout), optional :: q_particle
 
 #ifdef MFC_MPI
 
@@ -885,8 +889,13 @@ contains
                                     r = sys_size*(j - m + buff_size - 1) &
                                         + sys_size*buff_size*k + (i - 1) &
                                         + sys_size*buff_size*(n + 1)*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -913,8 +922,13 @@ contains
                                     r = (i - 1) + sys_size*j &
                                         + sys_size*buff_size*k &
                                         + sys_size*buff_size*(n + 1)*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -940,7 +954,11 @@ contains
                                 r = sys_size*(j + buff_size) &
                                     + sys_size*buff_size*k + (i - 1) &
                                     + sys_size*buff_size*(n + 1)*l
-                                q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                if (present(q_particle)) then
+                                    q_particle%sf(j, k, l) = q_cons_buffer_in(r)
+                                else
+                                    q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                end if
 #if defined(__INTEL_COMPILER)
                                 if (ieee_is_nan(q_cons_vf(i)%sf(j, k, l))) then
                                     print *, "Error", j, k, l, i
@@ -965,14 +983,18 @@ contains
                                     r = (i - 1) + sys_size*j &
                                         + sys_size*buff_size*k &
                                         + sys_size*buff_size*(n + 1)*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
                     end do
 
-                    ! Sending/receiving the data to/from bc_x%beg/bc_x%end
                     call MPI_SENDRECV(q_cons_buffer_out(0), &
                                       buff_size*sys_size*(n + 1)*(p + 1), &
                                       MPI_DOUBLE_PRECISION, bc_x%beg, 1, &
@@ -993,14 +1015,18 @@ contains
                                     r = sys_size*(j - m + buff_size - 1) &
                                         + sys_size*buff_size*k + (i - 1) &
                                         + sys_size*buff_size*(n + 1)*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
                     end do
 
-                    ! Sending/receiving the data to/from bc_x%end/bc_x%end
                     call MPI_SENDRECV(q_cons_buffer_out(0), &
                                       buff_size*sys_size*(n + 1)*(p + 1), &
                                       MPI_DOUBLE_PRECISION, bc_x%end, 0, &
@@ -1020,7 +1046,11 @@ contains
                                 r = (i - 1) + sys_size*(j - m - 1) &
                                     + sys_size*buff_size*k &
                                     + sys_size*buff_size*(n + 1)*l
-                                q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                if (present(q_particle)) then
+                                    q_particle%sf(j, k, l) = q_cons_buffer_in(r)
+                                else
+                                    q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                end if
 #if defined(__INTEL_COMPILER)
                                 if (ieee_is_nan(q_cons_vf(i)%sf(j, k, l))) then
                                     print *, "Error", j, k, l, i
@@ -1055,8 +1085,13 @@ contains
                                         (k - n + buff_size - 1) + (i - 1) &
                                         + sys_size*(m + 2*buff_size + 1)* &
                                         buff_size*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1085,8 +1120,13 @@ contains
                                         + sys_size*(m + 2*buff_size + 1)*k &
                                         + sys_size*(m + 2*buff_size + 1)* &
                                         buff_size*l + (i - 1)
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1114,7 +1154,11 @@ contains
                                     + sys_size*(m + 2*buff_size + 1)* &
                                     (k + buff_size) + sys_size* &
                                     (m + 2*buff_size + 1)*buff_size*l
-                                q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                if (present(q_particle)) then
+                                    q_particle%sf(j, k, l) = q_cons_buffer_in(r)
+                                else
+                                    q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                end if
 #if defined(__INTEL_COMPILER)
                                 if (ieee_is_nan(q_cons_vf(i)%sf(j, k, l))) then
                                     print *, "Error", j, k, l, i
@@ -1140,8 +1184,13 @@ contains
                                         + sys_size*(m + 2*buff_size + 1)*k &
                                         + sys_size*(m + 2*buff_size + 1)* &
                                         buff_size*l + (i - 1)
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1171,8 +1220,13 @@ contains
                                         (k - n + buff_size - 1) + (i - 1) &
                                         + sys_size*(m + 2*buff_size + 1)* &
                                         buff_size*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1200,7 +1254,11 @@ contains
                                     + sys_size*(m + 2*buff_size + 1)* &
                                     (k - n - 1) + sys_size* &
                                     (m + 2*buff_size + 1)*buff_size*l
-                                q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                if (present(q_particle)) then
+                                    q_particle%sf(j, k, l) = q_cons_buffer_in(r)
+                                else
+                                    q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                end if
 #if defined(__INTEL_COMPILER)
                                 if (ieee_is_nan(q_cons_vf(i)%sf(j, k, l))) then
                                     print *, "Error", j, k, l, i
@@ -1236,8 +1294,13 @@ contains
                                         (m + 2*buff_size + 1)* &
                                         (n + 2*buff_size + 1)* &
                                         (l - p + buff_size - 1) + (i - 1)
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1268,8 +1331,13 @@ contains
                                         (k + buff_size) + (i - 1) &
                                         + sys_size*(m + 2*buff_size + 1)* &
                                         (n + 2*buff_size + 1)*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1299,7 +1367,11 @@ contains
                                     (k + buff_size) + (i - 1) &
                                     + sys_size*(m + 2*buff_size + 1)* &
                                     (n + 2*buff_size + 1)*(l + buff_size)
-                                q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                if (present(q_particle)) then
+                                    q_particle%sf(j, k, l) = q_cons_buffer_in(r)
+                                else
+                                    q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                end if
 #if defined(__INTEL_COMPILER)
                                 if (ieee_is_nan(q_cons_vf(i)%sf(j, k, l))) then
                                     print *, "Error", j, k, l, i
@@ -1326,8 +1398,13 @@ contains
                                         (k + buff_size) + (i - 1) &
                                         + sys_size*(m + 2*buff_size + 1)* &
                                         (n + 2*buff_size + 1)*l
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1359,8 +1436,13 @@ contains
                                         (m + 2*buff_size + 1)* &
                                         (n + 2*buff_size + 1)* &
                                         (l - p + buff_size - 1) + (i - 1)
-                                    q_cons_buffer_out(r) = &
-                                        q_cons_vf(i)%sf(j, k, l)
+                                    if (present(q_particle)) then
+                                        q_cons_buffer_out(r) = &
+                                            q_particle%sf(j, k, l)
+                                    else
+                                        q_cons_buffer_out(r) = &
+                                            q_cons_vf(i)%sf(j, k, l)
+                                    end if
                                 end do
                             end do
                         end do
@@ -1390,7 +1472,11 @@ contains
                                     (k + buff_size) + (i - 1) &
                                     + sys_size*(m + 2*buff_size + 1)* &
                                     (n + 2*buff_size + 1)*(l - p - 1)
-                                q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                if (present(q_particle)) then
+                                    q_particle%sf(j, k, l) = q_cons_buffer_in(r)
+                                else
+                                    q_cons_vf(i)%sf(j, k, l) = q_cons_buffer_in(r)
+                                end if
 #if defined(__INTEL_COMPILER)
                                 if (ieee_is_nan(q_cons_vf(i)%sf(j, k, l))) then
                                     print *, "Error", j, k, l, i

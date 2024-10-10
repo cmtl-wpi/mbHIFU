@@ -2,6 +2,8 @@
 !! @file m_global_parameters.f90
 !! @brief Contains module m_global_parameters
 
+#:include 'case.fpp'
+
 !> @brief This module contains all of the parameters characterizing the
 !!              computational domain, simulation algorithm, initial condition
 !!              and the stiffened equation of state.
@@ -14,6 +16,10 @@ module m_global_parameters
 
     use m_derived_types         ! Definitions of the derived types
 
+    use m_helper_basic          ! Functions to compare floating point numbers
+
+    use m_thermochem            ! Thermodynamic and chemical properties
+
     ! ==========================================================================
 
     implicit none
@@ -25,6 +31,9 @@ module m_global_parameters
     logical :: old_ic                    !< Use existing IC data
     integer :: t_step_old, t_step_start  !< Existing IC/grid folder
     ! ==========================================================================
+
+    logical :: cfl_adap_dt, cfl_const_dt, cfl_dt
+    integer :: n_start, n_start_old
 
     ! Computational Domain Parameters ==========================================
 
@@ -77,11 +86,11 @@ module m_global_parameters
     real(kind(0d0)) :: palpha_eps    !< trigger parameter for the p relaxation procedure, phase change model
     real(kind(0d0)) :: ptgalpha_eps  !< trigger parameter for the pTg relaxation procedure, phase change model
     integer :: num_fluids            !< Number of different fluids present in the flow
-    logical :: adv_alphan            !< Advection of the last volume fraction
     logical :: mpp_lim               !< Alpha limiter
     integer :: sys_size              !< Number of unknowns in the system of equations
     integer :: weno_order            !< Order of accuracy for the WENO reconstruction
     logical :: hypoelasticity        !< activate hypoelasticity
+    logical, parameter :: chemistry = .${chemistry}$. !< Chemistry modeling
 
     ! Annotations of the structure, i.e. the organization, of the state vectors
     type(int_bounds_info) :: cont_idx              !< Indexes of first & last continuity eqns.
@@ -96,6 +105,8 @@ module m_global_parameters
     integer :: pi_inf_idx                          !< Index of liquid stiffness func. eqn.
     type(int_bounds_info) :: stress_idx            !< Indexes of elastic shear stress eqns.
     integer :: c_idx                               !< Index of the color function
+    type(int_bounds_info) :: chemistry_idx     !< Indexes of first & last concentration eqns.
+    type(int_bounds_info) :: temperature_idx       !< Indexes of first & last temperature eqns.
 
     type(int_bounds_info) :: bc_x, bc_y, bc_z !<
     !! Boundary conditions in the x-, y- and z-coordinate directions
@@ -104,8 +115,10 @@ module m_global_parameters
     logical :: file_per_process !< type of data output
     integer :: precision !< Precision of output files
 
-    logical :: vel_profile !< Set hyperbolic tangent streamwise velocity profile
-    logical :: instability_wave !< Superimpose instability waves to surrounding fluid flow
+    logical :: mixlayer_vel_profile !< Set hyperbolic tangent streamwise velocity profile
+    real(kind(0d0)) :: mixlayer_vel_coef !< Coefficient for the hyperbolic tangent streamwise velocity profile
+    real(kind(0d0)) :: mixlayer_domain !< Domain for the hyperbolic tangent streamwise velocity profile
+    logical :: mixlayer_perturb !< Superimpose instability waves to surrounding fluid flow
 
     real(kind(0d0)) :: pi_fac !< Factor for artificial pi_inf
 
@@ -216,6 +229,8 @@ module m_global_parameters
     integer :: intxb, intxe
     integer :: bubxb, bubxe
     integer :: strxb, strxe
+    integer :: chemxb, chemxe
+    integer :: tempxb, tempxe
     !> @}
 
     integer, allocatable, dimension(:, :, :) :: logic_grid
@@ -241,6 +256,11 @@ contains
         old_ic = .false.
         t_step_old = dflt_int
         t_step_start = dflt_int
+
+        cfl_adap_dt = .false.
+        cfl_const_dt = .false.
+        cfl_dt = .false.
+        n_start = dflt_int
 
         ! Computational domain parameters
         m = dflt_int; n = 0; p = 0
@@ -278,7 +298,6 @@ contains
         palpha_eps = dflt_real
         ptgalpha_eps = dflt_real
         num_fluids = dflt_int
-        adv_alphan = .false.
         weno_order = dflt_int
 
         hypoelasticity = .false.
@@ -297,8 +316,10 @@ contains
         parallel_io = .false.
         file_per_process = .false.
         precision = 2
-        vel_profile = .false.
-        instability_wave = .false.
+        mixlayer_vel_profile = .false.
+        mixlayer_vel_coef = 1d0
+        mixlayer_domain = 1d0
+        mixlayer_perturb = .false.
         perturb_flow = .false.
         perturb_flow_fluid = dflt_int
         perturb_flow_mag = dflt_real
@@ -351,6 +372,10 @@ contains
             patch_icpp(i)%m0 = dflt_real
 
             patch_icpp(i)%hcid = dflt_int
+
+            if (chemistry) then
+                patch_icpp(i)%Y(:) = 0d0
+            end if
         end do
 
         ! Tait EOS
@@ -433,7 +458,7 @@ contains
         !Lagrangian solver
         solverapproach = 2
 
-    end subroutine s_assign_default_values_to_user_inputs 
+    end subroutine s_assign_default_values_to_user_inputs
 
     !> Computation of parameters, allocation procedures, and/or
         !! any other tasks needed to properly setup the module
@@ -676,6 +701,16 @@ contains
             end if
         end if
 
+        if (chemistry) then
+            chemistry_idx%beg = sys_size + 1
+            chemistry_idx%end = sys_size + num_species
+            sys_size = chemistry_idx%end
+
+            temperature_idx%beg = sys_size + 1
+            temperature_idx%end = sys_size + 1
+            sys_size = temperature_idx%end
+        end if
+
         momxb = mom_idx%beg
         momxe = mom_idx%end
         advxb = adv_idx%beg
@@ -688,6 +723,10 @@ contains
         strxe = stress_idx%end
         intxb = internalEnergies_idx%beg
         intxe = internalEnergies_idx%end
+        chemxb = chemistry_idx%beg
+        chemxe = chemistry_idx%end
+        tempxb = temperature_idx%beg
+        tempxe = temperature_idx%end
 
         ! ==================================================================
 

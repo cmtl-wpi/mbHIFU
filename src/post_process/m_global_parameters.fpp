@@ -2,6 +2,8 @@
 !! @file m_global_parameters.f90
 !! @brief Contains module m_global_parameters
 
+#:include 'case.fpp'
+
 !> @brief This module contains all of the parameters characterizing the
 !!      computational domain, simulation algorithm, stiffened equation of
 !!      state and finally, the formatted database file(s) structure.
@@ -13,6 +15,11 @@ module m_global_parameters
 #endif
 
     use m_derived_types         !< Definitions of the derived types
+
+    use m_helper_basic          !< Functions to compare floating point numbers
+
+    use m_thermochem            !< Thermodynamic and chemical properties module
+
     ! ==========================================================================
 
     implicit none
@@ -74,6 +81,16 @@ module m_global_parameters
     integer :: t_step_stop   !< Last time-step directory
     integer :: t_step_save   !< Interval between consecutive time-step directory
 
+    !> @name IO options for adaptive time-stepping
+    !> @{
+    logical :: cfl_adap_dt, cfl_const_dt, cfl_dt
+    real(kind(0d0)) :: t_save
+    real(kind(0d0)) :: t_stop
+    real(kind(0d0)) :: cfl_target
+    integer :: n_save
+    integer :: n_start
+    !> @}
+
     ! NOTE: The variables m_root, x_root_cb and x_root_cc contain the grid data
     ! of the defragmented computational domain. They are only used in 1D. For
     ! serial simulations, they are equal to m, x_cb and x_cc, respectively.
@@ -86,13 +103,13 @@ module m_global_parameters
     integer :: num_fluids      !< Number of different fluids present in the flow
     logical :: relax           !< phase change
     integer :: relax_model     !< Phase change relaxation model
-    logical :: adv_alphan      !< Advection of the last volume fraction
     logical :: mpp_lim         !< Maximum volume fraction limiter
     integer :: sys_size        !< Number of unknowns in the system of equations
     integer :: weno_order      !< Order of accuracy for the WENO reconstruction
     logical :: mixture_err     !< Mixture error limiter
     logical :: alt_soundspeed  !< Alternate sound speed
     logical :: hypoelasticity  !< Turn hypoelasticity on
+    logical, parameter :: chemistry = .${chemistry}$. !< Chemistry modeling
     !> @}
 
     !> @name Annotations of the structure, i.e. the organization, of the state vectors
@@ -109,6 +126,8 @@ module m_global_parameters
     integer :: pi_inf_idx                          !< Index of liquid stiffness func. eqn.
     type(int_bounds_info) :: stress_idx            !< Indices of elastic stresses
     integer :: c_idx                               !< Index of color function
+    type(int_bounds_info) :: chemistry_idx           !< Indexes of first & last concentration eqns.
+    type(int_bounds_info) :: temperature_idx       !< Indexes of first & last temperature eqns.
     !> @}
 
     !> @name Boundary conditions in the x-, y- and z-coordinate directions
@@ -128,6 +147,7 @@ module m_global_parameters
 #ifdef MFC_MPI
 
     type(mpi_io_var), public :: MPI_IO_DATA
+    real(kind(0.d0)), allocatable, dimension(:, :), public :: MPI_IO_DATA_particle
 
 #endif
 
@@ -191,6 +211,9 @@ module m_global_parameters
     logical :: qm_wrt
     logical :: schlieren_wrt
     logical :: cf_wrt
+    logical :: ib
+    logical :: chem_wrt_Y(1:num_species)
+    logical :: chem_wrt_T
     !> @}
 
     real(kind(0d0)), dimension(num_fluids_max) :: schlieren_alpha    !<
@@ -252,12 +275,13 @@ module m_global_parameters
     integer :: intxb, intxe
     integer :: bubxb, bubxe
     integer :: strxb, strxe
+    integer :: chemxb, chemxe
+    integer :: tempxb, tempxe
     !> @}
 
     ! Lagrangian solver
-    LOGICAL :: particleflag, avgdensFlag, do_particles
-    INTEGER :: solverapproach
-    LOGICAL :: second_dir
+    logical :: particleflag, avgdensFlag
+    integer :: solverapproach
 
 contains
 
@@ -280,10 +304,17 @@ contains
         t_step_stop = dflt_int
         t_step_save = dflt_int
 
+        cfl_adap_dt = .false.
+        cfl_const_dt = .false.
+        cfl_dt = .false.
+        cfl_target = dflt_real
+        t_save = dflt_real
+        n_start = dflt_int
+        t_stop = dflt_real
+
         ! Simulation algorithm parameters
         model_eqns = dflt_int
         num_fluids = dflt_int
-        adv_alphan = .false.
         weno_order = dflt_int
         mixture_err = .false.
         alt_soundspeed = .false.
@@ -321,6 +352,8 @@ contains
         rho_wrt = .false.
         mom_wrt = .false.
         vel_wrt = .false.
+        chem_wrt_Y = .false.
+        chem_wrt_T = .false.
         flux_lim = dflt_int
         flux_wrt = .false.
         parallel_io = .false.
@@ -360,11 +393,9 @@ contains
         adv_n = .false.
 
         ! Lagrangian solver
-        particleflag   = .FALSE.
-        avgdensFlag    = .FALSE.
-        do_particles   = .FALSE.
-        solverapproach = 1
-        second_dir = .FALSE.
+        particleflag = .false.
+        avgdensFlag = .false.
+        solverapproach = dflt_int
 
     end subroutine s_assign_default_values_to_user_inputs
 
@@ -521,7 +552,6 @@ contains
             E_idx = mom_idx%end + 1
             adv_idx%beg = E_idx + 1
             adv_idx%end = E_idx + num_fluids
-            if (adv_alphan .neqv. .true.) adv_idx%end = adv_idx%end - 1
             internalEnergies_idx%beg = adv_idx%end + 1
             internalEnergies_idx%end = adv_idx%end + num_fluids
             sys_size = internalEnergies_idx%end
@@ -588,6 +618,16 @@ contains
             end if
         end if
 
+        if (chemistry) then
+            chemistry_idx%beg = sys_size + 1
+            chemistry_idx%end = sys_size + num_species
+            sys_size = chemistry_idx%end
+
+            temperature_idx%beg = sys_size + 1
+            temperature_idx%end = sys_size + 1
+            sys_size = temperature_idx%end
+        end if
+
         momxb = mom_idx%beg
         momxe = mom_idx%end
         advxb = adv_idx%beg
@@ -600,25 +640,30 @@ contains
         strxe = stress_idx%end
         intxb = internalEnergies_idx%beg
         intxe = internalEnergies_idx%end
+        chemxb = chemistry_idx%beg
+        chemxe = chemistry_idx%end
+        tempxb = temperature_idx%beg
+        tempxe = temperature_idx%end
+
         ! ==================================================================
 
 #ifdef MFC_MPI
-        IF(avgdensflag .NEQV. .TRUE.) THEN
-            ALLOCATE(MPI_IO_DATA%view(1:sys_size))
-            ALLOCATE(MPI_IO_DATA%var(1:sys_size))
-            DO i = 1, sys_size
-                ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
-                MPI_IO_DATA%var(i)%sf => NULL()
-            END DO
-        ELSE
-            ALLOCATE(MPI_IO_DATA%view(1:sys_size+1))
-            ALLOCATE(MPI_IO_DATA%var(1:sys_size+1))
+        if (avgdensflag .neqv. .true.) then
+            allocate (MPI_IO_DATA%view(1:sys_size))
+            allocate (MPI_IO_DATA%var(1:sys_size))
+            do i = 1, sys_size
+                allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
+                MPI_IO_DATA%var(i)%sf => null()
+            end do
+        else
+            allocate (MPI_IO_DATA%view(1:sys_size + 1))
+            allocate (MPI_IO_DATA%var(1:sys_size + 1))
 
-            DO i = 1, sys_size+1
-                ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
-                MPI_IO_DATA%var(i)%sf => NULL()
-            END DO
-        END IF
+            do i = 1, sys_size + 1
+                allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
+                MPI_IO_DATA%var(i)%sf => null()
+            end do
+        end if
 
 #endif
 
@@ -769,8 +814,8 @@ contains
             do i = 1, sys_size
                 MPI_IO_DATA%var(i)%sf => null()
             end do
-			
-			IF(avgdensflag) MPI_IO_DATA%var(sys_size+1)%sf => NULL()
+
+            if (avgdensflag) MPI_IO_DATA%var(sys_size + 1)%sf => null()
 
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)
