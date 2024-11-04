@@ -25,13 +25,19 @@ module m_start_up
     use m_data_output           !< Procedures that write the grid and chosen flow
                                 !! variable(s) to the formatted database file(s)
 
-    use m_derived_variables     !< Procedures used to compute quantites derived
+    use m_derived_variables     !< Procedures used to compute quantities derived
                                 !! from the conservative and primitive variables
     use m_helper
 
     use m_compile_specific
 
     use m_checker
+
+    use m_thermochem            !< Procedures used to compute thermodynamic
+                                !! quantities
+
+    use m_finite_differences
+
     ! ==========================================================================
 
     implicit none
@@ -41,7 +47,7 @@ contains
     !>  Reads the configuration file post_process.inp, in order
         !!      to populate parameters in module m_global_parameters.f90
         !!      with the user provided inputs
-    subroutine s_read_input_file() ! ---------------------------------------
+    subroutine s_read_input_file
 
         character(LEN=name_len) :: file_loc !<
             !! Generic string used to store the address of a particular file
@@ -58,10 +64,11 @@ contains
         ! Namelist for all of the parameters to be inputted by the user
         namelist /user_inputs/ case_dir, m, n, p, t_step_start, &
             t_step_stop, t_step_save, model_eqns, &
-            num_fluids, mpp_lim, adv_alphan, &
+            num_fluids, mpp_lim, &
             weno_order, bc_x, &
             bc_y, bc_z, fluid_pp, format, precision, &
             hypoelasticity, G, &
+            chem_wrt_Y, chem_wrt_T, &
             alpha_rho_wrt, rho_wrt, mom_wrt, vel_wrt, &
             E_wrt, pres_wrt, alpha_wrt, gamma_wrt, &
             heat_ratio_wrt, pi_inf_wrt, pres_inf_wrt, &
@@ -72,8 +79,9 @@ contains
             parallel_io, rhoref, pref, bubbles, qbmm, sigR, &
             R0ref, nb, polytropic, thermal, Ca, Web, Re_inv, &
             polydisperse, poly_sigma, file_per_process, relax, &
-            relax_model, particleflag, avgdensFlag, solverapproach, &
-            hifu
+            relax_model, cf_wrt, sigma, adv_n, ib, &
+            cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, &
+            cfl_target, particleflag, avgdensFlag, solverapproach, hifu
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -102,20 +110,19 @@ contains
 
             nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
 
-            !Lagrangean solver
-            if (particleflag) do_particles=.true.
+            if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
 
         else
             call s_mpi_abort('File post_process.inp is missing. Exiting ...')
         end if
 
-    end subroutine s_read_input_file ! -------------------------------------
+    end subroutine s_read_input_file
 
     !>  Checking that the user inputs make sense, i.e. that the
         !!      individual choices are compatible with the code's options
         !!      and that the combination of these choices results into a
         !!      valid configuration for the post-process
-    subroutine s_check_input_file() ! --------------------------------------
+    subroutine s_check_input_file
 
         character(LEN=len_trim(case_dir)) :: file_loc !<
             !! Generic string used to store the address of a particular file
@@ -138,13 +145,12 @@ contains
 
         call s_check_inputs()
 
-    end subroutine s_check_input_file ! ------------------------------------
-
+    end subroutine s_check_input_file
 
     subroutine s_perform_time_step(t_step, hifu_id)
 
-        integer, intent(INOUT) :: t_step
-        integer, intent(IN), OPTIONAL :: hifu_id
+        integer, intent(inout) :: t_step
+        integer, intent(in), optional :: hifu_id
 
         if (present(hifu_id)) then
             ! Populating the grid and HIFU variables
@@ -155,13 +161,19 @@ contains
             if (buff_size > 0) call s_populate_conservative_variables_buffer_regions()
             return
         end if
-
+        
         if (proc_rank == 0) then
-            print '(" ["I3"%]  Saving "I8" of "I0" @ t_step = "I0"")', &
-                int(ceiling(100d0*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
-                (t_step - t_step_start)/t_step_save + 1, &
-                (t_step_stop - t_step_start)/t_step_save + 1, &
-                t_step
+            if (cfl_dt) then
+                print '(" ["I3"%]  Saving "I8" of "I0"")', &
+                    int(ceiling(100d0*(real(t_step - n_start)/(n_save)))), &
+                    t_step, n_save
+            else
+                print '(" ["I3"%]  Saving "I8" of "I0" @ t_step = "I0"")', &
+                    int(ceiling(100d0*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
+                    (t_step - t_step_start)/t_step_save + 1, &
+                    (t_step_stop - t_step_start)/t_step_save + 1, &
+                    t_step
+            end if
         end if
 
         ! Populating the grid and conservative variables
@@ -174,20 +186,19 @@ contains
         ! Populating the buffer regions of the conservative variables
         if (buff_size > 0) then
             call s_populate_conservative_variables_buffer_regions()
+            if (avgdensFlag) call s_populate_conservative_variables_buffer_regions(q_particle(1))
         end if
 
         ! Converting the conservative variables to the primitive ones
-        CALL s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf)
+        call s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf)
 
     end subroutine s_perform_time_step
 
     subroutine s_save_data(t_step, varname, pres, c, H)
 
-        integer, intent(INOUT) :: t_step
-        character(LEN=name_len), intent(INOUT) :: varname
-        real(kind(0d0)), intent(INOUT) :: pres, c, H
-        character(LEN=path_len + 3*name_len) :: file_path
-        integer :: unitFile
+        integer, intent(inout) :: t_step
+        character(LEN=name_len), intent(inout) :: varname
+        real(kind(0d0)), intent(inout) :: pres, c, H
 
         integer :: i, j, k, l
 
@@ -293,6 +304,21 @@ contains
             end if
         end do
         ! ----------------------------------------------------------------------
+
+        ! Adding the species' concentrations to the formatted database file ----
+        do i = 1, num_species
+            if (chem_wrt_Y(i) .or. prim_vars_wrt) then
+                q_sf = q_prim_vf(chemxb + i - 1)%sf(-offset_x%beg:m + offset_x%end, &
+                                                    -offset_y%beg:n + offset_y%end, &
+                                                    -offset_z%beg:p + offset_z%end)
+
+                write (varname, '(A,A)') 'Y_', trim(species_names(i))
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+
+                varname(:) = ' '
+
+            end if
+        end do
 
         ! Adding the flux limiter function to the formatted database file
         do i = 1, E_idx - mom_idx%beg
@@ -458,14 +484,6 @@ contains
         ! Adding the sound speed to the formatted database file ----------------
         if (c_wrt) then
 
-            IF(avgdensFlag) THEN !Lagrangian solver, void fraction
-                if (proc_rank==0) print*, 'Post_process: Lagrangian particles'
-                q_sf = 1.0d0 - q_particle(1)%sf(                &
-                              -offset_x%beg : m + offset_x%end, &
-                              -offset_y%beg : n + offset_y%end, &
-                              -offset_z%beg : p + offset_z%end  )
-            ELSE
-
             do k = -offset_z%beg, p + offset_z%end
                 do j = -offset_y%beg, n + offset_y%end
                     do i = -offset_x%beg, m + offset_x%end
@@ -486,8 +504,6 @@ contains
                     end do
                 end do
             end do
-
-            END IF
 
             write (varname, '(A)') 'c'
             call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -544,6 +560,32 @@ contains
             write (varname, '(A)') 'schlieren'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
+            varname(:) = ' '
+
+        end if
+        ! ----------------------------------------------------------------------
+
+        ! Adding the color function to formatted database file
+        if (cf_wrt) then
+            q_sf = q_cons_vf(c_idx)%sf( &
+                   -offset_x%beg:m + offset_x%end, &
+                   -offset_y%beg:n + offset_y%end, &
+                   -offset_z%beg:p + offset_z%end)
+
+            !do k = -offset_z%beg, p + offset_z%end
+            !    do j = -offset_y%beg, n + offset_y%end
+            !        do i = -offset_x%beg, m + offset_x%end
+            !            if (q_sf(i,j,k) > 0.5) then
+            !                q_sf(i,j,k) = 100000 + 8/0.15
+            !            else
+            !                q_sf(i,j,k) = 100000
+            !            end if
+            !        end do
+            !    end do
+            !end do
+
+            write (varname, '(A,I0)') 'color_function'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
         end if
@@ -610,6 +652,30 @@ contains
                 end do
             end if
 
+            ! number density
+            if (adv_n) then
+                q_sf = q_cons_vf(n_idx)%sf( &
+                       -offset_x%beg:m + offset_x%end, &
+                       -offset_y%beg:n + offset_y%end, &
+                       -offset_z%beg:p + offset_z%end)
+                write (varname, '(A)') 'n'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+            end if
+        end if
+
+        ! Adding the lagrangian subgrid variables  to the formatted database file ---------
+        if (particleflag) then
+            if (avgdensFlag) then                 !! Void fraction field
+                q_sf = 1.0d0 - q_particle(1)%sf( &
+                       -offset_x%beg:m + offset_x%end, &
+                       -offset_y%beg:n + offset_y%end, &
+                       -offset_z%beg:p + offset_z%end)
+                write (varname, '(A)') 'voidFraction'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+            end if
+            call s_write_particle_results(t_step) !! Individual evolution
         end if
 
         ! HIFU
@@ -631,14 +697,27 @@ contains
             do i = -offset_x%beg, m + offset_x%end
                 do j = -offset_y%beg, n + offset_y%end
                     do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(qus_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(N_hifu_idx)%sf(i,j,k))
+                        q_sf(i,j,k) = q_cons_hifu(qus_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
                     end do
                 end do
             end do
 
-            if (proc_rank==0) print*, 'The current number of samples is', q_cons_hifu(N_hifu_idx)%sf(0,0,0)
+            if (proc_rank==0) print*, 'The current sampled period is', q_cons_hifu(tt_hifu_idx)%sf(0,0,0)
 
-            write (varname, '(A)') 'avgIntAcoustic'
+            write (varname, '(A)') 'avgAcousticIntensity'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg heat intensity from acoustic damping q_us PRMS ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(qus_prms_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgAcousticIntensity'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
@@ -646,12 +725,25 @@ contains
             do i = -offset_x%beg, m + offset_x%end
                 do j = -offset_y%beg, n + offset_y%end
                     do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(qvis_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(N_hifu_idx)%sf(i,j,k))
+                        q_sf(i,j,k) = q_cons_hifu(qvis_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
                     end do
                 end do
             end do
 
-            write (varname, '(A)') 'avgIntViscous'
+            write (varname, '(A)') 'avgViscousIntensity'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg heat intensity from thermal damping q_vis ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(qth_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgThermalIntensity'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
@@ -659,7 +751,7 @@ contains
             do i = -offset_x%beg, m + offset_x%end
                 do j = -offset_y%beg, n + offset_y%end
                     do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(u_hifu_idx)%sf(i,j,k)
+                        q_sf(i,j,k) = q_cons_hifu(u_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
                     end do
                 end do
             end do
@@ -672,7 +764,7 @@ contains
             do i = -offset_x%beg, m + offset_x%end
                 do j = -offset_y%beg, n + offset_y%end
                     do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(v_hifu_idx)%sf(i,j,k)
+                        q_sf(i,j,k) = q_cons_hifu(v_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
                     end do
                 end do
             end do
@@ -682,41 +774,40 @@ contains
             varname(:) = ' '
 
             !------- Max Pressure --------------------
-            
-            !if (t_step == t_step_stop) then
-            !    unitFile = proc_rank+100
-            !    write (file_path, '(A,I0,A)') '/D/Pmax_distribution', proc_rank, '.dat'
-            !    file_path = trim(case_dir)//trim(file_path)
-            !    open (unitFile, FILE=trim(file_path), FORM='formatted', STATUS='unknown')
-            !end if
 
             do i = -offset_x%beg, m + offset_x%end
                 do j = -offset_y%beg, n + offset_y%end
                     do k = -offset_z%beg, p + offset_z%end
                         q_sf(i,j,k) = q_cons_hifu(P_hifu_idx)%sf(i,j,k)
-                        !if (t_step == t_step_stop) then
-                        !    write (unitFile, '(6x,f24.8,f24.8,f24.8)') &
-                        !    x_cc(i), &
-                        !    y_cc(j), &
-                        !    q_sf(i,j,k)
-                        !end if
                     end do
                 end do
             end do
-
-            !if (t_step == t_step_stop) close(unitFile)
 
             write (varname, '(A)') 'Pmax'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
+            !------- Min Pressure --------------------
+
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i,j,k) = q_cons_hifu(P_hifu_idx+1)%sf(i,j,k)
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'Pmin'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+        
         end if
 
         ! Closing the formatted database file
         call s_close_formatted_database_file()
     end subroutine s_save_data
 
-    subroutine s_initialize_modules()
+    subroutine s_initialize_modules
         ! Computation of parameters, allocation procedures, and/or any other tasks
         ! needed to properly setup the modules
         call s_initialize_global_parameters_module()
@@ -740,7 +831,7 @@ contains
         end if
     end subroutine s_initialize_modules
 
-    subroutine s_initialize_mpi_domain()
+    subroutine s_initialize_mpi_domain
         ! Initialization of the MPI environment
         call s_mpi_initialize()
 
@@ -766,7 +857,7 @@ contains
 
     end subroutine s_initialize_mpi_domain
 
-    subroutine s_finalize_modules()
+    subroutine s_finalize_modules
         ! Disassociate pointers for serial and parallel I/O
         s_read_data_files => null()
 

@@ -29,6 +29,7 @@ module m_data_output
  s_open_formatted_database_file, &
  s_write_grid_to_formatted_database_file, &
  s_write_variable_to_formatted_database_file, &
+ s_write_particle_results, &
  s_close_formatted_database_file, &
  s_finalize_data_output_module
 
@@ -102,7 +103,7 @@ module m_data_output
 
 contains
 
-    subroutine s_initialize_data_output_module() ! ----------------------------
+    subroutine s_initialize_data_output_module
         ! Description: Computation of parameters, allocation procedures, and/or
         !              any other tasks needed to properly setup the module
 
@@ -288,18 +289,18 @@ contains
 
         end if
 
-        IF(particleflag .AND. proc_rank == 0 .and. num_procs.eq.1) THEN !Lagrangian solver
-           dbdir = TRIM(case_dir) // '/particles_data'
-           file_loc = TRIM(dbdir) // '/.'
-           !INQUIRE( DIRECTORY = TRIM(file_loc), & ! Intel compiler
-           !        EXIST     = dir_check       )
-           INQUIRE( FILE      = TRIM(file_loc), & ! NAG/PGI/GCC compiler
-           EXIST     = dir_check       )
+        if (particleflag) then !Lagrangian solver
+            dbdir = trim(case_dir)//'/particles_data'
+            file_loc = trim(dbdir)//'/.'
+            !INQUIRE( DIRECTORY = TRIM(file_loc), & ! Intel compiler
+            !        EXIST     = dir_check       )
+            inquire (FILE=trim(file_loc), & ! NAG/PGI/GCC compiler
+                     EXIST=dir_check)
 
-           IF(dir_check .NEQV. .TRUE.) THEN
-               CALL SYSTEM('mkdir ' // TRIM(dbdir))
-           END IF
-        END IF
+            if (dir_check .neqv. .true.) then
+                call SYSTEM('mkdir '//trim(dbdir))
+            end if
+        end if
 
         ! ==================================================================
 
@@ -426,9 +427,9 @@ contains
 
         ! END: Querying Number of Flow Variable(s) in Binary Output ========
 
-    end subroutine s_initialize_data_output_module ! --------------------------
+    end subroutine s_initialize_data_output_module
 
-    subroutine s_open_formatted_database_file(t_step) ! --------------------
+    subroutine s_open_formatted_database_file(t_step)
         ! Description: This subroutine opens a new formatted database file, or
         !              replaces an old one, and readies it for the data storage
         !              of the grid and the flow variable(s) associated with the
@@ -441,7 +442,7 @@ contains
         !              not performed in multidimensions.
 
         ! Time-step that is currently being post-processed
-        integer, intent(IN) :: t_step
+        integer, intent(in) :: t_step
 
         ! Generic string used to store the location of a particular file
         character(LEN=len_trim(case_dir) + 3*name_len) :: file_loc
@@ -545,9 +546,9 @@ contains
 
         ! END: Binary Database Format ======================================
 
-    end subroutine s_open_formatted_database_file ! ------------------------
+    end subroutine s_open_formatted_database_file
 
-    subroutine s_write_grid_to_formatted_database_file(t_step) ! -----------
+    subroutine s_write_grid_to_formatted_database_file(t_step)
         ! Description: The general objective of this subroutine is to write the
         !              necessary grid data to the formatted database file, for
         !              the current time-step, t_step. The local processor will
@@ -568,7 +569,7 @@ contains
         !              subroutine s_write_variable_to_formatted_database_file.
 
         ! Time-step that is currently being post-processed
-        integer, intent(IN) :: t_step
+        integer, intent(in) :: t_step
 
         ! Bookkeeping variables storing the name and type of mesh that is
         ! handled by the local processor(s). Note that due to an internal
@@ -744,7 +745,7 @@ contains
 
         ! ==================================================================
 
-    end subroutine s_write_grid_to_formatted_database_file ! ---------------
+    end subroutine s_write_grid_to_formatted_database_file
 
     subroutine s_write_variable_to_formatted_database_file(varname, t_step)
         ! Description: The goal of this subroutine is to write to the formatted
@@ -765,10 +766,10 @@ contains
 
         ! Name of the flow variable, which will be written to the formatted
         ! database file at the current time-step, t_step
-        character(LEN=*), intent(IN) :: varname
+        character(LEN=*), intent(in) :: varname
 
         ! Time-step that is currently being post-processed
-        integer, intent(IN) :: t_step
+        integer, intent(in) :: t_step
 
         ! Bookkeeping variables storing the name and type of flow variable
         ! that is about to be handled by the local processor(s). Note that
@@ -953,9 +954,119 @@ contains
 
         ! ==================================================================
 
-    end subroutine s_write_variable_to_formatted_database_file ! -----------
+    end subroutine s_write_variable_to_formatted_database_file
 
-    subroutine s_close_formatted_database_file() ! -------------------------
+    !>  Subroutine that writes the post processed results in the folder 'particles_data'
+            !!  @param t_step Current time step
+    subroutine s_write_particle_results(t_step)
+
+        integer, intent(in) :: t_step
+        character(len=len_trim(case_dir) + 2*name_len) :: t_step_dir
+        character(len=len_trim(case_dir) + 3*name_len) :: file_loc
+        logical :: dir_check
+        integer :: id, nparticles
+
+#ifdef MFC_MPI
+        real(kind(0.d0)), dimension(20) :: inputvals
+        real(kind(0.d0)) :: id_real, time_real
+        integer, dimension(MPI_STATUS_SIZE) :: status
+        integer(KIND=MPI_OFFSET_KIND) :: disp
+        integer :: view
+
+        type(particledata), pointer :: particleinfo
+        type(particleListinfo), pointer :: particleListaux
+
+        integer, dimension(3) :: cell
+        logical :: indomain, particle_file, particle_data, file_exist
+
+        integer, dimension(2) :: gsizes, lsizes, start_idx_part
+        integer :: ifile, ireq, ierr, data_size, tot_data
+        integer :: i
+
+        write (file_loc, '(A,I0,A)') 'particle_mpi_io', t_step, '.dat'
+        file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+        inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+        if (file_exist) then
+            if (proc_rank == 0) then
+                open (9, FILE=trim(file_loc), FORM='unformatted', STATUS='unknown')
+                read (9) tot_data, time_real
+                close (9)
+            end if
+        else
+            print '(A)', trim(file_loc)//' is missing. Exiting ...'
+            call s_mpi_abort
+        end if
+
+        call MPI_BCAST(tot_data, 1, MPI_integer, 0, MPI_COMM_WORLD, ierr)
+        call MPI_BCAST(time_real, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
+        gsizes(1) = tot_data
+        gsizes(2) = 21
+        lsizes(1) = tot_data
+        lsizes(2) = 21
+        start_idx_part(1) = 0
+        start_idx_part(2) = 0
+
+        call MPI_TYPE_CREATE_SUBARRAY(2, gsizes, lsizes, start_idx_part, &
+                                      MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, view, ierr)
+        call MPI_TYPE_COMMIT(view, ierr)
+
+        write (file_loc, '(A,I0,A)') 'particle', t_step, '.dat'
+        file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+        inquire (FILE=trim(file_loc), EXIST=particle_file)
+
+        if (particle_file) then
+
+            call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, &
+                               mpi_info_int, ifile, ierr)
+
+            disp = 0d0
+            call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, view, &
+                                   'native', mpi_info_null, ierr)
+
+            allocate (MPI_IO_DATA_particle(tot_data, 1:21))
+
+            call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA_particle, 21*tot_data, &
+                                   MPI_DOUBLE_PRECISION, status, ierr)
+
+            write (file_loc, '(A,I0,A)') 'particles_data_', t_step, '.dat'
+            file_loc = trim(case_dir)//'/particles_data/'//trim(file_loc)
+
+            if (proc_rank == 0) then
+                open (unit=29, file=file_loc, form='formatted', position='rewind')
+                !write(29,*) 'particleID, x, y, z, xPrev, yPrev, zPrev, xVel, yVel, ',   &
+                !            'zVel, radius, interfaceVelocity, equilibriumRadius',       &
+                !            'Rmax, Rmin, dphidt, pressure, mv, mg, betaT, betaC, time'
+                do i = 1, tot_data
+                    id = int(MPI_IO_DATA_particle(i, 1))
+                    inputvals(1:20) = MPI_IO_DATA_particle(i, 2:21)
+                    if (id > 0) then
+                        write (29, 6) int(id), inputvals(1), inputvals(2), &
+                            inputvals(3), inputvals(4), inputvals(5), inputvals(6), inputvals(7), &
+                            inputvals(8), inputvals(9), inputvals(10), inputvals(11), &
+                            inputvals(12), inputvals(13), inputvals(14), inputvals(15), &
+                            inputvals(16), inputvals(17), inputvals(18), inputvals(19), &
+                            inputvals(20), time_real
+6                       format(I6, 21(1x, E15.7))
+                    end if
+                end do
+                close (29)
+            end if
+
+            deallocate (MPI_IO_DATA_particle)
+
+        end if
+
+        call s_mpi_barrier()
+
+        call MPI_FILE_CLOSE(ifile, ierr)
+
+#endif
+
+    end subroutine s_write_particle_results
+
+    subroutine s_close_formatted_database_file
         ! Description: The purpose of this subroutine is to close any formatted
         !              database file(s) that may be opened at the time-step that
         !              is currently being post-processed. The root process must
@@ -980,9 +1091,9 @@ contains
 
         end if
 
-    end subroutine s_close_formatted_database_file ! -----------------------
+    end subroutine s_close_formatted_database_file
 
-    subroutine s_finalize_data_output_module() ! -------------------------
+    subroutine s_finalize_data_output_module
         ! Description: Deallocation procedures for the module
 
         ! Deallocating the generic storage employed for the flow variable(s)
@@ -1006,6 +1117,6 @@ contains
             deallocate (dims)
         end if
 
-    end subroutine s_finalize_data_output_module ! -----------------------
+    end subroutine s_finalize_data_output_module
 
 end module m_data_output

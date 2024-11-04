@@ -30,7 +30,7 @@ contains
     !> The subroutine initializes the MPI execution environment
         !!      and queries both the number of processors which will be
         !!      available for the job and the local processor rank.
-    subroutine s_mpi_initialize() ! ----------------------------------------
+    subroutine s_mpi_initialize
 
 #ifndef MFC_MPI
 
@@ -58,20 +58,23 @@ contains
 
 #endif
 
-    end subroutine s_mpi_initialize ! --------------------------------------
+    end subroutine s_mpi_initialize
 
-    subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, beta, q_cons_hifu, hifu_id) ! --------------------------
+    !! @param q_cons_vf Conservative variables
+    !! @param ib_markers track if a cell is within the immersed boundary
+    !! @param beta Eulerian void fraction from lagrangian bubbles
+    subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, beta, q_cons_hifu, hifu_id)
 
         type(scalar_field), &
             dimension(sys_size), &
-            intent(IN) :: q_cons_vf
+            intent(in) :: q_cons_vf
 
         type(scalar_field), &
-            intent(IN), optional :: beta
+            intent(in), optional :: beta
 
         type(integer_field), &
             optional, &
-            intent(IN) :: ib_markers
+            intent(in) :: ib_markers
         
         type(scalar_field), &
             dimension(sys_size_hifu), &
@@ -86,14 +89,18 @@ contains
 
         ! Generic loop iterator
         integer :: i, j, q, k, l
-        integer :: alt_sys !Altered system size when lagrangian particles exist
 
-        if (present(beta)) then
-                alt_sys = sys_size + 1
-        else if (present(hifu_id)) then
-                alt_sys = sys_size_hifu
+        !Altered system size for the lagrangian subgrid bubble model
+        integer :: alt_sys
+
+        if (present(hifu_id)) then
+            alt_sys = sys_size_hifu
         else
+            if (present(beta)) then
+                alt_sys = sys_size + 1
+            else
                 alt_sys = sys_size
+            end if
         end if
 
         if (present(hifu_id)) then
@@ -102,13 +109,12 @@ contains
                 MPI_IO_HIFU_DATA%var(i)%sf => q_cons_hifu(i)%sf(0:m, 0:n, 0:p)
             end do
         else
-
             do i = 1, sys_size
                 MPI_IO_DATA%var(i)%sf => q_cons_vf(i)%sf(0:m, 0:n, 0:p)
             end do
 
             if (present(beta)) then
-                MPI_IO_DATA%var(alt_sys)%sf => beta%sf(0:m,0:n,0:p)
+                MPI_IO_DATA%var(alt_sys)%sf => beta%sf(0:m, 0:n, 0:p)
             end if
         end if
 
@@ -151,9 +157,9 @@ contains
                 call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
             end do
         else
-            do i = 1, alt_sys 
+            do i = 1, alt_sys
                 call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
-                                          MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(i), ierr)
+                                            MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(i), ierr)
                 call MPI_TYPE_COMMIT(MPI_IO_DATA%view(i), ierr)
             end do
         end if
@@ -172,7 +178,7 @@ contains
 #ifndef MFC_POST_PROCESS
         if (present(ib_markers)) then
 
-#ifdef MPI_SIMULATION
+#ifdef MFC_PRE_PROCESS
             MPI_IO_IB_DATA%var%sf => ib_markers%sf
 #else
             MPI_IO_IB_DATA%var%sf => ib_markers%sf(0:m, 0:n, 0:p)
@@ -226,12 +232,12 @@ contains
 
 #endif
 
-    end subroutine s_initialize_mpi_data ! ---------------------------------
+    end subroutine s_initialize_mpi_data
 
     subroutine mpi_bcast_time_step_values(proc_time, time_avg)
 
-        real(kind(0d0)), dimension(0:num_procs - 1), intent(INOUT) :: proc_time
-        real(kind(0d0)), intent(INOUT) :: time_avg
+        real(kind(0d0)), dimension(0:num_procs - 1), intent(inout) :: proc_time
+        real(kind(0d0)), intent(inout) :: time_avg
 
 #ifdef MFC_MPI
 
@@ -255,7 +261,7 @@ contains
         !!  @param icfl_max_glb Global maximum ICFL stability criterion
         !!  @param vcfl_max_glb Global maximum VCFL stability criterion
         !!  @param Rc_min_glb Global minimum Rc stability criterion
-    subroutine s_mpi_reduce_stability_criteria_extrema(icfl_max_loc, & ! --
+    subroutine s_mpi_reduce_stability_criteria_extrema(icfl_max_loc, &
                                                        vcfl_max_loc, &
                                                        ccfl_max_loc, &
                                                        Rc_min_loc, &
@@ -264,15 +270,15 @@ contains
                                                        ccfl_max_glb, &
                                                        Rc_min_glb)
 
-        real(kind(0d0)), intent(IN) :: icfl_max_loc
-        real(kind(0d0)), intent(IN) :: vcfl_max_loc
-        real(kind(0d0)), intent(IN) :: ccfl_max_loc
-        real(kind(0d0)), intent(IN) :: Rc_min_loc
+        real(kind(0d0)), intent(in) :: icfl_max_loc
+        real(kind(0d0)), intent(in) :: vcfl_max_loc
+        real(kind(0d0)), intent(in) :: ccfl_max_loc
+        real(kind(0d0)), intent(in) :: Rc_min_loc
 
-        real(kind(0d0)), intent(OUT) :: icfl_max_glb
-        real(kind(0d0)), intent(OUT) :: vcfl_max_glb
-        real(kind(0d0)), intent(OUT) :: ccfl_max_glb
-        real(kind(0d0)), intent(OUT) :: Rc_min_glb
+        real(kind(0d0)), intent(out) :: icfl_max_glb
+        real(kind(0d0)), intent(out) :: vcfl_max_glb
+        real(kind(0d0)), intent(out) :: ccfl_max_glb
+        real(kind(0d0)), intent(out) :: Rc_min_glb
 
 #ifdef MFC_MPI
 #ifdef MFC_SIMULATION
@@ -295,7 +301,7 @@ contains
 #endif
 #endif
 
-    end subroutine s_mpi_reduce_stability_criteria_extrema ! ---------------
+    end subroutine s_mpi_reduce_stability_criteria_extrema
 
     !>  The following subroutine takes the input local variable
         !!      from all processors and reduces to the sum of all
@@ -304,10 +310,10 @@ contains
         !!  @param var_loc Some variable containing the local value which should be
         !!  reduced amongst all the processors in the communicator.
         !!  @param var_glb The globally reduced value
-    subroutine s_mpi_allreduce_sum(var_loc, var_glb) ! ---------------------
+    subroutine s_mpi_allreduce_sum(var_loc, var_glb)
 
-        real(kind(0d0)), intent(IN) :: var_loc
-        real(kind(0d0)), intent(OUT) :: var_glb
+        real(kind(0d0)), intent(in) :: var_loc
+        real(kind(0d0)), intent(out) :: var_glb
 
 #ifdef MFC_MPI
 
@@ -317,7 +323,7 @@ contains
 
 #endif
 
-    end subroutine s_mpi_allreduce_sum ! -----------------------------------
+    end subroutine s_mpi_allreduce_sum
 
     !>  The following subroutine takes the input local variable
         !!      from all processors and reduces to the minimum of all
@@ -326,10 +332,10 @@ contains
         !!  @param var_loc Some variable containing the local value which should be
         !!  reduced amongst all the processors in the communicator.
         !!  @param var_glb The globally reduced value
-    subroutine s_mpi_allreduce_min(var_loc, var_glb) ! ---------------------
+    subroutine s_mpi_allreduce_min(var_loc, var_glb)
 
-        real(kind(0d0)), intent(IN) :: var_loc
-        real(kind(0d0)), intent(OUT) :: var_glb
+        real(kind(0d0)), intent(in) :: var_loc
+        real(kind(0d0)), intent(out) :: var_glb
 
 #ifdef MFC_MPI
 
@@ -339,7 +345,7 @@ contains
 
 #endif
 
-    end subroutine s_mpi_allreduce_min ! -----------------------------------
+    end subroutine s_mpi_allreduce_min
 
     !>  The following subroutine takes the input local variable
         !!      from all processors and reduces to the maximum of all
@@ -348,10 +354,10 @@ contains
         !!  @param var_loc Some variable containing the local value which should be
         !!  reduced amongst all the processors in the communicator.
         !!  @param var_glb The globally reduced value
-    subroutine s_mpi_allreduce_max(var_loc, var_glb) ! ---------------------
+    subroutine s_mpi_allreduce_max(var_loc, var_glb)
 
-        real(kind(0d0)), intent(IN) :: var_loc
-        real(kind(0d0)), intent(OUT) :: var_glb
+        real(kind(0d0)), intent(in) :: var_loc
+        real(kind(0d0)), intent(out) :: var_glb
 
 #ifdef MFC_MPI
 
@@ -361,7 +367,7 @@ contains
 
 #endif
 
-    end subroutine s_mpi_allreduce_max ! -----------------------------------
+    end subroutine s_mpi_allreduce_max
 
     !>  The following subroutine takes the inputted variable and
         !!      determines its minimum value on the entire computational
@@ -369,9 +375,9 @@ contains
         !!  @param var_loc holds the local value to be reduced among
         !!      all the processors in communicator. On output, the variable holds
         !!      the minimum value, reduced amongst all of the local values.
-    subroutine s_mpi_reduce_min(var_loc) ! ---------------------------------
+    subroutine s_mpi_reduce_min(var_loc)
 
-        real(kind(0d0)), intent(INOUT) :: var_loc
+        real(kind(0d0)), intent(inout) :: var_loc
 
 #ifdef MFC_MPI
 
@@ -390,7 +396,7 @@ contains
 
 #endif
 
-    end subroutine s_mpi_reduce_min ! --------------------------------------
+    end subroutine s_mpi_reduce_min
 
     !>  The following subroutine takes the first element of the
         !!      2-element inputted variable and determines its maximum
@@ -404,9 +410,9 @@ contains
         !!  On output, this variable holds the maximum value, reduced amongst
         !!  all of the local values, and the process rank to which the value
         !!  belongs.
-    subroutine s_mpi_reduce_maxloc(var_loc) ! ------------------------------
+    subroutine s_mpi_reduce_maxloc(var_loc)
 
-        real(kind(0d0)), dimension(2), intent(INOUT) :: var_loc
+        real(kind(0d0)), dimension(2), intent(inout) :: var_loc
 
 #ifdef MFC_MPI
 
@@ -426,10 +432,11 @@ contains
 
 #endif
 
-    end subroutine s_mpi_reduce_maxloc ! -----------------------------------
+    end subroutine s_mpi_reduce_maxloc
 
     !> The subroutine terminates the MPI execution environment.
-    subroutine s_mpi_abort(prnt) ! ---------------------------------------------
+        !! @param prnt error message to be printed
+    subroutine s_mpi_abort(prnt)
 
         character(len=*), intent(in), optional :: prnt
 
@@ -450,10 +457,10 @@ contains
 
 #endif
 
-    end subroutine s_mpi_abort ! -------------------------------------------
+    end subroutine s_mpi_abort
 
     !>Halts all processes until all have reached barrier.
-    subroutine s_mpi_barrier() ! -------------------------------------------
+    subroutine s_mpi_barrier
 
 #ifdef MFC_MPI
 
@@ -462,10 +469,10 @@ contains
 
 #endif
 
-    end subroutine s_mpi_barrier ! -----------------------------------------
+    end subroutine s_mpi_barrier
 
     !> The subroutine finalizes the MPI execution environment.
-    subroutine s_mpi_finalize() ! ------------------------------------------
+    subroutine s_mpi_finalize
 
 #ifdef MFC_MPI
 
@@ -474,6 +481,6 @@ contains
 
 #endif
 
-    end subroutine s_mpi_finalize ! ----------------------------------------
+    end subroutine s_mpi_finalize
 
 end module m_mpi_common

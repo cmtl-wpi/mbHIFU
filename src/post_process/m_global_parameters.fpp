@@ -2,6 +2,8 @@
 !! @file m_global_parameters.f90
 !! @brief Contains module m_global_parameters
 
+#:include 'case.fpp'
+
 !> @brief This module contains all of the parameters characterizing the
 !!      computational domain, simulation algorithm, stiffened equation of
 !!      state and finally, the formatted database file(s) structure.
@@ -13,6 +15,11 @@ module m_global_parameters
 #endif
 
     use m_derived_types         !< Definitions of the derived types
+
+    use m_helper_basic          !< Functions to compare floating point numbers
+
+    use m_thermochem            !< Thermodynamic and chemical properties module
+
     ! ==========================================================================
 
     implicit none
@@ -74,6 +81,16 @@ module m_global_parameters
     integer :: t_step_stop   !< Last time-step directory
     integer :: t_step_save   !< Interval between consecutive time-step directory
 
+    !> @name IO options for adaptive time-stepping
+    !> @{
+    logical :: cfl_adap_dt, cfl_const_dt, cfl_dt
+    real(kind(0d0)) :: t_save
+    real(kind(0d0)) :: t_stop
+    real(kind(0d0)) :: cfl_target
+    integer :: n_save
+    integer :: n_start
+    !> @}
+
     ! NOTE: The variables m_root, x_root_cb and x_root_cc contain the grid data
     ! of the defragmented computational domain. They are only used in 1D. For
     ! serial simulations, they are equal to m, x_cb and x_cc, respectively.
@@ -86,13 +103,13 @@ module m_global_parameters
     integer :: num_fluids      !< Number of different fluids present in the flow
     logical :: relax           !< phase change
     integer :: relax_model     !< Phase change relaxation model
-    logical :: adv_alphan      !< Advection of the last volume fraction
     logical :: mpp_lim         !< Maximum volume fraction limiter
     integer :: sys_size        !< Number of unknowns in the system of equations
     integer :: weno_order      !< Order of accuracy for the WENO reconstruction
     logical :: mixture_err     !< Mixture error limiter
     logical :: alt_soundspeed  !< Alternate sound speed
     logical :: hypoelasticity  !< Turn hypoelasticity on
+    logical, parameter :: chemistry = .${chemistry}$. !< Chemistry modeling
     !> @}
 
     !> @name Annotations of the structure, i.e. the organization, of the state vectors
@@ -100,6 +117,7 @@ module m_global_parameters
     type(int_bounds_info) :: cont_idx              !< Indexes of first & last continuity eqns.
     type(int_bounds_info) :: mom_idx               !< Indexes of first & last momentum eqns.
     integer :: E_idx                               !< Index of energy equation
+    integer :: n_idx                               !< Index of number density
     type(int_bounds_info) :: adv_idx               !< Indexes of first & last advection eqns.
     type(int_bounds_info) :: internalEnergies_idx  !< Indexes of first & last internal energy eqns.
     type(bub_bounds_info) :: bub_idx               !< Indexes of first & last bubble variable eqns.
@@ -107,6 +125,9 @@ module m_global_parameters
     integer :: alf_idx                             !< Index of specific heat ratio func. eqn.
     integer :: pi_inf_idx                          !< Index of liquid stiffness func. eqn.
     type(int_bounds_info) :: stress_idx            !< Indices of elastic stresses
+    integer :: c_idx                               !< Index of color function
+    type(int_bounds_info) :: species_idx           !< Indexes of first & last concentration eqns.
+    type(int_bounds_info) :: temperature_idx       !< Indexes of first & last temperature eqns.
     !> @}
 
     !> @name Boundary conditions in the x-, y- and z-coordinate directions
@@ -127,6 +148,7 @@ module m_global_parameters
 
     type(mpi_io_var), public :: MPI_IO_DATA
     type(mpi_io_var), public :: MPI_IO_HIFU_DATA
+    real(kind(0.d0)), allocatable, dimension(:, :), public :: MPI_IO_DATA_particle
 
 #endif
 
@@ -189,6 +211,10 @@ module m_global_parameters
     logical, dimension(3) :: omega_wrt
     logical :: qm_wrt
     logical :: schlieren_wrt
+    logical :: cf_wrt
+    logical :: ib
+    logical :: chem_wrt_Y(1:num_species)
+    logical :: chem_wrt_T
     !> @}
 
     real(kind(0d0)), dimension(num_fluids_max) :: schlieren_alpha    !<
@@ -224,6 +250,7 @@ module m_global_parameters
     logical :: qbmm
     logical :: polytropic
     logical :: polydisperse
+    logical :: adv_n
     integer :: thermal  !< 1 = adiabatic, 2 = isotherm, 3 = transfer
     real(kind(0d0)) :: R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, G, pv, M_n, M_v
     real(kind(0d0)), dimension(:), allocatable :: k_n, k_v, pb0, mass_n0, mass_v0, Pe_T
@@ -236,6 +263,11 @@ module m_global_parameters
 
     !> @}
 
+    !> @name surface tension coefficient
+    !> @{
+    real(kind(0d0)) :: sigma
+    !> #}
+
     !> @name Index variables used for m_variables_conversion
     !> @{
     integer :: momxb, momxe
@@ -244,28 +276,28 @@ module m_global_parameters
     integer :: intxb, intxe
     integer :: bubxb, bubxe
     integer :: strxb, strxe
+    integer :: chemxb, chemxe
+    integer :: tempxb, tempxe
     !> @}
 
     ! Lagrangian solver
-    LOGICAL :: particleflag, avgdensFlag, do_particles
-    INTEGER :: solverapproach
-    LOGICAL :: second_dir
+    logical :: particleflag, avgdensFlag
+    integer :: solverapproach
 
     ! HIFU
     logical :: hifu
     integer :: sys_size_hifu
-    integer :: T_hifu_idx, P_hifu_idx, N_hifu_idx
-    integer :: qus_hifu_idx, qvis_hifu_idx, dmb_hifu_idx !indexes
-    integer :: u_hifu_idx, v_hifu_idx
+    integer :: T_hifu_idx, tt_hifu_idx 
+    integer :: qus_hifu_idx, qvis_hifu_idx, qth_hifu_idx !indexes
+    integer :: u_hifu_idx, v_hifu_idx, P_hifu_idx, qus_prms_hifu_idx
 !    integer :: umin_hifu_idx, vmin_hifu_idx
-
 
 contains
 
     !> Assigns default values to user inputs prior to reading
         !!      them in. This allows for an easier consistency check of
         !!      these parameters once they are read from the input file.
-    subroutine s_assign_default_values_to_user_inputs() ! ------------------
+    subroutine s_assign_default_values_to_user_inputs
 
         integer :: i !< Generic loop iterator
 
@@ -281,10 +313,17 @@ contains
         t_step_stop = dflt_int
         t_step_save = dflt_int
 
+        cfl_adap_dt = .false.
+        cfl_const_dt = .false.
+        cfl_dt = .false.
+        cfl_target = dflt_real
+        t_save = dflt_real
+        n_start = dflt_int
+        t_stop = dflt_real
+
         ! Simulation algorithm parameters
         model_eqns = dflt_int
         num_fluids = dflt_int
-        adv_alphan = .false.
         weno_order = dflt_int
         mixture_err = .false.
         alt_soundspeed = .false.
@@ -322,6 +361,8 @@ contains
         rho_wrt = .false.
         mom_wrt = .false.
         vel_wrt = .false.
+        chem_wrt_Y = .false.
+        chem_wrt_T = .false.
         flux_lim = dflt_int
         flux_wrt = .false.
         parallel_io = .false.
@@ -339,6 +380,7 @@ contains
         omega_wrt = .false.
         qm_wrt = .false.
         schlieren_wrt = .false.
+        cf_wrt = .false.
 
         schlieren_alpha = dflt_real
 
@@ -356,22 +398,22 @@ contains
         polydisperse = .false.
         poly_sigma = dflt_real
         sigR = dflt_real
+        sigma = dflt_real
+        adv_n = .false.
 
         ! Lagrangian solver
-        particleflag   = .FALSE.
-        avgdensFlag    = .FALSE.
-        do_particles   = .FALSE.
-        solverapproach = 1
-        second_dir = .FALSE.
+        particleflag = .false.
+        avgdensFlag = .false.
+        solverapproach = dflt_int
 
         !HIFU
-        hifu = .FALSE.
+        hifu = .false.
 
-    end subroutine s_assign_default_values_to_user_inputs ! ----------------
+    end subroutine s_assign_default_values_to_user_inputs
 
     !>  Computation of parameters, allocation procedures, and/or
         !!      any other tasks needed to properly setup the module
-    subroutine s_initialize_global_parameters_module() ! ----------------------
+    subroutine s_initialize_global_parameters_module
 
         integer :: i, j, fac
 
@@ -440,6 +482,11 @@ contains
                 end if
                 sys_size = bub_idx%end
 
+                if (adv_n) then
+                    n_idx = bub_idx%end + 1
+                    sys_size = n_idx
+                end if
+
                 allocate (bub_idx%rs(nb), bub_idx%vs(nb))
                 allocate (bub_idx%ps(nb), bub_idx%ms(nb))
                 allocate (weight(nb), R0(nb), V0(nb))
@@ -497,6 +544,11 @@ contains
                 sys_size = stress_idx%end
             end if
 
+            if (sigma /= dflt_real) then
+                c_idx = sys_size + 1
+                sys_size = c_idx
+            end if
+
             ! ==================================================================
 
             ! Volume Fraction Model (6-equation model) =========================
@@ -512,11 +564,15 @@ contains
             E_idx = mom_idx%end + 1
             adv_idx%beg = E_idx + 1
             adv_idx%end = E_idx + num_fluids
-            if (adv_alphan .neqv. .true.) adv_idx%end = adv_idx%end - 1
             internalEnergies_idx%beg = adv_idx%end + 1
             internalEnergies_idx%end = adv_idx%end + num_fluids
             sys_size = internalEnergies_idx%end
             alf_idx = 1 ! dummy, cannot actually have a void fraction
+
+            if (sigma /= dflt_real) then
+                c_idx = sys_size + 1
+                sys_size = c_idx
+            end if
 
         else if (model_eqns == 4) then
             cont_idx%beg = 1 ! one continuity equation
@@ -574,6 +630,21 @@ contains
             end if
         end if
 
+        if (chemistry) then
+            species_idx%beg = sys_size + 1
+            species_idx%end = sys_size + num_species
+            sys_size = species_idx%end
+
+            temperature_idx%beg = sys_size + 1
+            temperature_idx%end = sys_size + 1
+            sys_size = temperature_idx%end
+        else
+            species_idx%beg = 1
+            species_idx%end = 1
+            temperature_idx%beg = 1
+            temperature_idx%end = 1
+        end if
+
         momxb = mom_idx%beg
         momxe = mom_idx%end
         advxb = adv_idx%beg
@@ -586,46 +657,53 @@ contains
         strxe = stress_idx%end
         intxb = internalEnergies_idx%beg
         intxe = internalEnergies_idx%end
+        chemxb = species_idx%beg
+        chemxe = species_idx%end
+        tempxb = temperature_idx%beg
+        tempxe = temperature_idx%end
+
         ! ==================================================================
         if (hifu) then !hifu_indexes
-            sys_size_hifu=max(sys_size,12)
+            sys_size_hifu=max(sys_size,11)
             T_hifu_idx    = 1
-            N_hifu_idx    = 3
+            tt_hifu_idx   = 3
             qus_hifu_idx  = 4
             qvis_hifu_idx = 5
-            u_hifu_idx    = 6
-            v_hifu_idx    = 9
-            P_hifu_idx    = 12
+            qth_hifu_idx  = 6
+            qus_prms_hifu_idx    = 7
+            P_hifu_idx    = 8
+            u_hifu_idx    = 10
+            v_hifu_idx    = 11
         else
             sys_size_hifu = 0
         end if
 
 #ifdef MFC_MPI
-        IF(avgdensflag .NEQV. .TRUE.) THEN
-            ALLOCATE(MPI_IO_DATA%view(1:sys_size))
-            ALLOCATE(MPI_IO_DATA%var(1:sys_size))
-            DO i = 1, sys_size
-                ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
-                MPI_IO_DATA%var(i)%sf => NULL()
-            END DO
-        ELSE
-            ALLOCATE(MPI_IO_DATA%view(1:sys_size+1))
-            ALLOCATE(MPI_IO_DATA%var(1:sys_size+1))
+        if (avgdensflag .neqv. .true.) then
+            allocate (MPI_IO_DATA%view(1:sys_size))
+            allocate (MPI_IO_DATA%var(1:sys_size))
+            do i = 1, sys_size
+                allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
+                MPI_IO_DATA%var(i)%sf => null()
+            end do
+        else
+            allocate (MPI_IO_DATA%view(1:sys_size + 1))
+            allocate (MPI_IO_DATA%var(1:sys_size + 1))
 
-            DO i = 1, sys_size+1
-                ALLOCATE(MPI_IO_DATA%var(i)%sf(0:m,0:n,0:p))
-                MPI_IO_DATA%var(i)%sf => NULL()
-            END DO
-        END IF
+            do i = 1, sys_size + 1
+                allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
+                MPI_IO_DATA%var(i)%sf => null()
+            end do
+        end if
 
-        IF (hifu) THEN
-            ALLOCATE(MPI_IO_HIFU_DATA%view(1:sys_size_hifu))
-            ALLOCATE(MPI_IO_HIFU_DATA%var(1:sys_size_hifu))
-            DO i = 1, sys_size_hifu
-                ALLOCATE(MPI_IO_HIFU_DATA%var(i)%sf(0:m,0:n,0:p))
-                MPI_IO_HIFU_DATA%var(i)%sf => NULL()
-            END DO
-        END IF
+        if (hifu) then
+            allocate (MPI_IO_HIFU_DATA%view(1:sys_size_hifu))
+            allocate (MPI_IO_HIFU_DATA%var(1:sys_size_hifu))
+            do i = 1, sys_size_hifu
+                allocate (MPI_IO_HIFU_DATA%var(i)%sf(0:m,0:n,0:p))
+                MPI_IO_HIFU_DATA%var(i)%sf => null()
+            end do
+        end if
 
 #endif
 
@@ -712,10 +790,10 @@ contains
             grid_geometry = 3
         end if
 
-    end subroutine s_initialize_global_parameters_module ! --------------------
+    end subroutine s_initialize_global_parameters_module
 
     !> Subroutine to initialize parallel infrastructure
-    subroutine s_initialize_parallel_io() ! --------------------------------
+    subroutine s_initialize_parallel_io
 
         num_dims = 1 + min(1, n) + min(1, p)
 
@@ -740,10 +818,10 @@ contains
 
 #endif
 
-    end subroutine s_initialize_parallel_io ! ------------------------------
+    end subroutine s_initialize_parallel_io
 
     !> Deallocation procedures for the module
-    subroutine s_finalize_global_parameters_module() ! -------------------
+    subroutine s_finalize_global_parameters_module
 
         integer :: i
 
@@ -777,7 +855,7 @@ contains
                 MPI_IO_DATA%var(i)%sf => null()
             end do
 
-            IF(avgdensflag) MPI_IO_DATA%var(sys_size+1)%sf => NULL()
+            if (avgdensflag) MPI_IO_DATA%var(sys_size + 1)%sf => null()
 
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)
@@ -795,6 +873,6 @@ contains
 
 #endif
 
-    end subroutine s_finalize_global_parameters_module ! -----------------
+    end subroutine s_finalize_global_parameters_module
 
 end module m_global_parameters

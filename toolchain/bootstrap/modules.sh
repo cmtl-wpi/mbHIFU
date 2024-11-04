@@ -16,14 +16,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Get computer (if not supplied in command-line)
+# Get computer (if not supplied in command line)
 if [ -v $u_c ]; then
     log   "Select a system:"
-    log   "$G""ORNL$W:    Ascent     (a) | Crusher (c) | Summit (s) | Wombat (w)"
+    log   "$G""ORNL$W:    Ascent     (a) | Frontier (f) | Summit (s) | Wombat (w)"
     log   "$C""ACCESS$W:  Bridges2   (b) | Expanse (e) | Delta  (d)"
-    log   "$Y""GaTech$W:  Phoenix    (p)"
-    log   "$R""CALTECH$W: Richardson (r)"
-    log_n "($G""a$W/$G""c$W/$G""s$W/$G""w$W/$C""b$W/$C""e$CR/$C""d$CR/$Y""p$CR/$R""r$CR): "
+    log   "$Y""Gatech$W:  Phoenix    (p)"
+    log   "$R""Caltech$W: Richardson (r)"
+    log   "$B""DoD$W:     Carpenter  (c) | Nautilus (n)"
+    log_n "($G""a$W/$G""f$W/$G""s$W/$G""w$W/$C""b$W/$C""e$CR/$C""d$CR/$Y""p$CR/$R""r$CR/$B""c$CR/$B""n$CR): "
     read u_c
     log
 fi
@@ -42,9 +43,9 @@ fi
 u_c=$(echo "$u_c" | tr '[:upper:]' '[:lower:]')
 u_cg=$(echo "$u_cg" | tr '[:upper:]' '[:lower:]')
 
-if [ "$u_cg" == 'c' ] || [ "$u_cg" == 'cpu' ]; then
+if [ "$u_cg" '==' 'c' ] || [ "$u_cg" '==' 'cpu' ]; then
     CG='CPU'; cg='cpu'
-elif [ "$u_cg" == "g" ] || [ "$u_cg" == 'gpu' ]; then
+elif [ "$u_cg" '==' "g" ] || [ "$u_cg" '==' 'gpu' ]; then
     CG='GPU'; cg='gpu'
 fi
 
@@ -65,8 +66,8 @@ fi
 
 log "Loading modules (& env variables) for $M$COMPUTER$CR on $M$CG$CR"'s:'
 
-# Reset modules to default system configuration
-if [ "$u_c" != 'p' ]; then
+# Reset modules to default system configuration (unless Carpenter)
+if [ "$u_c" != 'c' ]; then
     module reset > /dev/null 2>&1
     code="$?"
 
@@ -78,28 +79,27 @@ else
     module purge > /dev/null 2>&1
 fi
 
-ELEMENTS=($(__extract "$u_c-$cg") $(__combine $(__extract "$u_c-all")))
+ELEMENTS="$(__extract "$u_c-all") $(__extract "$u_c-$cg")"
+MODULES=`echo "$ELEMENTS" | tr ' ' '\n' | grep -v = | xargs`
+VARIABLES=`echo "$ELEMENTS" | tr ' ' '\n' | grep = | xargs`
 
-for element in ${ELEMENTS[@]}; do
-    if [[ "$element" != *'='* ]]; then
-        log " $ module load $M$element$CR"
-        module load "$element" > /dev/null 2>&1
+log " $ module load $MODULES"
+if ! module load $MODULES; then
+    error "Failed to load modules."
 
-        # Handle Success / Failure
-        code=$?
-        if [ "$code" != '0' ]; then
-            error "Failed to load module $M$element$CR:"
+    return
+fi
 
-            # Run load again to show error message
-            module load "$element"
+if [ $(echo "$VARIABLES" | grep = | wc -c) -gt 0 ]; then
+    log " $ export $VARIABLES"
+    export $VARIABLES > /dev/null
+fi
 
-            return
-        fi
-    else
-        log " $ export $M$element$CR"
-        export $element
-    fi
-done
+# Don't check for Cray paths on Carpenter, otherwise do check if they exist
+if [ ! -z ${CRAY_LD_LIBRARY_PATH+x} ] && [ "$u_c" != 'c' ]; then
+    ok "Found $M\$CRAY_LD_LIBRARY_PATH$CR. Prepending to $M\$LD_LIBRARY_PATH$CR."
+    export LD_LIBRARY_PATH="$CRAY_LD_LIBRARY_PATH:$LD_LIBRARY_PATH"
+fi
 
 ok 'All modules and environment variables have been loaded.'
 

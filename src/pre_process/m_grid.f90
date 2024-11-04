@@ -28,19 +28,20 @@ module m_grid
 
     implicit none
 
-    private; public :: s_initialize_grid_module, &
- s_generate_grid, &
- s_generate_serial_grid, &
- s_generate_parallel_grid, &
- s_finalize_grid_module
+    private; 
+    public :: s_initialize_grid_module, &
+              s_generate_grid, &
+              s_generate_serial_grid, &
+              s_generate_parallel_grid, &
+              s_finalize_grid_module
 
     abstract interface ! ===================================================
 
-        subroutine s_generate_abstract_grid() ! ------------------------
+        subroutine s_generate_abstract_grid
 
             ! integer, intent(IN), optional :: dummy
 
-        end subroutine s_generate_abstract_grid ! ----------------------
+        end subroutine s_generate_abstract_grid
 
     end interface ! ========================================================
 
@@ -53,10 +54,10 @@ contains
         !!              inputted by the user. The grid information is stored in
         !!              the grid variables containing coordinates of the cell-
         !!              centers and cell-boundaries.
-    subroutine s_generate_serial_grid() ! -----------------------------------------
+    subroutine s_generate_serial_grid
 
         ! Generic loop iterator
-        integer :: i, j              !< generic loop operatorss
+        integer :: i, j             !< generic loop operatorss
         real(kind(0d0)) :: length   !< domain lengths
 
         ! Grid Generation in the x-direction ===============================
@@ -90,6 +91,7 @@ contains
 
             dx = minval(x_cb(0:m) - x_cb(-1:m - 1))
             print *, 'Stretched grid: min/max x grid: ', minval(x_cc(:)), maxval(x_cc(:))
+            print *, 'Stretched grid: min/max y grid: ', minval(y_cc(:)), maxval(y_cc(:))
             if (num_procs > 1) call s_mpi_reduce_min(dx)
 
         end if
@@ -188,21 +190,21 @@ contains
         end if
         ! ==================================================================
 
-    end subroutine s_generate_serial_grid ! ---------------------------------------
+    end subroutine s_generate_serial_grid
 
     !> The following subroutine generates either a uniform or
         !!              non-uniform rectilinear grid in parallel, defined by the parameters
         !!              inputted by the user. The grid information is stored in
         !!              the grid variables containing coordinates of the cell-
         !!              centers and cell-boundaries.
-    subroutine s_generate_parallel_grid() !-------------------------
+    subroutine s_generate_parallel_grid
 
 #ifdef MFC_MPI
 
         real(kind(0d0)) :: length   !< domain lengths
 
         ! Locations of cell boundaries
-        real(kind(0d0)), allocatable, dimension(:) :: x_cb_glb, y_cb_glb, z_cb_glb, dxDV !<
+        real(kind(0d0)), allocatable, dimension(:) :: x_cb_glb, y_cb_glb, z_cb_glb, dxDV, dyDV !<
             !! Locations of cell boundaries
 
         character(LEN=path_len + name_len) :: file_loc !<
@@ -217,6 +219,7 @@ contains
         allocate (y_cb_glb(-1:n_glb))
         allocate (z_cb_glb(-1:p_glb))
         allocate (dxDV(0:m_glb))
+        allocate (dyDV(0:n_glb))
 
         ! Grid generation in the x-direction
         dx = (x_domain%end - x_domain%beg)/real(m_glb + 1, kind(0d0))
@@ -242,9 +245,6 @@ contains
             end do
 
             x_cb_glb = x_cb_glb*length
-
-            print *, 'Stretched grid: min/max x grid: ', minval(x_cc(:)), maxval(x_cc(:))
-
 
         end if
 
@@ -317,10 +317,17 @@ contains
         do i = 0, m_glb
             dxDV(i) = abs(x_cb_glb(i-1) - x_cb_glb(i))
         end do
+        do i = 0, n_glb
+            dyDV(i) = abs(y_cb_glb(i-1) - y_cb_glb(i))    
+        end do
 
         print *, 'Stretched grid: dx min, dx max - x grid: ', minval(dxDV(:)), maxval(dxDV(:))
         print *, 'Stretched grid: loc dx min, loc dx max - x grid: ', x_cb_glb(minloc(dxDV(:))-1), x_cb_glb(maxloc(dxDV(:))-1)
         print *, 'Stretched grid: dx m=0, dx m=m_glb - x grid: ', dxDV(0), dxDV(m_glb)
+
+        print *, 'Stretched grid: dy min, dy max - y grid: ', minval(dyDV(:)), maxval(dyDV(:))
+        print *, 'Stretched grid: loc dy min, loc dy max - y grid: ', y_cb_glb(minloc(dyDV(:))-1), y_cb_glb(maxloc(dyDV(:))-1)
+        print *, 'Stretched grid: dy n=0, dy n=n_glb - y grid: ', dyDV(0), dyDV(n_glb)
 
         ! Write cell boundary locations to grid data files
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'x_cb.dat'
@@ -352,11 +359,11 @@ contains
 
 #endif
 
-    end subroutine s_generate_parallel_grid ! ------------------------------
+    end subroutine s_generate_parallel_grid
 
     !> Computation of parameters, allocation procedures, and/or
         !!              any other tasks needed to properly setup the module
-    subroutine s_initialize_grid_module() ! -----------------------------------
+    subroutine s_initialize_grid_module
 
         if (parallel_io .neqv. .true.) then
             s_generate_grid => s_generate_serial_grid
@@ -364,13 +371,13 @@ contains
             s_generate_grid => s_generate_parallel_grid
         end if
 
-    end subroutine s_initialize_grid_module ! ---------------------------------
+    end subroutine s_initialize_grid_module
 
     !> Deallocation procedures for the module
-    subroutine s_finalize_grid_module() ! --------------------------------
+    subroutine s_finalize_grid_module
 
         s_generate_grid => null()
 
-    end subroutine s_finalize_grid_module ! ------------------------------
+    end subroutine s_finalize_grid_module
 
 end module m_grid

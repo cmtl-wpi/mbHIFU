@@ -2,6 +2,8 @@
 !! @file m_global_parameters.f90
 !! @brief Contains module m_global_parameters
 
+#:include 'case.fpp'
+
 !> @brief This module contains all of the parameters characterizing the
 !!              computational domain, simulation algorithm, initial condition
 !!              and the stiffened equation of state.
@@ -14,37 +16,42 @@ module m_global_parameters
 
     use m_derived_types         ! Definitions of the derived types
 
+    use m_helper_basic          ! Functions to compare floating point numbers
+
+    use m_thermochem            ! Thermodynamic and chemical properties
+
     ! ==========================================================================
 
     implicit none
 
     ! Logistics ================================================================
-    integer :: num_procs            !< Number of processors
-    character(LEN=path_len) :: case_dir             !< Case folder location
-    logical :: old_grid             !< Use existing grid data
-    logical :: old_ic               !< Use existing IC data
-    integer :: t_step_old, t_step_start           !< Existing IC/grid folder
+    integer :: num_procs                 !< Number of processors
+    character(LEN=path_len) :: case_dir  !< Case folder location
+    logical :: old_grid                  !< Use existing grid data
+    logical :: old_ic                    !< Use existing IC data
+    integer :: t_step_old, t_step_start  !< Existing IC/grid folder
     ! ==========================================================================
+
+    logical :: cfl_adap_dt, cfl_const_dt, cfl_dt
+    integer :: n_start, n_start_old
 
     ! Computational Domain Parameters ==========================================
 
     integer :: proc_rank !< Rank of the local processor
 
+    !! Number of cells in the x-, y- and z-coordinate directions
     integer :: m
     integer :: n
-    integer :: p !<
-    !! Number of cells in the x-, y- and z-coordinate directions
+    integer :: p
 
-    integer(8) :: nGlobal ! Global number of cells in the domain
+    integer(8) :: nGlobal !< Global number of cells in the domain
 
-    integer :: m_glb, n_glb, p_glb !<
-    !! Global number of cells in each direction
+    integer :: m_glb, n_glb, p_glb !< Global number of cells in each direction
 
     integer :: num_dims !< Number of spatial dimensions
 
     logical :: cyl_coord
-    integer :: grid_geometry !<
-    !! Cylindrical coordinates (either axisymmetric or full 3D)
+    integer :: grid_geometry !< Cylindrical coordinates (either axisymmetric or full 3D)
 
     real(kind(0d0)), allocatable, dimension(:) :: x_cc, y_cc, z_cc !<
     !! Locations of cell-centers (cc) in x-, y- and z-directions, respectively
@@ -73,29 +80,33 @@ module m_global_parameters
     ! ==========================================================================
 
     ! Simulation Algorithm Parameters ==========================================
-    integer :: model_eqns      !< Multicomponent flow model
-    logical :: relax           !< activate phase change
-    integer :: relax_model     !< Relax Model
-    real(kind(0d0)) :: palpha_eps     !< trigger parameter for the p relaxation procedure, phase change model
-    real(kind(0d0)) :: ptgalpha_eps   !< trigger parameter for the pTg relaxation procedure, phase change model
-    integer :: num_fluids      !< Number of different fluids present in the flow
-    logical :: adv_alphan      !< Advection of the last volume fraction
-    logical :: mpp_lim         !< Alpha limiter
-    integer :: sys_size        !< Number of unknowns in the system of equations
-    integer :: weno_order      !< Order of accuracy for the WENO reconstruction
-    logical :: hypoelasticity  !< activate hypoelasticity
+    integer :: model_eqns            !< Multicomponent flow model
+    logical :: relax                 !< activate phase change
+    integer :: relax_model           !< Relax Model
+    real(kind(0d0)) :: palpha_eps    !< trigger parameter for the p relaxation procedure, phase change model
+    real(kind(0d0)) :: ptgalpha_eps  !< trigger parameter for the pTg relaxation procedure, phase change model
+    integer :: num_fluids            !< Number of different fluids present in the flow
+    logical :: mpp_lim               !< Alpha limiter
+    integer :: sys_size              !< Number of unknowns in the system of equations
+    integer :: weno_order            !< Order of accuracy for the WENO reconstruction
+    logical :: hypoelasticity        !< activate hypoelasticity
+    logical, parameter :: chemistry = .${chemistry}$. !< Chemistry modeling
 
     ! Annotations of the structure, i.e. the organization, of the state vectors
-    type(int_bounds_info) :: cont_idx                   !< Indexes of first & last continuity eqns.
-    type(int_bounds_info) :: mom_idx                    !< Indexes of first & last momentum eqns.
-    integer :: E_idx                      !< Index of total energy equation
-    integer :: alf_idx                    !< Index of void fraction
-    type(int_bounds_info) :: adv_idx                    !< Indexes of first & last advection eqns.
-    type(int_bounds_info) :: internalEnergies_idx       !< Indexes of first & last internal energy eqns.
-    type(bub_bounds_info) :: bub_idx                    !< Indexes of first & last bubble variable eqns.
-    integer :: gamma_idx                  !< Index of specific heat ratio func. eqn.
-    integer :: pi_inf_idx                 !< Index of liquid stiffness func. eqn.
-    type(int_bounds_info) :: stress_idx                 !< Indexes of elastic shear stress eqns.
+    type(int_bounds_info) :: cont_idx              !< Indexes of first & last continuity eqns.
+    type(int_bounds_info) :: mom_idx               !< Indexes of first & last momentum eqns.
+    integer :: E_idx                               !< Index of total energy equation
+    integer :: alf_idx                             !< Index of void fraction
+    integer :: n_idx                               !< Index of number density
+    type(int_bounds_info) :: adv_idx               !< Indexes of first & last advection eqns.
+    type(int_bounds_info) :: internalEnergies_idx  !< Indexes of first & last internal energy eqns.
+    type(bub_bounds_info) :: bub_idx               !< Indexes of first & last bubble variable eqns.
+    integer :: gamma_idx                           !< Index of specific heat ratio func. eqn.
+    integer :: pi_inf_idx                          !< Index of liquid stiffness func. eqn.
+    type(int_bounds_info) :: stress_idx            !< Indexes of elastic shear stress eqns.
+    integer :: c_idx                               !< Index of the color function
+    type(int_bounds_info) :: species_idx           !< Indexes of first & last concentration eqns.
+    type(int_bounds_info) :: temperature_idx       !< Indexes of first & last temperature eqns.
 
     type(int_bounds_info) :: bc_x, bc_y, bc_z !<
     !! Boundary conditions in the x-, y- and z-coordinate directions
@@ -104,8 +115,12 @@ module m_global_parameters
     logical :: file_per_process !< type of data output
     integer :: precision !< Precision of output files
 
-    logical :: vel_profile !< Set hypertangent streamwise velocity profile
-    logical :: instability_wave !< Superimpose instability waves to surrounding fluid flow
+    logical :: mixlayer_vel_profile !< Set hyperbolic tangent streamwise velocity profile
+    real(kind(0d0)) :: mixlayer_vel_coef !< Coefficient for the hyperbolic tangent streamwise velocity profile
+    real(kind(0d0)) :: mixlayer_domain !< Domain for the hyperbolic tangent streamwise velocity profile
+    logical :: mixlayer_perturb !< Superimpose instability waves to surrounding fluid flow
+
+    real(kind(0d0)) :: pi_fac !< Factor for artificial pi_inf
 
     ! Perturb density of surrounding air so as to break symmetry of grid
     logical :: perturb_flow
@@ -167,6 +182,7 @@ module m_global_parameters
     logical :: qbmm      !< Quadrature moment method
     integer :: nmom  !< Number of carried moments
     real(kind(0d0)) :: sigR, sigV, rhoRV !< standard deviations in R/V
+    logical :: adv_n !< Solve the number density equation and compute alpha from number density
     !> @}
 
     !> @name Immersed Boundaries
@@ -199,7 +215,11 @@ module m_global_parameters
     real(kind(0d0)) :: poly_sigma
     integer :: dist_type !1 = binormal, 2 = lognormal-normal
     integer :: R0_type   !1 = simpson
+    !> @}
 
+    !> @name Surface Tension Modeling
+    !> @{
+    real(kind(0d0)) :: sigma
     !> @}
 
     !> @name Index variables used for m_variables_conversion
@@ -210,6 +230,8 @@ module m_global_parameters
     integer :: intxb, intxe
     integer :: bubxb, bubxe
     integer :: strxb, strxe
+    integer :: chemxb, chemxe
+    integer :: tempxb, tempxe
     !> @}
 
     integer, allocatable, dimension(:, :, :) :: logic_grid
@@ -226,7 +248,7 @@ contains
     !>  Assigns default values to user inputs prior to reading
         !!              them in. This allows for an easier consistency check of
         !!              these parameters once they are read from the input file.
-    subroutine s_assign_default_values_to_user_inputs() ! ------------------
+    subroutine s_assign_default_values_to_user_inputs
 
         integer :: i !< Generic loop operator
 
@@ -236,6 +258,11 @@ contains
         old_ic = .false.
         t_step_old = dflt_int
         t_step_start = dflt_int
+
+        cfl_adap_dt = .false.
+        cfl_const_dt = .false.
+        cfl_dt = .false.
+        n_start = dflt_int
 
         ! Computational domain parameters
         m = dflt_int; n = 0; p = 0
@@ -273,7 +300,6 @@ contains
         palpha_eps = dflt_real
         ptgalpha_eps = dflt_real
         num_fluids = dflt_int
-        adv_alphan = .false.
         weno_order = dflt_int
 
         hypoelasticity = .false.
@@ -292,8 +318,10 @@ contains
         parallel_io = .false.
         file_per_process = .false.
         precision = 2
-        vel_profile = .false.
-        instability_wave = .false.
+        mixlayer_vel_profile = .false.
+        mixlayer_vel_coef = 1d0
+        mixlayer_domain = 1d0
+        mixlayer_perturb = .false.
         perturb_flow = .false.
         perturb_flow_fluid = dflt_int
         perturb_flow_mag = dflt_real
@@ -346,6 +374,10 @@ contains
             patch_icpp(i)%m0 = dflt_real
 
             patch_icpp(i)%hcid = dflt_int
+
+            if (chemistry) then
+                patch_icpp(i)%Y(:) = 0d0
+            end if
         end do
 
         ! Tait EOS
@@ -366,6 +398,8 @@ contains
         Web = dflt_real
         poly_sigma = dflt_real
 
+        adv_n = .false.
+
         qbmm = .false.
         nmom = 1
         sigR = dflt_real
@@ -380,6 +414,10 @@ contains
         phi_nv = dflt_real
         Pe_c = dflt_real
         Tw = dflt_real
+
+        ! surface tension modeling
+        sigma = dflt_real
+        pi_fac = 1d0
 
         ! Immersed Boundaries
         ib = .false.
@@ -422,11 +460,11 @@ contains
         !Lagrangian solver
         solverapproach = 2
 
-    end subroutine s_assign_default_values_to_user_inputs ! ----------------
+    end subroutine s_assign_default_values_to_user_inputs
 
     !> Computation of parameters, allocation procedures, and/or
         !! any other tasks needed to properly setup the module
-    subroutine s_initialize_global_parameters_module() ! ----------------------
+    subroutine s_initialize_global_parameters_module
 
         integer :: i, j, fac
 
@@ -493,6 +531,11 @@ contains
                     end if
                 end if
                 sys_size = bub_idx%end
+
+                if (adv_n) then
+                    n_idx = bub_idx%end + 1
+                    sys_size = n_idx
+                end if
 
                 allocate (weight(nb), R0(nb), V0(nb))
                 allocate (bub_idx%rs(nb), bub_idx%vs(nb))
@@ -572,6 +615,11 @@ contains
                 sys_size = stress_idx%end
             end if
 
+            if (sigma /= dflt_real) then
+                c_idx = sys_size + 1
+                sys_size = c_idx
+            end if
+
             ! ==================================================================
 
             ! Volume Fraction Model (6-equation model) =========================
@@ -590,6 +638,12 @@ contains
             internalEnergies_idx%beg = adv_idx%end + 1
             internalEnergies_idx%end = adv_idx%end + num_fluids
             sys_size = internalEnergies_idx%end
+
+            if (sigma /= dflt_real) then
+                c_idx = sys_size + 1
+                sys_size = c_idx
+            end if
+
             !========================
         else if (model_eqns == 4) then
             ! 4 equation model with subgrid bubbles
@@ -649,6 +703,16 @@ contains
             end if
         end if
 
+        if (chemistry) then
+            species_idx%beg = sys_size + 1
+            species_idx%end = sys_size + num_species
+            sys_size = species_idx%end
+
+            temperature_idx%beg = sys_size + 1
+            temperature_idx%end = sys_size + 1
+            sys_size = temperature_idx%end
+        end if
+
         momxb = mom_idx%beg
         momxe = mom_idx%end
         advxb = adv_idx%beg
@@ -661,6 +725,10 @@ contains
         strxe = stress_idx%end
         intxb = internalEnergies_idx%beg
         intxe = internalEnergies_idx%end
+        chemxb = species_idx%beg
+        chemxe = species_idx%end
+        tempxb = temperature_idx%beg
+        tempxe = temperature_idx%end
 
         ! ==================================================================
 
@@ -709,9 +777,9 @@ contains
 
         allocate (logic_grid(0:m, 0:n, 0:p))
 
-    end subroutine s_initialize_global_parameters_module ! --------------------
+    end subroutine s_initialize_global_parameters_module
 
-    subroutine s_initialize_parallel_io() ! --------------------------------
+    subroutine s_initialize_parallel_io
 
         num_dims = 1 + min(1, n) + min(1, p)
 
@@ -736,9 +804,9 @@ contains
 
 #endif
 
-    end subroutine s_initialize_parallel_io ! ------------------------------
+    end subroutine s_initialize_parallel_io
 
-    subroutine s_finalize_global_parameters_module() ! ------------------------
+    subroutine s_finalize_global_parameters_module
 
         integer :: i
 
@@ -770,6 +838,6 @@ contains
 
 #endif
 
-    end subroutine s_finalize_global_parameters_module ! ----------------------
+    end subroutine s_finalize_global_parameters_module
 
 end module m_global_parameters

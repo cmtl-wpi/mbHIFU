@@ -34,9 +34,11 @@ module m_start_up
 
     use m_cbc                  !< Characteristic boundary conditions (CBC)
 
-    use m_monopole             !< Monopole calculations
+    use m_acoustic_src         !< Acoustic source calculations
 
     use m_rhs                  !< Right-hand-side (RHS) evaluation procedures
+
+    use m_chemistry            !< Chemistry module
 
     use m_data_output          !< Run-time info & solution data output procedures
 
@@ -44,7 +46,7 @@ module m_start_up
 
     use m_qbmm                 !< Quadrature MOM
 
-    use m_derived_variables     !< Procedures used to compute quantites derived
+    use m_derived_variables     !< Procedures used to compute quantities derived
                                 !! from the conservative and primitive variables
 
     use m_hypoelastic
@@ -57,6 +59,8 @@ module m_start_up
 
     use ieee_arithmetic
 
+    use m_helper_basic         !< Functions to compare floating point numbers
+
 #ifdef MFC_OpenACC
     use openacc
 #endif
@@ -65,19 +69,17 @@ module m_start_up
 
     use m_ibm
 
-    use m_helper
-
     use m_compile_specific
 
     use m_checker
 
+    use m_surface_tension
+
+    use m_body_forces
+
     use m_particles
 
-    use m_mpi_particles
-
     use m_hifu               !< HIFU
-
-    use m_heateqn
 
     ! ==========================================================================
 
@@ -98,22 +100,22 @@ module m_start_up
     abstract interface ! ===================================================
 
         !! @param q_cons_vf  Conservative variables
-        subroutine s_read_abstract_data_files(q_cons_vf, q_cons_hifu, hifu_id) ! -----------
+        subroutine s_read_abstract_data_files(q_cons_vf, q_cons_hifu, hifu_id)
 
             import :: scalar_field, sys_size, pres_field, sys_size_hifu
 
             type(scalar_field), &
                 dimension(sys_size), &
-                intent(INOUT) :: q_cons_vf
+                intent(inout) :: q_cons_vf
             
             type(scalar_field), &
                 dimension(sys_size_hifu), &
-                intent(INOUT), optional :: q_cons_hifu
+                intent(inout), optional :: q_cons_hifu
         
-            integer, intent(IN), optional :: hifu_id
+            integer, intent(in), optional :: hifu_id
             ! HIFU vars (in parallel)
 
-        end subroutine s_read_abstract_data_files ! -----------------
+        end subroutine s_read_abstract_data_files
 
     end interface ! ========================================================
 
@@ -126,7 +128,7 @@ contains
     !>  The purpose of this procedure is to first verify that an
         !!      input file has been made available by the user. Provided
         !!      that this is so, the input file is then read in.
-    subroutine s_read_input_file() ! ---------------------------------------
+    subroutine s_read_input_file
 
         ! Relative path to the input file provided by the user
         character(LEN=name_len) :: file_path = './simulation.inp'
@@ -142,12 +144,12 @@ contains
         ! Namelist of the global parameters which may be specified by user
         namelist /user_inputs/ case_dir, run_time_info, m, n, p, dt, &
             t_step_start, t_step_stop, t_step_save, t_step_print, &
-            model_eqns, num_fluids, adv_alphan, &
-            mpp_lim, time_stepper, weno_eps, weno_flat, &
-            riemann_flat, cu_mpi, cu_tensor, &
-            mapped_weno, mp_weno, weno_avg, &
-            riemann_solver, wave_speeds, avg_state, &
+            model_eqns, mpp_lim, time_stepper, weno_eps, weno_flat, &
+            riemann_flat, rdma_mpi, cu_tensor, &
+            teno_CT, mp_weno, weno_avg, &
+            riemann_solver, low_Mach, wave_speeds, avg_state, &
             bc_x, bc_y, bc_z, &
+            x_domain, y_domain, z_domain, &
             hypoelasticity, &
             ib, num_ibs, patch_ib, &
             fluid_pp, probe_wrt, prim_vars_wrt, &
@@ -155,33 +157,39 @@ contains
             alt_soundspeed, mixture_err, weno_Re_flux, &
             null_weights, precision, parallel_io, cyl_coord, &
             rhoref, pref, bubbles, bubble_model, &
-            R0ref, &
+            R0ref, chem_params, &
 #:if not MFC_CASE_OPTIMIZATION
-            nb, weno_order, &
+            nb, mapped_weno, wenoz, teno, weno_order, num_fluids, &
 #:endif
             Ca, Web, Re_inv, &
-            monopole, mono, num_mono, &
+            acoustic_source, acoustic, num_source, &
             polytropic, thermal, &
             integral, integral_wrt, num_integrals, &
             polydisperse, poly_sigma, qbmm, &
-            R0_type, file_per_process, relax, relax_model, &
+            relax, relax_model, &
             palpha_eps, ptgalpha_eps, &
+            R0_type, file_per_process, sigma, &
+            pi_fac, adv_n, adap_dt, bf_x, bf_y, bf_z, &
+            k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, &
+            g_x, g_y, g_z, n_start, t_save, t_stop, &
+            cfl_adap_dt, cfl_const_dt, cfl_target, &
             particleflag, avgdensFlag, particleoutFlag, &
             particlestatFlag, RPflag, clusterflag, &
-            stillparticlesflag, heatflag, massflag, &
-            csonref, rholiqref, Lref, Tini, Runiv, &
+            heatflag, massflag, csonhost, vischost, Thost, &
             gammagas, gammavapor, pvap, cpgas, cpvapor, &
-            kgas, kvapor, MWgas, MWvap, diffcoefvap, &
-            sigmabubble, viscref, RKeps, ratiodt, &
+            kgas, kvapor, Rgas, Rvap, diffcoefvap, &
+            sigmabubble, RKeps, ratiodt, &
             projectiontype, smoothtype, epsilonb, &
             coupledFlag, solverapproach, correctpresFlag, &
-            charwidth, valmaxvoid, dtmaxpart,  &
+            charwidth, valmaxvoid, dtmaxpart, &
+            lipidCoatingModel, sigma0_lipidCoat, &
+            surfaceDilatVisc_lipidCoat, surfaceElast_lipidCoat, &
             hifu, hifu_intensityFlag, hifu_heateqnFlag, &
-            hifu_Tref, hifu_K, hifu_alpha, hifu_heatValidation, &
+            hifu_Tref, hifu_K, hifu_alpha, &
             hifu_t_step_stopSource, hifu_intPrms, hifu_atmPres, &
-            hifu_absCoef, hifu_streaming, &
-            lipidCoatingModel, sigma0_lipidCoat, R0_lipidCoat, &
-            surfaceDilatVisc_lipidCoat, surfaceElast_lipidCoat
+            hifu_absCoef, hifu_streaming, Pamp_bc, freq_bc, &
+            focLength_bc, aperture_bc, ncycles_bc, iwave_bc, &
+            Pbase_bc, rho_bc, cson_bc
 
         ! Checking that an input file has been provided by the user. If it
         ! has, then the input file is read in, otherwise, simulation exits.
@@ -204,23 +212,27 @@ contains
 
             close (1)
 
+            if ((bf_x) .or. (bf_y) .or. (bf_z)) then
+                bodyForces = .true.
+            endif
+
             ! Store m,n,p into global m,n,p
             m_glb = m
             n_glb = n
             p_glb = p
 
-            ! Lagrangian solver non-dimensionalize inputs
-            call s_particles_nondimensionalize_inputs()
+            if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
+
         else
             call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
         end if
 
-    end subroutine s_read_input_file ! -------------------------------------
+    end subroutine s_read_input_file
 
     !> The goal of this procedure is to verify that each of the
     !!      user provided inputs is valid and that their combination
     !!      constitutes a meaningful configuration for the simulation.
-    subroutine s_check_input_file() ! --------------------------------------
+    subroutine s_check_input_file
 
         ! Relative path to the current directory file in the case directory
         character(LEN=path_len) :: file_path
@@ -243,7 +255,7 @@ contains
 
         call s_check_inputs()
 
-    end subroutine s_check_input_file ! ------------------------------------
+    end subroutine s_check_input_file
 
         !!              initial condition and grid data files. The cell-average
         !!              conservative variables constitute the former, while the
@@ -251,7 +263,7 @@ contains
         !!              up the latter. This procedure also calculates the cell-
         !!              width distributions from the cell-boundary locations.
         !! @param q_cons_vf Cell-averaged conservative variables
-    subroutine s_read_serial_data_files(q_cons_vf, q_cons_hifu, hifu_id)!-----------------
+    subroutine s_read_serial_data_files(q_cons_vf, q_cons_hifu, hifu_id)
 
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
 
@@ -272,8 +284,13 @@ contains
 
         ! Confirming that the directory from which the initial condition and
         ! the grid data files are to be read in exists and exiting otherwise
-        write (t_step_dir, '(A,I0,A,I0)') &
-            trim(case_dir)//'/p_all/p', proc_rank, '/', t_step_start
+        if (cfl_dt) then
+            write (t_step_dir, '(A,I0,A,I0)') &
+                trim(case_dir)//'/p_all/p', proc_rank, '/', n_start
+        else
+            write (t_step_dir, '(A,I0,A,I0)') &
+                trim(case_dir)//'/p_all/p', proc_rank, '/', t_step_start
+        end if
 
         file_path = trim(t_step_dir)//'/.'
         call my_inquire(file_path, file_exist)
@@ -462,10 +479,10 @@ contains
 
         end if
 
-    end subroutine s_read_serial_data_files ! -------------------------------------
+    end subroutine s_read_serial_data_files
 
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_parallel_data_files(q_cons_vf, q_cons_hifu, hifu_id) ! -------------------
+    subroutine s_read_parallel_data_files(q_cons_vf, q_cons_hifu, hifu_id)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -577,9 +594,14 @@ contains
         end if
 
         if (file_per_process) then
-            call s_int_to_str(t_step_start, t_step_start_string)
-            ! Open the file to read conservative variables
-            write (file_loc, '(I0,A1,I7.7,A)') t_step_start, '_', proc_rank, '.dat'
+            if (cfl_dt) then
+                call s_int_to_str(n_start, t_step_start_string)
+                write (file_loc, '(I0,A1,I7.7,A)') n_start, '_', proc_rank, '.dat'
+            else
+                call s_int_to_str(t_step_start, t_step_start_string)
+                write (file_loc, '(I0,A1,I7.7,A)') t_step_start, '_', proc_rank, '.dat'
+            end if
+
             file_loc = trim(case_dir)//'/restart_data/lustre_'//trim(t_step_start_string)//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -665,15 +687,23 @@ contains
             end if
         else
             ! Open the file to read conservative variables
-
-            if (present(hifu_id)) then
-                write (file_loc, '(I0,A)') t_step_start, 'hifu.dat'
-                alt_sys = sys_size_hifu
+            if (cfl_dt) then
+                if (present(hifu_id)) then
+                    write (file_loc, '(I0,A)') n_start, 'hifu.dat'
+                    alt_sys = sys_size_hifu
+                else
+                    write (file_loc, '(I0,A)') n_start, '.dat'
+                    alt_sys = sys_size
+                end if
             else
-                write (file_loc, '(I0,A)') t_step_start, '.dat'
-                alt_sys = sys_size
+                if (present(hifu_id)) then
+                    write (file_loc, '(I0,A)') t_step_start, 'hifu.dat'
+                    alt_sys = sys_size_hifu
+                else
+                    write (file_loc, '(I0,A)') t_step_start, '.dat'
+                    alt_sys = sys_size
+                end if
             end if
-            !write (file_loc, '(I0,A)') t_step_start, '.dat'
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -787,16 +817,18 @@ contains
 
                 if (hifu_intensityFlag .and. .not. hifu_heateqnFlag) then
                     if (proc_rank==0) print*, 'Initialize: Start calculating intensity avg'
-                !else if (hifu_heatValidation) then
-                !    if (proc_rank==0) print*, 'Initialize: Validation case - 2D rod'
-                !    call s_cbc_heatEqn(q_cons_hifu)
-                !    call s_write_data_files(q_cons_vf, q_prim_vf, t_step=0, hifu_id=1)
                 else
                     call s_mpi_abort('Heat transfer eqn! Something when wrong. Exiting...')
                 end if
-
-                call s_write_data_files(q_cons_vf, q_cons_vf, t_step=t_step_start, &
+                if (cfl_dt) then
+                    call s_write_data_files(q_cons_vf, q_cons_vf, t_step=n_start, &
                                             q_cons_hifu=q_cons_hifu, hifu_id=1)
+                else
+                    call s_write_data_files(q_cons_vf, q_cons_vf, t_step=t_step_start, &
+                                            q_cons_hifu=q_cons_hifu, hifu_id=1)
+                end if
+
+                
 
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
@@ -863,20 +895,15 @@ contains
 
         deallocate (x_cb_glb, y_cb_glb, z_cb_glb)
 
-        !if (hifu_wrt)then
-        !    call s_restart_Pmax()
-        !    print*, 'restart_Pmax DONE'
-        !end if
-
 #endif
 
-    end subroutine s_read_parallel_data_files ! -------------------------------
+    end subroutine s_read_parallel_data_files
 
     !> The purpose of this subroutine is to populate the buffers
         !!          of the grid variables, which are constituted of the cell-
         !!          boundary locations and cell-width distributions, based on
         !!          the boundary conditions.
-    subroutine s_populate_grid_variables_buffers() ! -----------------------
+    subroutine s_populate_grid_variables_buffers
 
         integer :: i !< Generic loop iterator
 
@@ -1083,16 +1110,17 @@ contains
 
         ! END: Population of Buffers in z-direction ========================
 
-    end subroutine s_populate_grid_variables_buffers ! ---------------------
+    end subroutine s_populate_grid_variables_buffers
 
     !> The purpose of this procedure is to initialize the
         !!      values of the internal-energy equations of each phase
         !!      from the mass of each phase, the mixture momentum and
         !!      mixture-total-energy equations.
         !! @param v_vf conservative variables
-    subroutine s_initialize_internal_energy_equations(v_vf) !---------------
+    subroutine s_initialize_internal_energy_equations(v_vf)
 
-        type(scalar_field), dimension(sys_size), intent(INOUT) :: v_vf
+        type(scalar_field), dimension(sys_size), intent(inout) :: v_vf
+
         real(kind(0d0)) :: rho
         real(kind(0d0)) :: dyn_pres
         real(kind(0d0)) :: gamma
@@ -1101,7 +1129,9 @@ contains
         real(kind(0d0)), dimension(2) :: Re
         real(kind(0d0)) :: pres
 
-        integer :: i, j, k, l
+        integer :: i, j, k, l, c
+
+        real(kind(0d0)), dimension(num_species) :: rhoYks
 
         do j = 0, m
             do k = 0, n
@@ -1115,8 +1145,14 @@ contains
                                    /max(rho, sgm_eps)
                     end do
 
+                    if (chemistry) then
+                        do c = 1, num_species
+                            rhoYks(c) = v_vf(chemxb + c - 1)%sf(j, k, l)
+                        end do
+                    end if
+
                     call s_compute_pressure(v_vf(E_idx)%sf(j, k, l), 0d0, &
-                                            dyn_pres, pi_inf, gamma, rho, qv, pres)
+                                            dyn_pres, pi_inf, gamma, rho, qv, rhoYks, pres)
 
                     do i = 1, num_fluids
                         v_vf(i + internalEnergies_idx%beg - 1)%sf(j, k, l) = v_vf(i + adv_idx%beg - 1)%sf(j, k, l)* &
@@ -1128,31 +1164,55 @@ contains
             end do
         end do
 
-    end subroutine s_initialize_internal_energy_equations !-----------------
+    end subroutine s_initialize_internal_energy_equations
 
-    subroutine s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, &
-                                                                                                time_real, dtnext, dtdid, time_prev, dt_next_inp, dt0)
-        integer, intent(INOUT) :: t_step
-        real(kind(0d0)), intent(INOUT) :: time_avg, time_final
-        real(kind(0d0)), intent(INOUT) :: io_time_avg, io_time_final
-        real(kind(0d0)), dimension(:), intent(INOUT) :: proc_time
-        real(kind(0d0)), dimension(:), intent(INOUT) :: io_proc_time
-        logical, intent(INOUT) :: file_exists
-        real(kind(0d0)), intent(INOUT) :: start, finish
-        integer, intent(INOUT) :: nt
-        REAL(KIND(0.D0)) :: time_real, dtnext, dtdid, time_prev, dt_next_inp, dt0
-        real(kind(0d0)) :: dmSum, tmp
+    subroutine s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
+        integer, intent(inout) :: t_step
+        real(kind(0d0)), intent(inout) :: time_avg, time_final
+        real(kind(0d0)), intent(inout) :: io_time_avg, io_time_final
+        real(kind(0d0)), dimension(:), intent(inout) :: proc_time
+        real(kind(0d0)), dimension(:), intent(inout) :: io_proc_time
+        logical, intent(inout) :: file_exists
+        real(kind(0d0)), intent(inout) :: start, finish
+        integer, intent(inout) :: nt
+
+        real(kind(0d0)) :: dt_init
 
         integer :: i, j, k, l
 
-        if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
-            print '(" ["I3"%]  Time step "I8" of "I0" @ t_step = "I0"")', &
-                int(ceiling(100d0*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
-                t_step - t_step_start + 1, &
-                t_step_stop - t_step_start + 1, &
-                t_step
+        if (cfl_dt) then
+            if (cfl_const_dt .and. t_step == 0 .and. .not. particleflag) call s_compute_dt()
+
+            if (cfl_adap_dt .and. .not. particleflag) call s_compute_dt()
+
+            if (t_step == 0) dt_init = dt
+
+            if (dt < 1d-3*dt_init .and. cfl_adap_dt .and. .not. particleflag) call s_mpi_abort("Delta t has become too small")
         end if
-        mytime = mytime + dt
+
+        if (cfl_dt) then
+            if ((mytime + dt) >= t_stop) dt = t_stop - mytime
+        else
+            if ((mytime + dt) >= finaltime) dt = finaltime - mytime
+        end if
+
+        if (cfl_dt) then
+            if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
+                print '(" ["I3"%] Time "ES16.6" dt = "ES16.6" @ Time Step = "I8"")', &
+                    int(ceiling(100d0*(mytime/t_stop))), &
+                    mytime, &
+                    dt, &
+                    t_step
+            end if
+        else
+            if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
+                print '(" ["I3"%]  Time step "I8" of "I0" @ t_step = "I0"")', &
+                   int(ceiling(100d0*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
+                    t_step - t_step_start + 1, &
+                    t_step_stop - t_step_start + 1, &
+                t_step
+            end if
+        end if
 
         if (probe_wrt) then
             do i = 1, sys_size
@@ -1165,44 +1225,58 @@ contains
 #ifdef DEBUG
         print *, 'Computed derived vars'
 #endif
-        ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-        if (hifu_heateqnFlag) then !Solve heat eqn
+        time_prev = mytime
+        mytime = mytime + dt
+
+        if (particleflag) then 
+            ! (Adaptive) 4th and 5th order Runge-Kutta-Cash-Karp time-stepper           
+            dtnext = dt
+            call rkqs(time_prev, dtnext, dtdid, t_step)
+            mytime = time_prev + dtdid
+            if(particleoutFlag) call s_write_particles(mytime)
+            dt = dtnext
+
+        else if (hifu_heateqnFlag) then 
+            ! Solve heat eqn HIFU solver
             call s_time_stepper_heatEqn(t_step)
-        else if (.not.coupledflag .and. .not.particleflag) then
+            
+        else
+            ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
             if (time_stepper == 1) then
                 call s_1st_order_tvd_rk(t_step, time_avg)
             elseif (time_stepper == 2) then
                 call s_2nd_order_tvd_rk(t_step, time_avg)
-            elseif (time_stepper == 3) then
+            elseif (time_stepper == 3 .and. (.not. adap_dt)) then
                 call s_3rd_order_tvd_rk(t_step, time_avg)
+            elseif (time_stepper == 3 .and. adap_dt) then
+                call s_strang_splitting(t_step, time_avg)
             end if
         end if
 
-        IF(particleflag) THEN !Cash-Karp Runge-Kutta time-stepper, Lagrangian solver
-            CALL rkqs(time_real, dtnext, dtdid, t_step)
-            IF(particleoutFlag) CALL write_particles(time_real)
-            time_real = time_prev + dtdid
-            dt_next_inp = dtnext
-        END IF
+        if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
 
-        if (relax) call s_relaxation_solver(q_cons_ts(1)%vf)
+        if (chemistry) then
+            call s_chemistry_normalize_cons(q_cons_ts(1)%vf)
+        end if
 
         ! Time-stepping loop controls
-        if ((mytime + dt) >= finaltime) dt = finaltime - mytime
+
         t_step = t_step + 1
 
     end subroutine s_perform_time_step
 
     subroutine s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
 
-        integer, intent(INOUT) :: t_step
-        real(kind(0d0)), intent(INOUT) :: time_avg, time_final
-        real(kind(0d0)), intent(INOUT) :: io_time_avg, io_time_final
-        real(kind(0d0)), dimension(:), intent(INOUT) :: proc_time
-        real(kind(0d0)), dimension(:), intent(INOUT) :: io_proc_time
-        logical, intent(INOUT) :: file_exists
-        real(kind(0d0)), intent(INOUT) :: start, finish
-        integer, intent(INOUT) :: nt
+        integer, intent(inout) :: t_step
+        real(kind(0d0)), intent(inout) :: time_avg, time_final
+        real(kind(0d0)), intent(inout) :: io_time_avg, io_time_final
+        real(kind(0d0)), dimension(:), intent(inout) :: proc_time
+        real(kind(0d0)), dimension(:), intent(inout) :: io_proc_time
+        logical, intent(inout) :: file_exists
+        real(kind(0d0)), intent(inout) :: start, finish
+        integer, intent(inout) :: nt
+
+        real(kind(0d0)) :: grind_time
 
         call s_mpi_barrier()
 
@@ -1218,96 +1292,108 @@ contains
             if (num_procs == 1) then
                 time_final = time_avg
                 io_time_final = io_time_avg
-                print *, "Final Time", time_final
             else
                 time_final = maxval(proc_time)
                 io_time_final = maxval(io_proc_time)
-                print *, "Final Time", time_final
             end if
+
+            grind_time = time_final*1.0d9/(sys_size*maxval((/1,m_glb/))*maxval((/1,n_glb/))*maxval((/1,p_glb/)))
+
+            print *, "Performance:", grind_time, "ns/gp/eq/rhs"
             inquire (FILE='time_data.dat', EXIST=file_exists)
             if (file_exists) then
-                open (11, file='time_data.dat', position='append', status='old')
-                write (11, *) num_procs, time_final
-                close (11)
+                open (1, file='time_data.dat', position='append', status='old')
             else
-                open (11, file='time_data.dat', status='new')
-                write (11, *) num_procs, time_final
-                close (11)
+                open (1, file='time_data.dat', status='new')
+                write (1, '(A10, A15, A15)') "Ranks", "s/step", "ns/gp/eq/rhs"
             end if
+
+            write (1, '(I10, 2(F15.8))') num_procs, time_final, grind_time
+
+            close (1)
 
             inquire (FILE='io_time_data.dat', EXIST=file_exists)
             if (file_exists) then
-                open (11, file='io_time_data.dat', position='append', status='old')
-                write (11, *) num_procs, io_time_final
-                close (11)
+                open (1, file='io_time_data.dat', position='append', status='old')
             else
-                open (11, file='io_time_data.dat', status='new')
-                write (11, *) num_procs, io_time_final
-                close (11)
+                open (1, file='io_time_data.dat', status='new')
+                write (1, '(A10, A15)') "Ranks", "s/step"
             end if
+
+            write (1, '(I10, F15.8)') num_procs, io_time_final
+            close (1)
 
         end if
 
     end subroutine s_save_performance_metrics
 
     subroutine s_save_data(t_step, start, finish, io_time_avg, nt)
-        real(kind(0d0)), intent(INOUT) :: start, finish, io_time_avg
-        integer, intent(INOUT) :: t_step, nt
+        integer, intent(inout) :: t_step
+        real(kind(0d0)), intent(inout) :: start, finish, io_time_avg
+        integer, intent(inout) :: nt
+
         integer :: i, j, k, l
 
-        if (mod(t_step - t_step_start, t_step_save) == 0 .or. t_step == t_step_stop) then
+        integer :: save_count
 
-            call cpu_time(start)
-            !  call nvtxStartRange("I/O")
-            do i = 1, sys_size
-                !$acc update host(q_cons_ts(1)%vf(i)%sf)
-                do l = 0, p
-                    do k = 0, n
-                        do j = 0, m
-                            if (ieee_is_nan(q_cons_ts(1)%vf(i)%sf(j, k, l))) then
-                                print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
-                                error stop "NaN(s) in timestep output."
-                            end if
-                        end do
+        call cpu_time(start)
+        !  call nvtxStartRange("I/O")
+        do i = 1, sys_size
+            !$acc update host(q_cons_ts(1)%vf(i)%sf)
+            do l = 0, p
+                do k = 0, n
+                    do j = 0, m
+                        if (ieee_is_nan(q_cons_ts(1)%vf(i)%sf(j, k, l))) then
+                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
+                            error stop "NaN(s) in timestep output."
+                        end if
                     end do
                 end do
             end do
+        end do
 
-            if (qbmm .and. .not. polytropic) then
-                !$acc update host(pb_ts(1)%sf)
-                !$acc update host(mv_ts(1)%sf)
-            end if
+        if (qbmm .and. .not. polytropic) then
+            !$acc update host(pb_ts(1)%sf)
+            !$acc update host(mv_ts(1)%sf)
+        end if
 
-            !HIFU
-            if (hifu_intensityFlag .or. hifu_heateqnFlag) then
-                    call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step, &
-                                            q_cons_hifu=q_cons_ts(3)%vf, hifu_id=1)
-            end if
+        if (cfl_dt) then
+            save_count = int(mytime/t_save)
+        else
+            save_count = t_step
+        end if
 
-            IF(particleflag) THEN !Lagrangean solver
-                CALL s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step, q_particle(1))
-                IF (parallel_io .NEQV. .TRUE.) THEN
-                    CALL write_restart_particles (t_step)
-                ELSE
-                    CALL write_restart_particles_parallel (t_step)
-                END IF
-            ELSE
-                CALL s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, t_step)
-            END IF
+        !HIFU
+        if (hifu_intensityFlag .or. hifu_heateqnFlag) then
+            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count, &
+                                    q_cons_hifu=q_cons_ts(3)%vf, hifu_id=1)
+        end if
 
-            !  call nvtxEndRange
-            call cpu_time(finish)
+        if(particleflag) then
+            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count, q_particle(1))
+            call s_write_restart_particles(save_count) !parallel 
+            if (particlestatFlag) call s_write_particle_stats
+        else
+            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count)
+        end if
+        
+        !  call nvtxEndRange
+        call cpu_time(finish)
+        if (cfl_dt) then
+            nt = mytime/t_save
+        else
             nt = int((t_step - t_step_start)/(t_step_save))
-            if (nt == 1) then
-                io_time_avg = abs(finish - start)
-            else
-                io_time_avg = (abs(finish - start) + io_time_avg*(nt - 1))/nt
-            end if
+        end if
+
+        if (nt == 1) then
+            io_time_avg = abs(finish - start)
+        else
+            io_time_avg = (abs(finish - start) + io_time_avg*(nt - 1))/nt
         end if
 
     end subroutine s_save_data
 
-    subroutine s_initialize_modules()
+    subroutine s_initialize_modules
         call s_initialize_global_parameters_module()
         !Quadrature weights and nodes for polydisperse simulations
         if (bubbles .and. nb > 1 .and. R0_type == 1) then
@@ -1341,13 +1427,17 @@ contains
         call acc_present_dump()
 #endif
 
-        if (monopole) then
-            call s_initialize_monopole_module()
+        if (acoustic_source) then
+            call s_initialize_acoustic_src()
         end if
+
         if (any(Re_size > 0)) then
             call s_initialize_viscous_module()
         end if
+
         call s_initialize_rhs_module()
+
+        if (sigma .ne. dflt_real) call s_initialize_surface_tension_module()
 
 #if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
         call acc_present_dump()
@@ -1355,6 +1445,8 @@ contains
 
         if (hypoelasticity) call s_initialize_hypoelastic_module()
         if (relax) call s_initialize_phasechange_module()
+        if (chemistry) call s_initialize_chemistry_module()
+
         call s_initialize_data_output_module()
         call s_initialize_derived_variables_module()
         call s_initialize_time_steppers_module()
@@ -1382,6 +1474,8 @@ contains
 
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
         if (ib) call s_ibm_setup()
+        if (bodyForces) call s_initialize_body_forces_module()
+        if (acoustic_source) call s_precalculate_acoustic_spatial_sources()
 
         ! Populating the buffers of the grid variables using the boundary conditions
         call s_populate_grid_variables_buffers()
@@ -1400,9 +1494,11 @@ contains
 
         call s_initialize_derived_variables()
 
+        if (particleflag) call s_initialize_lagrangian_solver(q_cons_ts(1)%vf, q_prim_vf)
+
     end subroutine s_initialize_modules
 
-    subroutine s_initialize_mpi_domain()
+    subroutine s_initialize_mpi_domain
         integer :: ierr
 #ifdef MFC_OpenACC
         real(kind(0d0)) :: starttime, endtime
@@ -1460,7 +1556,6 @@ contains
 #else
                 "on CPUs"
 #endif
-            if(particleflag) do_particles=.true. !Lagrangian solver
 
         end if
 
@@ -1469,43 +1564,45 @@ contains
         ! carried out if the simulation is in fact not truly executed in parallel.
 
         call s_mpi_bcast_user_inputs()
+
         call s_initialize_parallel_io()
+
         call s_mpi_decompose_computational_domain()
 
-        CALL s_mpi_bcast_user_particles() !Lagrangian solver
+!        CALL s_mpi_bcast_user_particles() !Lagrangian solver
 
     end subroutine s_initialize_mpi_domain
 
-    subroutine s_initialize_gpu_vars()
+    subroutine s_initialize_gpu_vars
         integer :: i
         !Update GPU DATA
-        !$acc update device(dt, dx, dy, dz, x_cc, y_cc, z_cc, x_cb, y_cb, z_cb)
-        !$acc update device(sys_size, buff_size)
-        !$acc update device(m, n, p)
-        !$acc update device(momxb, momxe, bubxb, bubxe, advxb, advxe, contxb, contxe, strxb, strxe)
         do i = 1, sys_size
             !$acc update device(q_cons_ts(1)%vf(i)%sf)
         end do
         if (qbmm .and. .not. polytropic) then
             !$acc update device(pb_ts(1)%sf, mv_ts(1)%sf)
         end if
-        !$acc update device(dt, sys_size, pref, rhoref, gamma_idx, pi_inf_idx, E_idx, alf_idx, stress_idx, mpp_lim, bubbles, hypoelasticity, alt_soundspeed, avg_state, num_fluids, model_eqns, num_dims, mixture_err, nb, weight, grid_geometry, cyl_coord, mapped_weno, mp_weno, weno_eps)
-        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma)
+        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac, low_Mach)
         !$acc update device(R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, pv, M_n, M_v, k_n, k_v, pb0, mass_n0, mass_v0, Pe_T, Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN , mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
-        !$acc update device(monopole, num_mono)
-    
+
+        !$acc update device(acoustic_source, num_source)
+        !$acc update device(sigma)
+
+        !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
+
         !$acc update device(bc_x%vb1, bc_x%vb2, bc_x%vb3, bc_x%ve1, bc_x%ve2, bc_x%ve3)
         !$acc update device(bc_y%vb1, bc_y%vb2, bc_y%vb3, bc_y%ve1, bc_y%ve2, bc_y%ve3)
         !$acc update device(bc_z%vb1, bc_z%vb2, bc_z%vb3, bc_z%ve1, bc_z%ve2, bc_z%ve3)
 
 
-        !$acc update device(relax)
+        !$acc update device(relax, relax_model)
         if (relax) then
             !$acc update device(palpha_eps, ptgalpha_eps)
         end if
+
     end subroutine s_initialize_gpu_vars
 
-    subroutine s_finalize_modules()
+    subroutine s_finalize_modules
         ! Disassociate pointers for serial and parallel I/O
         s_read_data_files => null()
         s_write_data_files => null()
@@ -1522,11 +1619,14 @@ contains
         call s_finalize_mpi_proxy_module()
         call s_finalize_global_parameters_module()
         if (relax) call s_finalize_relaxation_solver_module()      
-        IF(particleflag) CALL s_deallocate_particles() !Lagrangian solver
+        if(particleflag) call s_deallocate_particles() 
 
         if (any(Re_size > 0)) then
             call s_finalize_viscous_module()
         end if
+
+        if (sigma .ne. dflt_real) call s_finalize_surface_tension_module()
+        if (bodyForces) call s_finalize_body_forces_module()
 
         ! Terminating MPI execution environment
         call s_mpi_finalize()

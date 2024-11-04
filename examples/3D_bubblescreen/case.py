@@ -5,100 +5,58 @@ import json
 
 # Overview: A planar acoustic wave interacts with a bubble cloud in water.
 
-# Reference length - m
-x0 = 1.e-03
+# Reference values for nondimensionalization 
 
-# Reference density - kg/m3
-rho0 = 1.e+03
+x0 = 1.e-03         # length - m
+rho0 = 1.e+03       # density - kg/m3
+c0 = 1475.          # speed of sound - m/s
+p0 = rho0*c0*c0     # pressure - Pa
+T0 = 298            # temperature - K
 
-# Reference speed of sound - m/s
-c0 = 1475.
+# Acoustic source properties
 
-# Reference pressure - Pa
-p0 = rho0*c0*c0
+patm = 101325.      # Atmospheric pressure - Pa
+pamp = 1.e5         # Amplitud of the acoustic source - Pa
+freq = 300e+03      # Source frequency - Hz
+wlen = c0/freq      # Wavelength - m
 
-# Reference temperature - K
-T0 = 298
+# Host properties (water)
 
-# Gamma
-Gam = 7.1
+gamma_host  = 2.7466     # Specific heat ratio
+pi_inf_host = 792.02e+06 # Stiffness - Pa
+mu_host = 1e-3           # Dynamic viscosity - Pa.s
+c_host = 1475.           # speed of sound - m/s
 
-# pi infinity - Pa
-pi_inf = 306.e+06
+# Lagrangian bubble's properties
 
-# Atmospheric pressure - Pa
-patm = 101325.
+R_uni = 8314        # Universal gas constant - J/kmol/K
+MW_g = 28.0         # Molar weigth of the gas - kg/kmol
+MW_v = 18.0         # Molar weigth of the vapor - kg/kmol
+gamma_g = 1.4       # Specific heat ratio of the gas
+gamma_v = 1.333     # Specific heat ratio of the vapor
+pv = 2350           # Vapor pressure of the host - Pa
+cp_g = 1.e3         # Specific heat of the gas - J/kg/K
+cp_v = 2.1e3        # Specific heat of the vapor - J/kg/K
+k_g = 0.025         # Thermal conductivity of the gas - W/m/K
+k_v = 0.02          # Thermal conductivity of the vapor - W/m/K
+diffVapor = 2.5e-5  # Diffusivity coefficient of the vapor - m2/s
+sigBubble = 0.069   # Surface tension of the bubble - N/m
 
+# Domain and time set up
 
-# Amplitude of the sinusoidal acoustic wave - Pa
-pamp = 2*(1.e5)
-
-# Frequency of the sinusoidal acoustic wave - Hz
-freq = 300e+03
-
-# Wavelength of the sinusoidal acoustic wave - m
-wlen = c0/freq
-
-
-## Properties that govern the dynamics of the lagrangian bubbles
-
-# Universal gas constant - kJ/mol/K
-R = 8314
-
-# gamma, gas and vapor
-gamma_g = 1.4
-gamma_v = 1.333
-
-# vapor pressure of water - Pa
-pv = 2350
-
-# cp, gas and vapor - kJ/g/K
-cp_g = 1.e3
-cp_v = 2.1e3
-
-# thermal conductivity, gas and vapor - W/m/K
-k_g = 0.025
-k_v = 0.02
-
-# Molar weigth, gas and vapor - g/mol
-MW_g = 28.0
-MW_v = 18.0
-
-# Diffusivity coefficient of the vapor
-diffVapor = 2.5e-5
-
-# Surface tension of the bubble - N/m
-sigBubble = 0.069
-
-# Water viscosity - Pa.s
-mu_water = 1e-3
-
-
-## Domain boundaries - m
-
-# x direction
-xb = -2.5e-3
-xe = 2.5e-3
-
-# y direction
-yb = -2.5e-3
+xb = -12.e-3    # Domain boundaries - m (x direction)
+xe = 12.e-3
+yb = -2.5e-3    # Domain boundaries - m (y direction)
 ye = 2.5e-3
+zb = -2.5e-3    # Domain boundaries - m (z direction)
+ze = 2.5e-3
 
-# z direction
-zb = -12.e-3
-ze = 12.e-3
+Nx = 240        # number of elements into x direction
+Ny = 50         # number of elements into y direction
+Nz = 50         # number of elements into z direction
 
-# number of elements into x direction
-Nx = 50
+dt = 7.5e-9     # time-step - sec
 
-# number of elements into y direction
-Ny = 50
-
-# number of elements into z direction
-Nz = 500
-
-# time-step - sec
-dt = 7.5e-9
 
 # ==============================================================================
 
@@ -115,16 +73,13 @@ print(json.dumps({
     'y_domain%end'                 : ye/x0,
     'z_domain%beg'                 : zb/x0,
     'z_domain%end'                 : ze/x0,
-    'stretch_z'                    : 'T',
-    'a_z'                          : 2.0E-00,
-    'z_a'                          : -2.5,
-    'z_b'                          : 2.5,
+    'stretch_z'                    : 'F',
     'stretch_y'                    : 'F',
     'stretch_x'                    : 'F',
     'm'                            : Nx,
     'n'                            : Ny,
     'p'                            : Nz,
-    'dt'                           : dt*c0/x0,
+    'dt'                           : dt*(c0/x0),
     't_step_start'                 : 0,
     't_step_stop'                  : 3000,
     't_step_save'                  : 500,
@@ -134,7 +89,6 @@ print(json.dumps({
     'model_eqns'                   : 2,
     'num_fluids'                   : 1,
     'num_patches'                  : 1,
-    'adv_alphan'                   : 'T',
     'mpp_lim'                      : 'F',
     'time_stepper'                 : 3,
     'weno_order'                   : 5,
@@ -145,25 +99,27 @@ print(json.dumps({
     'avg_state'                    : 2,
     'bc_x%beg'                     :-6,
     'bc_x%end'                     :-6,
-    'bc_y%beg'                     :-6,
-    'bc_y%end'                     :-6,
-    'bc_z%beg'                     :-6,
-    'bc_z%end'                     :-6,
+    'bc_y%beg'                     :-1,
+    'bc_y%end'                     :-1,
+    'bc_z%beg'                     :-1,
+    'bc_z%end'                     :-1,
     # ==========================================================
 
     # Acoustic source ==========================================
-    'Monopole'                     : 'T',
-    'num_mono'                     : 1,
-    'Mono(1)%support'              : 4,
-    'Mono(1)%pulse'                : 1,
-    'Mono(1)%npulse'               : 1,
-    'Mono(1)%mag'                  : pamp/p0,
-    'Mono(1)%length'               : wlen/x0,
-    'Mono(1)%loc(1)'               : 0.,
-    'Mono(1)%loc(2)'               : 0.,
-    'Mono(1)%loc(3)'               : -7.E-03/x0,
-    'Mono(1)%dir'                  : 0.,
-    'Mono(1)%delay'                : 0.,
+    'acoustic_source'              : 'T',
+    'num_source'                   : 1,
+    'acoustic(1)%support'          : 3,
+    'acoustic(1)%pulse'            : 1,
+    'acoustic(1)%npulse'           : 1,
+    'acoustic(1)%mag'              : pamp/p0,
+    'acoustic(1)%wavelength'       : wlen/x0,
+    'acoustic(1)%length'           : 2*(ze-zb)/x0,
+    'acoustic(1)%height'           : 2*(ye-yb)/x0,
+    'acoustic(1)%loc(1)'           : -7.e-03/x0,
+    'acoustic(1)%loc(2)'           : 0.,
+    'acoustic(1)%loc(3)'           : 0.,
+    'acoustic(1)%dir'              : 0.,
+    'acoustic(1)%delay'            : 0.,
     # ==========================================================
 
     # Formatted Database Files Structure Parameters ============
@@ -185,9 +141,9 @@ print(json.dumps({
     'probe(1)%x'                   : 0.,
     'probe(1)%y'                   : 0.,
     'probe(1)%z'                   : 0.,
-    'probe(2)%x'                   : 0.,
+    'probe(2)%x'                   : -5.e-03/x0,
     'probe(2)%y'                   : 0.,
-    'probe(2)%z'                   : -6.E-03/x0,
+    'probe(2)%z'                   : 0.,
     # ==========================================================
 
     # Patch 1: Water (left) ====================================
@@ -210,34 +166,29 @@ print(json.dumps({
      'particleflag'                : 'T',
      'avgdensFlag'                 : 'T',
      'particleoutFlag'             : 'T',
-     'particlestatFlag'            : 'F',
+     'particlestatFlag'            : 'T',
      'RPflag'                      : 'T',
-     'clusterflag'                 : '3',
-     'stillparticlesflag'          : 'T',
+     'clusterflag'                 : 3,
      'heatflag'                    : 1,
      'massflag'                    : 1,
-     'csonref'                     : c0,
-     'rholiqref'                   : rho0,
-     'Lref'                        : x0,
-     'Tini'                        : T0,
-     'Runiv'                       : R,
+     'csonhost'                    : c_host/c0,
+     'vischost'                    : mu_host/(rho0*x0*c0), 
      'gammagas'                    : gamma_g,
      'gammavapor'                  : gamma_v,
-     'pvap'                        : pv,
-     'cpgas'                       : cp_g,
-     'cpvapor'                     : cp_v,
-     'kgas'                        : k_g,
-     'kvapor'                      : k_v,
-     'MWgas'                       : MW_g,
-     'MWvap'                       : MW_v,
-     'diffcoefvap'                 : diffVapor,
-     'sigmabubble'                 : sigBubble,
-     'viscref'                     : mu_water,
+     'pvap'                        : pv/p0,
+     'cpgas'                       : cp_g*(T0/(c0*c0)),
+     'cpvapor'                     : cp_v*(T0/(c0*c0)),
+     'kgas'                        : k_g*(T0/(x0*rho0*c0*c0*c0)),
+     'kvapor'                      : k_v*(T0/(x0*rho0*c0*c0*c0)),
+     'Rgas'                        : (R_uni/MW_g)*(T0/(c0*c0)),
+     'Rvap'                        : (R_uni/MW_v)*(T0/(c0*c0)),
+     'diffcoefvap'                 : diffVapor/(x0*c0),
+     'sigmabubble'                 : sigBubble/(rho0*x0*c0*c0),
      'RKeps'                       : 1.E-05,
      'ratiodt'                     : 1,
      'projectiontype'              : 0,
      'smoothtype'                  : 1,
-     'epsilonb'                    : 1.33,
+     'epsilonb'                    : 1.0,
      'coupledFlag'                 : 'T',
      'solverapproach'              : 2,
      'correctpresFlag'             : 'T',
@@ -247,8 +198,9 @@ print(json.dumps({
     # ==========================================================
 
     # Fluids Physical Parameters ===============================
-    'fluid_pp(1)%gamma'            : 1.0/(Gam-1.0),
-    'fluid_pp(1)%pi_inf'           : Gam*(pi_inf/p0)/(Gam-1.0),
+    'fluid_pp(1)%gamma'            : 1.0/(gamma_host-1.0),
+    'fluid_pp(1)%pi_inf'           : gamma_host*(pi_inf_host/p0)/(gamma_host-1.0),
+    'fluid_pp(1)%Re(1)'            : 1.0/(mu_host/(rho0*c0*x0)),
     # ==========================================================
  }))
 

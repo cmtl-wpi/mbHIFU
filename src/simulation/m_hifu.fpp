@@ -3,7 +3,6 @@
 !! @brief Contains module m_viscous
 
 #:include 'macros.fpp'
-#:include 'inline_conversions.fpp'
 
 !> @brief The module contains the subroutines used to study HIFU
 module m_hifu
@@ -21,31 +20,24 @@ module m_hifu
 
     ! ==========================================================================
     implicit none
-    private; public ::  s_restart_Pmax, &
+    private; public ::  s_update_hifu_vars_stg2, &
                         s_update_Pmax, &
                         s_update_intensity_HIFU, &
                         s_initialize_HIFU, &
                         s_rhs_heatEqn, &
-                        s_populate_HIFU_variables_buffers
+                        s_populate_HIFU_variables_buffers, &
+                        s_open_run_time_information_samplingHIFU, &
+                        s_close_run_time_information_samplingHIFU
 
 contains
 
     ! ==========================================================================
-    ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    ! READ ME: !!!!!!!!
-    ! Important variables and where they are stored:
-    ! q_cons_hifu(1)%sf(j,k,l): Heat intensity (generated). Summation over time (finite number of samples).
-    ! q_cons_hifu(2)%sf(j,k,l): Number of finite samples to compute q_cons_hifu(1).
-    ! q_cons_hifu(3)%sf(j,k,l): Temperature.
-    ! q_cons_hifu(4)%sf(j,k,l): RHS value from heat transfer eqn (finite volume discretization).
-    ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    ! NEW VERSION
     ! Important variables and where they are stored:
     ! q_cons_hifu(1)%sf(j,k,l): Temperature distribution                (T_hifu_idx)
     ! q_cons_hifu(2)%sf(j,k,l): RHS value from heat transfer eqn        (T_hifu_idx+1)
     ! q_cons_hifu(3)%sf(j,k,l): Maximum pressure at each cell           (P_hifu_idx)
-    ! q_cons_hifu(4)%sf(j,k,l): Number of samples to avg intensities    (N_hifu_idx)
-    ! q_cons_hifu(5)%sf(j,k,l): Acoustic damping (Sum over time)        (qus_hifu_idx)
+    ! q_cons_hifu(4)%sf(j,k,l): Total sampling time                     (tt_hifu_idx)
+    ! q_cons_hifu(5)%sf(j,k,l): Acoustic damping (Sum over time)        (qus_hifu_idx / qus_prms_hifu_idx)
     ! q_cons_hifu(6)%sf(j,k,l): Viscous damping  (Sum over time)        (qvis_hifu_idx)
     ! q_cons_hifu(7)%sf(j,k,l): Any extra variable / Analit. Sol.       (dmb_hifu_idx)
     ! >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -82,14 +74,7 @@ contains
                         iz_t%beg:iz_t%end) = 0.0d0
         end do
 
-        !do i = ix_t%beg, ix_t%end
-        !    do j = iy_t%beg, iy_t%end
-        !        q_cons_hifu(dmb_hifu_idx)%sf(i,j,0) = (i+j)*1.0d0
-        !    end do
-        !end do
-
         !Initial Temperature
-        !if (proc_rank==0) print*,T_hifu_idx, size(q_cons_hifu)
         q_cons_hifu(T_hifu_idx)%sf(ix_t%beg:ix_t%end, iy_t%beg:iy_t%end, &
                                    iz_t%beg:iz_t%end) = hifu_Tref !User input
 
@@ -97,79 +82,31 @@ contains
         q_cons_hifu(P_hifu_idx)%sf(ix_t%beg:ix_t%end, iy_t%beg:iy_t%end, &
                                    iz_t%beg:iz_t%end) =  min(dflt_real,-dflt_real)
 
-        !Initialize umax, vmax
-        !q_cons_hifu(umax_hifu_idx)%sf(ix_t%beg:ix_t%end, iy_t%beg:iy_t%end, &
-        !                           iz_t%beg:iz_t%end) =  min(dflt_real,-dflt_real)
+        !Initialize Pmin
+        q_cons_hifu(P_hifu_idx+1)%sf(ix_t%beg:ix_t%end, iy_t%beg:iy_t%end, &
+                                   iz_t%beg:iz_t%end) =  max(dflt_real,-dflt_real)
 
-        !q_cons_hifu(vmax_hifu_idx)%sf(ix_t%beg:ix_t%end, iy_t%beg:iy_t%end, &
-        !                           iz_t%beg:iz_t%end) =  min(dflt_real,-dflt_real)
-
-        !Initialize umin, vmin
-        !q_cons_hifu(umin_hifu_idx)%sf(ix_t%beg:ix_t%end, iy_t%beg:iy_t%end, &
-        !                           iz_t%beg:iz_t%end) =  max(dflt_real,-dflt_real)
-
-        !q_cons_hifu(vmin_hifu_idx)%sf(ix_t%beg:ix_t%end, iy_t%beg:iy_t%end, &
-        !                           iz_t%beg:iz_t%end) =  max(dflt_real,-dflt_real)
+        call s_open_run_time_information_samplingHIFU
 
     end subroutine s_initialize_HIFU ! =========================================
 
-    ! ==========================================================================
-    ! Restarting or initializing routine to get the maximum and minimum pressure 
-    ! through time along the axisymmetric and radial axes
-    subroutine s_restart_Pmax()
+    subroutine s_update_HIFU_vars_stg2(q_cons_sf, q_prim_sf, q_cons_hifu, t_step, hdid)
 
-        character(LEN=path_len + 2*name_len) :: file_loc
-        logical :: file_exist
-        real(kind(0d0)) :: trsh1, trsh2, trsh3, presMax, presMin
-        integer :: i,j, k
-        integer :: unitFile
-        logical :: printFlag = .true.
+        type(scalar_field), dimension(sys_size_hifu), intent(in) :: q_cons_sf
+        type(scalar_field), dimension(sys_size_hifu), intent(in) :: q_prim_sf
+        type(scalar_field), dimension(sys_size_hifu), intent(inout) :: q_cons_hifu
+        integer, intent(in) :: t_step
+        real(kind(0.d0)), intent(in) :: hdid
 
-        ! HIFU Open Pmax file if it exists
-        write (file_loc, '(A,I0,A)') '/D/Pmax_', proc_rank, '.dat'
-        file_loc = trim(case_dir)//trim(file_loc)
-        inquire (FILE=trim(file_loc), EXIST=file_exist)
+        !> update Pmax
+        call s_update_Pmax(q_cons_sf, q_cons_hifu, t_step)
 
-        if (proc_rank==0 .and. printFlag) then
-             printFlag = .false.
-             print*, 'dx, dy, dt', dx(1), dy(1), dt
-        end if
+        !> Update heat deposition source terms
+        call s_update_intensity_HIFU(q_cons_sf, q_prim_sf, q_cons_hifu, t_step, hdid)
 
-        unitFile = 100+proc_rank
+    end subroutine s_update_HIFU_vars_stg2 
+    
 
-        if (file_exist) then
-             !open (unitFile, FILE=trim(file_loc), FORM='formatted', STATUS='old', &
-             !                                   access='sequential', action='read')
-             !334 read(unitFile,'(6x,f12.6,f24.8,f24.8,f24.8,f24.8,I24,I24,I24)',end=335) &
-             !        trsh1, &
-             !        trsh2, &
-             !        trsh3, &
-             !        presMax, &
-             !        presMin, &
-             !        i, &
-             !        j, &
-             !        k
-                
-             !Pmax(i,j)=presMax
-             !Pmin(i,j)=presMin
-             !goto 334
-             !335 continue
-             !close(unitFile)
-        else
-            !print*, 'Are we here?', dflt_real, -dflt_real
-            !do i=0,m
-            !    do j=0,n
-                    !Pmax(i,j)= min(dflt_real,-dflt_real)
-                    !Pmin(i,j)= max(dflt_real,-dflt_real)
-            !    end do
-            !end do
-            !print*, 'Done generating initial Pmax and Pmin'
-
-        end if
-
-    end subroutine s_restart_Pmax ! ============================================
-
-    ! ==========================================================================
     ! Update the maximum and minimum pressure through time along the 
     ! axisymmetric and radial axes
     subroutine s_update_Pmax(q_cons_vf,q_cons_hifu,t_step)
@@ -178,22 +115,19 @@ contains
         type(scalar_field), dimension(sys_size_hifu), intent(INOUT) :: q_cons_hifu
         integer, intent(IN) :: t_step
         
-        real(kind(0d0)) :: nondim_time !< Non-dimensional time	
-        character(LEN=path_len + 3*name_len) :: file_path !<
         logical :: axialCondition, radialCondition, condition
-
         integer :: i, j, k, l, s, q  !< generic loop variables
         integer :: unitFile
 
-	real(kind(0d0)) :: rho
+	    real(kind(0d0)) :: rho
         real(kind(0d0)), dimension(num_dims) :: vel
         real(kind(0d0)) :: pres
-        real(kind(0d0)) :: presMax_old, presMin_old
-	real(kind(0d0)) :: gamma
+	    real(kind(0d0)) :: gamma
         real(kind(0d0)) :: pi_inf
         real(kind(0d0)) :: qv
-	real(kind(0d0)), dimension(2) :: Re
-	real(kind(0d0)) :: G
+        real(kind(0d0)), dimension(2) :: Re
+        real(kind(0d0)) :: G
+        real(kind(0d0)) :: rhoYks(1:num_species)
 
         ! Zeroing out flow variables for all processors      
         rho = 0d0
@@ -201,8 +135,6 @@ contains
            vel(s) = 0d0
         end do
         pres = 0d0
-        presMax_old = 0d0
-        presMin_old =0d0
         gamma = 0d0
         pi_inf = 0d0
 
@@ -210,11 +142,12 @@ contains
 
         if (cyl_coord .and. p==0) then
             l = 0
-            if (mod(t_step,t_step_save)==0) then
-                write (file_path, '(A,I0,A)') '/D/Pmax_', proc_rank, '.dat'
-                file_path = trim(case_dir)//trim(file_path)        
-                open (unitFile, FILE=trim(file_path), FORM='formatted', STATUS='unknown')
-            end if
+            ! if (mod(t_step,t_step_save)==0) then
+            !     ! write (file_path, '(A,I0,A)') '/D/Pmax_', proc_rank, '.dat'
+            !     ! file_path = trim(case_dir)//trim(file_path)        
+            !     ! open (unitFile, FILE=trim(file_path), FORM='formatted', STATUS='unknown')
+            !     ! write (unitFile, *) 'timeStep, x_cc, y_cc, Pmax, Pmin, j, k, l'
+            ! end if
 
             do  j = 0, m
                 do k = 0, n
@@ -226,89 +159,82 @@ contains
                     end do
 
                     call s_compute_pressure(q_cons_vf(E_idx)%sf(j, k, l), &
-                                0d0, 0.5d0*rho*dot_product(vel, vel), pi_inf, gamma, rho, qv, pres)
+                                0d0, 0.5d0*rho*dot_product(vel, vel), pi_inf, gamma, rho, qv, rhoYks, pres)
 
-                    !presMax_old = Pmax(j,k)
-                    !presMin_old = Pmin(j,k)
-                    !Pmax(j,k) = max(pres,presMax_old)
-                    !Pmin(j,k) = min(pres,presMin_old)
-
-                    q_cons_hifu(P_hifu_idx)%sf(j,k,l)=max(q_cons_hifu(P_hifu_idx)%sf(j,k,l),pres)
-                                      
+                    q_cons_hifu(P_hifu_idx)%sf(j,k,l)   = max(q_cons_hifu(P_hifu_idx)%sf(j,k,l),pres)
+                    q_cons_hifu(P_hifu_idx+1)%sf(j,k,l) = min(q_cons_hifu(P_hifu_idx+1)%sf(j,k,l),pres)
+                    
                     ! Specify enough conditions for axial and radial probe lines
-                    axialCondition= (dy(k)>y_cc(k) .and. y_cc(k)>0)
-                    radialCondition= (x_cb(j-1)<mono(1)%foc_length .and. mono(1)%foc_length<x_cb(j))
-                    condition= (axialCondition .or. radialCondition)
-
-                    if (mod(t_step,t_step_save)==0 .and. condition) then
-                        write (unitFile, '(6x,I24,f24.8,f24.8,f24.8,f24.8,I24,I24,I24)') &
-                            t_step, &
-                            x_cc(j), &
-                            y_cc(k), &
-                            q_cons_hifu(P_hifu_idx)%sf(j,k,l), &
-                            pres, &
-                            j, &
-                            k, &
-                            l
+                    if (mod(t_step,t_step_save)==0) then
+                        axialCondition= (dy(k)>y_cc(k) .and. y_cc(k)>0)
+                        radialCondition= (x_cb(j-1)<focLength_bc .and. focLength_bc<x_cb(j))
+                        condition= (axialCondition .or. radialCondition)
+                        if (condition) then
+                            write (100, '(6x,I24,4E24.8)') &
+                                t_step, &
+                                x_cc(j), &
+                                y_cc(k), &
+                                q_cons_hifu(P_hifu_idx)%sf(j,k,l), &
+                                q_cons_hifu(P_hifu_idx+1)%sf(j,k,l)
+                        end if
+                        
                     end if
-
                 end do
             end do
 
-            if (mod(t_step,t_step_save)==0) then
-                close(unitFile)
-            end if
+            ! if (mod(t_step,t_step_save)==0) then
+            !     close(unitFile)
+            ! end if
 
         end if
    
     end subroutine s_update_Pmax ! =============================================
 
-    @:s_compute_speed_of_sound()
-
     ! ==========================================================================
     !> Heat deposition in HIFU.
     !> Obtain the generated heat source "q_us_ac". Heating from the primary ultrasound source
     !> and, if mb exist, from acoustic emission from bubble oscillations.
-    subroutine s_update_intensity_HIFU(q_cons_vf, q_prim_vf, t_step, q_cons_hifu)
+    subroutine s_update_intensity_HIFU(q_cons_vf, q_prim_vf, q_cons_hifu, t_step, hdid)
 
-        type(scalar_field), dimension(sys_size), intent(IN) :: q_cons_vf
-        type(scalar_field), dimension(sys_size_hifu), intent(INOUT) :: q_cons_hifu
-        type(scalar_field), dimension(sys_size), intent(IN) :: q_prim_vf
-        integer, intent(IN) :: t_step
+        type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
+        type(scalar_field), dimension(sys_size_hifu), intent(inout) :: q_cons_hifu
+        type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
+        integer, intent(in) :: t_step
+        real(kind(0.d0)), intent(in) :: hdid
 
-	real(kind(0d0)) :: nondim_time !< Non-dimensional time	
-	real(kind(0d0)) :: rho
+        real(kind(0d0)) :: nondim_time !< Non-dimensional time	
+        real(kind(0d0)) :: rho
         real(kind(0d0)), dimension(num_dims) :: vel
         real(kind(0d0)) :: pres
         real(kind(0d0)) :: pres_old
-	real(kind(0d0)) :: gamma
+        real(kind(0d0)) :: gamma
         real(kind(0d0)) :: pi_inf
-	real(kind(0d0)), dimension(2) :: Re
-	real(kind(0d0)) :: G
+        real(kind(0d0)), dimension(2) :: Re
+        real(kind(0d0)) :: G
         real(kind(0d0)) :: qv
         real(kind(0d0)) :: c
         real(kind(0d0)), dimension(num_fluids) :: alpha
+        real(kind(0d0)) :: rhoYks(1:num_species)
 
-	real(kind(0d0)) :: shearVisc, bulkVisc
-	real(kind(0d0)) :: absCoef, spdsound 
-	real(kind(0d0)) :: angFreq
-	real(kind(0d0)) :: varA, varB
-	real(kind(0d0)) :: duxdx, duxdr, durdx, durdr
-	real(kind(0d0)) :: ep11, ep22, ep33, ep13
-	real(kind(0d0)) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac
-        real(kind(0d0)) :: intensity_vis, sumIntensity_vis, focalIntensity_vis
+        real(kind(0d0)) :: shearVisc, bulkVisc
+        real(kind(0d0)) :: absCoef, spdsound 
+        real(kind(0d0)) :: angFreq
+        real(kind(0d0)) :: varA, varB
+        real(kind(0d0)) :: duxdx, duxdr, durdx, durdr
+        real(kind(0d0)) :: ep11, ep22, ep33, ep13
+        real(kind(0d0)) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac, intensity_ac_prms
+        real(kind(0d0)) :: focalIntensity_th, sumIntensity_th
+        real(kind(0d0)) :: intensity_vis, sumIntensity_vis, focalIntensity_vis, focalIntensity_ac_prms
         real(kind(0d0)) :: focal_u, focal_v
 
-	real(kind(0d0)), dimension(num_fluids) :: myalpha_rho, myalpha
+        real(kind(0d0)), dimension(num_fluids) :: myalpha_rho, myalpha
         real(kind(0d0)) :: n_tait, B_tait, myRho, lamda
 
         integer :: ii, i, j, k, l, s, q  !< generic loop variables
 
-        character(LEN=path_len + 3*name_len) :: file_path !<
-	logical :: file_exist, printFlag1, printFlag2
+        logical :: file_exist, printFlag1, printFlag2
         logical :: axialCondition, radialCondition, condition
-        real(kind(0d0)) :: focalPoint_x, val, dist
-        
+        real(kind(0d0)) :: val, dist
         
         ! Zeroing out flow variables for all processors      
         rho = 0d0
@@ -322,26 +248,32 @@ contains
         gamma = 0d0
         pi_inf = 0d0
         focalIntensity_ac = 0d0
+        focalIntensity_ac_prms = 0d0
         focalIntensity_vis = 0d0
-        focalPoint_x = mono(1)%foc_length + mono(1)%loc(1)
+        focalIntensity_th = 0d0
         sumIntensity_ac = 0d0
         sumIntensity_vis = 0d0
+        sumIntensity_th = 0d0
         focal_u = 0.0d0
         focal_v = 0.0d0
 
-        if (t_step==t_step_start) then
-            stepsPerWave = int(mono(1)%length / dt) !Fix me if bubbles present
-            if (proc_rank==0) print*, 'Every wave is discretized in ', mono(1)%length/dt, 'time steps (', stepsPerWave,')'
-        end if
+        ! if (cfl_dt) then
+        !     save_count_start = n_start
+        ! else
+        !     save_count_start = t_step_start
+        ! end if
+
 
         if (cyl_coord .and. p==0) then  !Axysimetric		
             l = 0
 
-            if (proc_rank==0 .and. t_step_old==dflt_int) then
-                write (file_path, '(A,I0,A)') '/D/sumIntensity-HIFU.dat'
-                file_path = trim(case_dir)//trim(file_path)
-                open (99, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
-            end if
+            ! if (proc_rank==0 .and. t_step==save_count_start ) then
+            !     write (file_path, '(A,I0,A)') '/D/sumIntensity-HIFU.dat'
+            !     file_path = trim(case_dir)//trim(file_path)
+            !     open (99, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            !     write (99, *) 'timeStep, totalSamplingTime, acousticFocalIntensity, acousticFocalIntensityPRMS, viscousFocalIntensity, ', &
+            !                   'thermalFocalIntensity, sumAcousticIntensity, sumViscousIntensity, sumThermalIntensity, focalxVel, focalyVel'
+            ! end if
 
             do  j = 0, m
                 do k = 0, n
@@ -358,6 +290,8 @@ contains
                     end do
                     shearVisc = 1/shearVisc
                     bulkVisc  = 1/bulkVisc
+
+                    if (absCoef<=0.0) call s_mpi_abort('Check absCoef values!')
 
                     !>> Get the strain rate tensor (using central finite difference)
                     varA = 0.0d0
@@ -379,114 +313,80 @@ contains
                     end do
 
                     call s_compute_pressure(q_cons_vf(E_idx)%sf(j, k, l), &
-                                0d0, 0.5d0*rho*dot_product(vel, vel), pi_inf, gamma, rho, qv, pres)
+                                0d0, 0.5d0*rho*dot_product(vel, vel), pi_inf, gamma, rho, qv, rhoYks, pres)
 
                     call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
                                                       ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, c)
 
                     !>> Compute intensity form acoustic damping
-                    intensity_ac = 0d0
                     
-                    if (hifu_intPrms) then
-                        if (absCoef<=0.0) call s_mpi_abort('Prms: check absCoef values!')
-                        intensity_ac = intensity_ac + absCoef*(q_cons_hifu(P_hifu_idx)%sf(j,k,l)-hifu_atmPres)**2/(rho*c)
-                    else
-                        ep11 = durdr
-                        ep22 = vel(2) / y_cc(k)
-                        ep33 = duxdx
-                        ep13 = 0.5d0*(durdx + duxdr)
-                        varA = ep11**2.0 + ep22**2.0 + ep33**2.0
-                        varB = (8.0d0/3.0d0)*varA - (4.0d0/3.0d0)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6.0d0*(ep13**2.0)
-                        intensity_ac = intensity_ac + bulkVisc*varA + 2.0d0*shearVisc*varB !intensity is "q_us_ac"
-                        
-                    end if
+                    intensity_ac_prms = 0d0
+                    intensity_ac_prms = intensity_ac_prms + absCoef*(q_cons_hifu(P_hifu_idx)%sf(j,k,l)-hifu_atmPres)**2/(rho*c)
 
-                    q_cons_hifu(qus_hifu_idx)%sf(j,k,l) = q_cons_hifu(qus_hifu_idx)%sf(j,k,l) + intensity_ac ! sum intensity to old value
-                    q_cons_hifu(N_hifu_idx)%sf(j,k,l) = q_cons_hifu(N_hifu_idx)%sf(j,k,l) + 1.0d0 !number of samples taken
+                    intensity_ac = 0d0
+                    ep11 = durdr
+                    ep22 = vel(2) / y_cc(k)
+                    ep33 = duxdx
+                    ep13 = 0.5d0*(durdx + duxdr)
+                    varA = ep11**2.0 + ep22**2.0 + ep33**2.0
+                    varB = (8.0d0/3.0d0)*varA - (4.0d0/3.0d0)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6.0d0*(ep13**2.0)
+                    intensity_ac = intensity_ac + bulkVisc*varA + 2.0d0*shearVisc*varB !intensity is "q_us_ac"
+
+                    q_cons_hifu(tt_hifu_idx)%sf(j,k,l) = q_cons_hifu(tt_hifu_idx)%sf(j,k,l) + hdid ! Update total sampling time
+                    q_cons_hifu(qus_hifu_idx)%sf(j,k,l) = q_cons_hifu(qus_hifu_idx)%sf(j,k,l) + intensity_ac * hdid ! Sampling acoustic intensity 
+                    q_cons_hifu(qus_prms_hifu_idx)%sf(j,k,l) = q_cons_hifu(qus_prms_hifu_idx)%sf(j,k,l) + intensity_ac_prms * hdid ! Sampling acoustic intensity (prms)
 
                     !Update average velocities for streaming
-                    !if (stepStreaming == 1) then
-                    !    q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) = vel(1)
-                    !    q_cons_hifu(u_hifu_idx+2)%sf(j,k,l) = vel(1)
-                    !    q_cons_hifu(v_hifu_idx+1)%sf(j,k,l) = vel(2)
-                    !    q_cons_hifu(v_hifu_idx+2)%sf(j,k,l) = vel(2)
-                    !else if (stepStreaming == stepsPerWave) then
-                    !    q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) + vel(1)
-                    !    q_cons_hifu(u_hifu_idx)%sf(j,k,l)   = q_cons_hifu(u_hifu_idx)%sf(j,k,l) + ( q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) - &
-                    !                                          q_cons_hifu(u_hifu_idx+2)%sf(j,k,l) ) * (1.0d0 / stepsPerWave)
-                    !    q_cons_hifu(v_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(v_hifu_idx+1)%sf(j,k,l) + vel(2)
-                    !    q_cons_hifu(v_hifu_idx)%sf(j,k,l)   = q_cons_hifu(v_hifu_idx)%sf(j,k,l) + ( q_cons_hifu(v_hifu_idx+1)%sf(j,k,l) - &
-                    !                                          q_cons_hifu(v_hifu_idx+2)%sf(j,k,l) ) * (1.0d0 / stepsPerWave)
-                    !else
-                    !    q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) + vel(1)
-                    !    q_cons_hifu(v_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(v_hifu_idx+1)%sf(j,k,l) + vel(2)
-                    !end if
-                    if (hifu_streaming) then
-                         q_cons_hifu(u_hifu_idx)%sf(j,k,l) =  q_cons_hifu(u_hifu_idx)%sf(j,k,l) + vel(1)
-                         q_cons_hifu(v_hifu_idx)%sf(j,k,l) =  q_cons_hifu(v_hifu_idx)%sf(j,k,l) + vel(2)
-                    !    if (q_cons_hifu(N_hifu_idx)%sf(j,k,l) == 1.0d0) then
-                    !        q_cons_hifu(u_hifu_idx)%sf(j,k,l) = vel(1)          !Avg velocity 
-                    !        q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) = vel(1)        !Old slope
-                    !        q_cons_hifu(u_hifu_idx+2)%sf(j,k,l) = vel(1)        !Vel Peak on avg velocity plot
-                    !        q_cons_hifu(u_hifu_idx+3)%sf(j,k,l) = vel(1)        !Vel Peak on avg velocity plot
-                    !    else
-                    !        q_cons_hifu(u_hifu_idx)%sf(j,k,l) = q_cons_hifu(u_hifu_idx)%sf(j,k,l) * &
-                    !                                            (q_cons_hifu(N_hifu_idx)%sf(j,k,l)-1.0d0) + vel(1)
-                    !        q_cons_hifu(u_hifu_idx)%sf(j,k,l) = q_cons_hifu(u_hifu_idx)%sf(j,k,l) / q_cons_hifu(N_hifu_idx)%sf(j,k,l)
-                    !        q_cons_hifu(u_hifu_idx+1)%sf(j,k,l) = vel(1)
-                    !    end if
-                    end if
-
+                    q_cons_hifu(u_hifu_idx)%sf(j,k,l) =  q_cons_hifu(u_hifu_idx)%sf(j,k,l) + vel(1) * hdid ! Sampling x-vel
+                    q_cons_hifu(v_hifu_idx)%sf(j,k,l) =  q_cons_hifu(v_hifu_idx)%sf(j,k,l) + vel(2) * hdid ! Sampling y-vel
 
                     !Get focal intensity and velocities
                     axialCondition= (dy(k)>y_cc(k) .and. y_cc(k)>0.0)
-                    radialCondition= (x_cb(j-1)<=focalPoint_x .and. focalPoint_x<=x_cb(j))
+                    !radialCondition= (x_cb(j-1)<=focalPoint_x .and. focalPoint_x<=x_cb(j))
+                    radialCondition= (x_cb(j-1)<focLength_bc .and. focLength_bc<x_cb(j))
                     condition= (axialCondition .and. radialCondition)
                     if (condition) then
                             focalIntensity_ac = q_cons_hifu(qus_hifu_idx)%sf(j,k,l)
+                            focalIntensity_ac_prms = q_cons_hifu(qus_prms_hifu_idx)%sf(j,k,l)
                             focalIntensity_vis = q_cons_hifu(qvis_hifu_idx)%sf(j,k,l)
+                            focalIntensity_th = q_cons_hifu(qth_hifu_idx)%sf(j,k,l)
                             focal_u = q_cons_hifu(u_hifu_idx)%sf(j,k,l)
                             focal_v = q_cons_hifu(v_hifu_idx)%sf(j,k,l)
-                            !vel_u = vel(1)
-                            !vel_v = vel(2)
                     end if
 
-                    !Intensity summation through the domain, avoid monopole influence (0.8*Focal length)
+                    !Intensity summation through the domain, avoid acoustic source influence (0.8*Focal length)
                     sumIntensity_ac = sumIntensity_ac + q_cons_hifu(qus_hifu_idx)%sf(j,k,l)
                     sumIntensity_vis = sumIntensity_vis + q_cons_hifu(qvis_hifu_idx)%sf(j,k,l)
+                    sumIntensity_th = sumIntensity_th + q_cons_hifu(qth_hifu_idx)%sf(j,k,l)
 
                 end do
             end do
-
-            stepStreaming = stepStreaming + 1
-
-            if (stepStreaming > stepsPerWave) stepStreaming = 1
 
             tmp = sumIntensity_ac
             call s_mpi_allreduce_sum(tmp, sumIntensity_ac)
             tmp = sumIntensity_vis
             call s_mpi_allreduce_sum(tmp, sumIntensity_vis)
+            tmp = sumIntensity_th
+            call s_mpi_allreduce_sum(tmp, sumIntensity_th)
 
             tmp = focalIntensity_vis
             call s_mpi_allreduce_max(tmp, focalIntensity_vis)
             tmp = focalIntensity_ac
             call s_mpi_allreduce_max(tmp, focalIntensity_ac)
+            tmp = focalIntensity_ac_prms
+            call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
 
             tmp = focal_u
             call s_mpi_allreduce_sum(tmp, focal_u)
             tmp = focal_v
             call s_mpi_allreduce_sum(tmp, focal_v)
 
-            !tmp = vel_u
-            !call s_mpi_allreduce_sum(tmp, vel_u)
-            !tmp = vel_v
-            !call s_mpi_allreduce_sum(tmp, vel_v)
+            if (proc_rank==0) write (99, '(6x,I24.8,f24.8,9e24.8)') &
+                t_step, q_cons_hifu(tt_hifu_idx)%sf(0,0,0), focalIntensity_ac, &
+                focalIntensity_ac_prms, focalIntensity_vis, focalIntensity_th, &
+                sumIntensity_ac, sumIntensity_vis, sumIntensity_th, focal_u, focal_v
 
-            if (proc_rank==0) write (99, '(6x,I24.8,f24.8,e24.8,e24.8,e24.8,e24.8,e24.8,e24.8)') &
-                t_step, q_cons_hifu(N_hifu_idx)%sf(0,0,0), focalIntensity_ac, focalIntensity_vis, &
-                        sumIntensity_ac, sumIntensity_vis, focal_u, focal_v
-
-            if (t_step == t_step_stop .and. proc_rank==0) close (99)
+            !if (t_step == t_step_stop .and. proc_rank==0) close (99)
   
         end if
 
@@ -505,9 +405,15 @@ contains
         real(kind(0d0)) :: Ux_max_L, Ux_max_R, Ur_max_L, Ur_max_R
         real(kind(0d0)) :: Ux_min_L, Ux_min_R, Ur_min_L, Ur_min_R
         integer, intent(in) :: t_step
+        integer :: qus_hifu_idx_ht
         real(kind(0d0)) :: absCoef, rho_cp, tdiff
         real(kind(0d0)) :: alpha !volume fraction of each species
 
+        if (hifu_intPrms) then
+            qus_hifu_idx_ht = qus_prms_hifu_idx
+        else
+            qus_hifu_idx_ht = qus_hifu_idx
+        end if
 
         call s_populate_HIFU_variables_buffers(q_cons_hifu)
 
@@ -526,27 +432,15 @@ contains
                 !Find temperature and streaming velocities at the faces of the cell
                 Tx_L = (q_cons_hifu(T_hifu_idx)%sf(j,k,l) + q_cons_hifu(T_hifu_idx)%sf(j-1,k,l)) / 2.0d0
                 Ux_L = (q_cons_hifu(u_hifu_idx)%sf(j,k,l) + q_cons_hifu(u_hifu_idx)%sf(j-1,k,l)) / 2.0d0
-                !Ux_max_L = (q_cons_hifu(umax_hifu_idx)%sf(j,k,l) + q_cons_hifu(umax_hifu_idx)%sf(j-1,k,l)) / 2.0d0
-                !Ux_min_L = (q_cons_hifu(umin_hifu_idx)%sf(j,k,l) + q_cons_hifu(umin_hifu_idx)%sf(j-1,k,l)) / 2.0d0
-                !Ux_L = Ux_max_L-0.5d0*(Ux_max_L-Ux_min_L)
 
                 Tx_R = (q_cons_hifu(T_hifu_idx)%sf(j,k,l) + q_cons_hifu(T_hifu_idx)%sf(j+1,k,l)) / 2.0d0
                 Ux_R = (q_cons_hifu(u_hifu_idx)%sf(j,k,l) + q_cons_hifu(u_hifu_idx)%sf(j+1,k,l)) / 2.0d0
-                !Ux_max_R = (q_cons_hifu(umax_hifu_idx)%sf(j,k,l) + q_cons_hifu(umax_hifu_idx)%sf(j+1,k,l)) / 2.0d0
-                !Ux_min_R = (q_cons_hifu(umin_hifu_idx)%sf(j,k,l) + q_cons_hifu(umin_hifu_idx)%sf(j+1,k,l)) / 2.0d0
-                !Ux_R = Ux_max_R-0.5d0*(Ux_max_R-Ux_min_R)
 
                 Tr_L = (q_cons_hifu(T_hifu_idx)%sf(j,k,l) + q_cons_hifu(T_hifu_idx)%sf(j,k-1,l)) / 2.0d0
                 Ur_L = (q_cons_hifu(v_hifu_idx)%sf(j,k,l) + q_cons_hifu(v_hifu_idx)%sf(j,k-1,l)) / 2.0d0
-                !Ur_max_L = (q_cons_hifu(vmax_hifu_idx)%sf(j,k,l) + q_cons_hifu(vmax_hifu_idx)%sf(j,k-1,l)) / 2.0d0
-                !Ur_min_L = (q_cons_hifu(vmin_hifu_idx)%sf(j,k,l) + q_cons_hifu(vmin_hifu_idx)%sf(j,k-1,l)) / 2.0d0
-                !Ur_L = Ur_max_L-0.5d0*(Ur_max_L-Ur_min_L)
 
                 Tr_R = (q_cons_hifu(T_hifu_idx)%sf(j,k,l) + q_cons_hifu(T_hifu_idx)%sf(j,k+1,l)) / 2.0d0
                 Ur_R = (q_cons_hifu(v_hifu_idx)%sf(j,k,l) + q_cons_hifu(v_hifu_idx)%sf(j,k+1,l)) / 2.0d0
-                !Ur_max_R = (q_cons_hifu(vmax_hifu_idx)%sf(j,k,l) + q_cons_hifu(vmax_hifu_idx)%sf(j,k+1,l)) / 2.0d0
-                !Ur_min_R = (q_cons_hifu(vmin_hifu_idx)%sf(j,k,l) + q_cons_hifu(vmin_hifu_idx)%sf(j,k+1,l)) / 2.0d0
-                !Ur_R = Ur_max_R-0.5d0*(Ur_max_R-Ur_min_R)
 
                 !Get thermal properties
                 alpha  = 0.0d0
@@ -568,15 +462,17 @@ contains
                        tdiff * (1 / dx(j)) * (dTdx_R - dTdx_L) + &
                        tdiff * (1 / (2*y_cc(k)*dy(k))) * ( (2*y_cc(k)+dy(k))*dTdr_R - (2*y_cc(k)-dy(k))*dTdr_L)
                                 
-                if ( (q_cons_hifu(N_hifu_idx)%sf(j,k,l) > 0.0) .and. (t_step< hifu_t_step_stopSource)) then !Adding the heat source terms
+                if ( (q_cons_hifu(tt_hifu_idx)%sf(j,k,l) > 0.0d0) .and. (t_step< hifu_t_step_stopSource)) then !Adding the heat source terms
                     q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) + &
-                          (1/(rho_cp)) * (1 / q_cons_hifu(N_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qus_hifu_idx)%sf(j,k,l) + &
-                          (1/(rho_cp)) * (1 / q_cons_hifu(N_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qvis_hifu_idx)%sf(j,k,l)
+                          (1/(rho_cp)) * (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qus_hifu_idx_ht)%sf(j,k,l) + &  !Acoustic intensity
+                          (1/(rho_cp)) * (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qvis_hifu_idx)%sf(j,k,l) + &    !Viscous intensity
+                          (1/(rho_cp)) * (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qth_hifu_idx)%sf(j,k,l)         !Thermal intensity
                 
                     if (hifu_streaming) then !Convected heat flux
                         q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) - &
-                                  ( (1 / dx(j)) * (Ux_R*Tx_R - Ux_L*Tx_L) + &
-                                    (1 / (2*y_cc(k)*dy(k))) * ( (2*y_cc(k)+dy(k))*Ur_R*Tr_R - (2*y_cc(k)-dy(k))*Ur_L*Tr_L) )
+                                    (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * ( & !Double check this
+                                        (1 / dx(j)) * (Ux_R*Tx_R - Ux_L*Tx_L) + &
+                                        (1 / (2*y_cc(k)*dy(k))) * ( (2*y_cc(k)+dy(k))*Ur_R*Tr_R - (2*y_cc(k)-dy(k))*Ur_L*Tr_L) )
                     end if
 
                 end if
@@ -638,9 +534,9 @@ contains
 
         else                            ! Processor BC at beginning
 
-            call s_mpi_sendrecv_conservative_variables_buffers( &
+            call s_mpi_sendrecv_variables_buffers( &
                                q_cons_hifu, mpi_dir=1, pbc_loc=-1)
-            !call s_mpi_sendrecv_conservative_variables_buffers( &
+            !call s_mpi_sendrecv_variables_buffers( &
             !    q_cons_hifu, pb, mv, 1, -1)
 
         end if
@@ -686,9 +582,9 @@ contains
 
         else                            ! Processor BC at end
 
-            call s_mpi_sendrecv_conservative_variables_buffers( &
+            call s_mpi_sendrecv_variables_buffers( &
                                q_cons_hifu, mpi_dir=1, pbc_loc=1)
-            !call s_mpi_sendrecv_conservative_variables_buffers( &
+            !call s_mpi_sendrecv_variables_buffers( &
             !    q_cons_hifu, pb, mv,  1, 1)
 
         end if
@@ -761,9 +657,9 @@ contains
 
         else                            ! Processor BC at beginning
 
-            call s_mpi_sendrecv_conservative_variables_buffers( &
+            call s_mpi_sendrecv_variables_buffers( &
                               q_cons_hifu, mpi_dir=2, pbc_loc=-1)
-            !call s_mpi_sendrecv_conservative_variables_buffers( &
+            !call s_mpi_sendrecv_variables_buffers( &
             !    q_cons_hifu, pb, mv,  2, -1)
 
         end if
@@ -809,9 +705,9 @@ contains
 
         else                            ! Processor BC at end
 
-            call s_mpi_sendrecv_conservative_variables_buffers( &
+            call s_mpi_sendrecv_variables_buffers( &
                                 q_cons_hifu, mpi_dir=2, pbc_loc=1)
-            !call s_mpi_sendrecv_conservative_variables_buffers( &
+            !call s_mpi_sendrecv_variables_buffers( &
             !    q_cons_hifu, pb, mv,  2, 1)
 
         end if
@@ -865,9 +761,9 @@ contains
 
         else                            ! Processor BC at beginning
 
-            call s_mpi_sendrecv_conservative_variables_buffers( &
+            call s_mpi_sendrecv_variables_buffers( &
                                q_cons_hifu, mpi_dir=3, pbc_loc=-1)
-            !call s_mpi_sendrecv_conservative_variables_buffers( &
+            !call s_mpi_sendrecv_variables_buffers( &
             !    q_cons_hifu, pb, mv,  3, -1)
 
         end if
@@ -913,9 +809,9 @@ contains
 
         else                            ! Processor BC at end
         
-            call s_mpi_sendrecv_conservative_variables_buffers( &
+            call s_mpi_sendrecv_variables_buffers( &
                                 q_cons_hifu, mpi_dir=3, pbc_loc=1)
-            !call s_mpi_sendrecv_conservative_variables_buffers( &
+            !call s_mpi_sendrecv_variables_buffers( &
             !    q_cons_hifu, pb, mv,  3, 1)
 
         end if
@@ -923,5 +819,58 @@ contains
         ! END: Population of Buffers in z-direction ========================
 
     end subroutine s_populate_HIFU_variables_buffers ! -------------
+
+    subroutine s_open_run_time_information_samplingHIFU()
+
+        character(LEN=path_len + 3*name_len) :: file_path
+        integer :: unitFile
+
+        !Open files to save Pmax data at the axial and radial axes
+        write (file_path, '(A,I0,A)') '/D/Pmax_', proc_rank, '.dat'
+        file_path = trim(case_dir)//trim(file_path)        
+        open (100, FILE=trim(file_path), FORM='formatted', STATUS='unknown')
+        write (100, *) 'timeStep, x_cc, y_cc, Pmax, Pmin, j, k, l'
+
+        if (proc_rank==0) then
+
+            print*, 'HIFU simulation >>>> Stage 2: Obtaining time-averaged heat source terms, Pmax and Pmin'
+
+            !Open files to save intensity sampling information at focus
+            write (file_path, '(A)') '/D/sumIntensity-HIFU.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            open (99, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            write (99, *)   'timeStep, totalSamplingTime, acousticFocalIntensity, acousticFocalIntensityPRMS, ', &
+                            'viscousFocalIntensity, thermalFocalIntensity, sumAcousticIntensity, ', &
+                            'sumViscousIntensity, sumThermalIntensity, focalxVel, focalyVel'
+        
+
+            !Open files to save viscous and thermal intensity sampling information for a single bubble
+            write (file_path, '(A,I0,A)') '/D/viscous_thermal_kernel-HIFU_', proc_rank, '.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            open (98, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            write (98, *) 'Recommended to use only with one particle to test and compare the performance of the smootheing function'
+            write (98, *) 'Requieres to uncomment some command lines in s_update_RK (m_particle.fpp)'
+            write (98, *)   'dt_did, totalSamplingTime, viscousIntensity_beforeKernel, viscousIntensity_afterKernel, ', &
+                            'thermalIntensity_beforeKernel, thermalIntensity_afterKernel, radius, velocity'
+
+        end if
+        
+
+    end subroutine s_open_run_time_information_samplingHIFU
+
+    subroutine s_close_run_time_information_samplingHIFU()
+
+        integer :: unitFile
+
+        !Close files to save Pmax data at the axial and radial axes
+        close(100)
+
+        !Close file to save intensity sampling information at focus
+        if (proc_rank==0) close (99)
+
+        !Close file to save viscous and thermal intensity sampling information for a single bubble
+        close(98)
+
+    end subroutine s_close_run_time_information_samplingHIFU
 
 end module
