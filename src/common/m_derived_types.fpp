@@ -357,6 +357,7 @@ module m_derived_types
         real(kind(0.d0)) :: Rbuck, Rrupt
         real(kind(0.d0)) :: betaC, betaT, dphidt
         real(kind(0.d0)) :: Rmax, Rmin !statistical data
+        real(kind(0.d0)) :: qvis, qth  !HIFU time averages heat sources
         logical :: equilibrium
         type(particletmp) :: tmp        !temporal variable for intermediate steps
         type(particlederivative) :: dbdt(6)    !derivatives. It could be an allocable pointer

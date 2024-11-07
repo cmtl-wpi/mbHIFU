@@ -266,6 +266,8 @@ contains
         particleinfo%Rmax = 1.0d0
         particleinfo%Rmin = 1.0d0
         particleinfo%dphidt = 0.0d0
+        particleinfo%qvis = 0.0d0
+        particleinfo%qth = 0.0d0
 
         if (cyl_coord .and. p == 0) then
             particleinfo%x(2) = dsqrt(particleinfo%x(2)**2d0 + particleinfo%x(3)**2d0)
@@ -467,8 +469,12 @@ contains
                     particleinfo%shell = inputvals(21)
                     particleinfo%Rbuck = inputvals(22)
                     particleinfo%Rrupt = inputvals(23)
-
                     particleinfo%equilibrium = .false.
+                    if (hifu_intensityFlag) then ! Zeroing vars to start taking time average values
+                        particleinfo%qvis = 0.0d0
+                        particleinfo%qth = 0.0d0
+                    end if
+
                     cell = -buff_size
                     call s_locate_cell(particleinfo%x, cell, particleinfo%tmp%s)
                     particleListaux => qbl%fp(cell(1), cell(2), cell(3))
@@ -1431,7 +1437,8 @@ contains
         real(kind(0.d0)), dimension(3) :: nodecoord
         real(kind(0.d0)) :: tmp, qvis_beforeKernel, qvis_afterKernel, qth_beforeKernel, qth_afterKernel, radBubble, velBubble
         integer, dimension(3) :: cell
-        integer :: kernel
+        integer :: kernel, Nr
+        real(kind(0.d0)) :: ringVolume
 
         radBubble = 0.0d0
         velBubble = 0.0d0
@@ -1487,13 +1494,21 @@ contains
                 nodecoord(1) = particle%data%x(1)
                 nodecoord(2) = particle%data%x(2)
                 if (p > 0) nodecoord(3) = particle%data%x(3)
+
                 call s_compute_stddsv(cell, kernel, volbubble, stddsv) ! Kernel function based on the bubble volume
 
-                ! Viscous damping of the bubbles
+                ! ! Viscous damping of the bubbles
                 qvis = (4.0d0*pi*particle%data%y(1)**2)*(4.0d0*vischost*(particle%data%y(2)**2)/(particle%data%y(1)))
                 qvis_beforeKernel = qvis
-                call s_smoothfunction ( q_cons_hifu(qvis_hifu_idx+1), nodecoord, cell , qvis, kernel, stddsv) ! Sampling viscous intensity
+                ! call s_smoothfunction ( q_cons_hifu(qvis_hifu_idx+1), nodecoord, cell , qvis, kernel, stddsv) ! Sampling viscous intensity
                 
+                !! No kernel case, assume one bubble on each cell of the ring
+                Nr = ceiling(2.0d0*pi*y_cc(cell(2))/(y_cb(cell(2)) - y_cb(cell(2) - 1))) ! number of cells in the 3D ring
+                ringVolume = 2.0d0*pi*y_cc(cell(2))*(dy(cell(2))*dx(cell(2)))
+                q_cons_hifu(qvis_hifu_idx+1)%sf(cell(1),cell(2),cell(3)) = Nr * qvis / ringVolume !W/m3
+
+                !! Do smoothening in the 3D geometry itself (during stage3)
+                particle%data%qvis = particle%data%qvis + hdid * qvis
 
                 ! Thermal damping of the bubbles
                 if (particle%data%shell .eq. 1) then !no mass transfer
@@ -1508,7 +1523,14 @@ contains
                 heatflux = -(gammabubble - 1.0d0)/gammabubble*particle%data%betaT*(bubbleTemp - Thost)/particle%data%y(1)
                 qther = (4.0d0*pi*particle%data%y(1)**2)*(heatFlux)
                 qth_beforeKernel = qther
-                call s_smoothfunction ( q_cons_hifu(qth_hifu_idx+1), nodecoord, cell , qther, kernel, stddsv) ! Sampling thermal intensity
+                ! call s_smoothfunction ( q_cons_hifu(qth_hifu_idx+1), nodecoord, cell , qther, kernel, stddsv) ! Sampling thermal intensity
+
+                !! No kernel case, assume one bubble on each cell of the ring
+                q_cons_hifu(qth_hifu_idx+1)%sf(cell(1),cell(2),cell(3)) = Nr * qther / ringVolume !W/m3
+
+                !! Do smoothening in the 3D geometry itself (during stage3)
+                particle%data%qth = particle%data%qth + hdid * qther
+
             end if
 
             particle => particle%next
@@ -2152,7 +2174,7 @@ contains
         particle => particlesubList%List%next
         do while (associated(particle))
 
-            write (11, '(6X,E12.6,I24.8,8E24.8,I24.8)') &
+            write (11, '(6X,E12.6,I24.8,10E24.8,I24.8)') &
                     qtime, &
                     particle%data%id, &
                     particle%data%tmp%x(1), &
@@ -2163,6 +2185,8 @@ contains
                     particle%data%tmp%y(1), &
                     particle%data%tmp%y(2), &
                     particle%data%tmp%p,    &
+                    particle%data%qvis,     &
+                    particle%data%qth,      &
                     particle%data%tmp%shell
 
             particle => particle%next
