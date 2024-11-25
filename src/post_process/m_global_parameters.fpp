@@ -663,17 +663,17 @@ contains
         tempxe = temperature_idx%end
 
         ! ==================================================================
-        if (hifu) then !hifu_indexes
-            sys_size_hifu=max(sys_size,11)
+        if (hifu) then
+            sys_size_hifu=max(sys_size,14)
             T_hifu_idx    = 1
             tt_hifu_idx   = 3
             qus_hifu_idx  = 4
-            qvis_hifu_idx = 5
-            qth_hifu_idx  = 6
-            qus_prms_hifu_idx    = 7
-            P_hifu_idx    = 8
-            u_hifu_idx    = 10
-            v_hifu_idx    = 11
+            qvis_hifu_idx = 5 !need extra space
+            qth_hifu_idx  = 7 !need extra space
+            qus_prms_hifu_idx    = 9
+            P_hifu_idx    = 10 !Pmax and Pmin
+            u_hifu_idx    = 12
+            v_hifu_idx    = 14
         else
             sys_size_hifu = 0
         end if

@@ -459,26 +459,29 @@ contains
 
                 !Obtain rhs (see notes)
                 q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) + &
-                       tdiff * (1 / dx(j)) * (dTdx_R - dTdx_L) + &
-                       tdiff * (1 / (2*y_cc(k)*dy(k))) * ( (2*y_cc(k)+dy(k))*dTdr_R - (2*y_cc(k)-dy(k))*dTdr_L)
+                       tdiff * (1.0d0 / dx(j)) * (dTdx_R - dTdx_L) + &
+                       tdiff * (1.0d0 / (2*y_cc(k)*dy(k))) * ( (2.0d0*y_cc(k)+dy(k))*dTdr_R - (2.0d0*y_cc(k)-dy(k))*dTdr_L)
                                 
                 if ( (q_cons_hifu(tt_hifu_idx)%sf(j,k,l) > 0.0d0) .and. (t_step< hifu_t_step_stopSource)) then !Adding the heat source terms
                     q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) + &
-                          (1/(rho_cp)) * (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qus_hifu_idx_ht)%sf(j,k,l) + &  !Acoustic intensity
-                          (1/(rho_cp)) * (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qvis_hifu_idx)%sf(j,k,l) + &    !Viscous intensity
-                          (1/(rho_cp)) * (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qth_hifu_idx)%sf(j,k,l)         !Thermal intensity
+                          (1.0d0/(rho_cp)) * (1.0d0 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qus_hifu_idx_ht)%sf(j,k,l) + &  !Acoustic intensity
+                          (1.0d0/(rho_cp)) * (1.0d0 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qvis_hifu_idx)%sf(j,k,l) + &    !Viscous intensity
+                          (1.0d0/(rho_cp)) * (1.0d0 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * q_cons_hifu(qth_hifu_idx)%sf(j,k,l)         !Thermal intensity
                 
                     if (hifu_streaming) then !Convected heat flux
                         q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) = q_cons_hifu(T_hifu_idx+1)%sf(j,k,l) - &
-                                    (1 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * ( & !Double check this
-                                        (1 / dx(j)) * (Ux_R*Tx_R - Ux_L*Tx_L) + &
-                                        (1 / (2*y_cc(k)*dy(k))) * ( (2*y_cc(k)+dy(k))*Ur_R*Tr_R - (2*y_cc(k)-dy(k))*Ur_L*Tr_L) )
+                                    (1.0d0 / q_cons_hifu(tt_hifu_idx)%sf(j,k,l)) * ( & !Double check this
+                                        (1.0d0 / dx(j)) * (Ux_R*Tx_R - Ux_L*Tx_L) + &
+                                        (1.0d0 / (2*y_cc(k)*dy(k))) * ( (2*y_cc(k)+dy(k))*Ur_R*Tr_R - (2*y_cc(k)-dy(k))*Ur_L*Tr_L) )
                     end if
 
                 end if
+                !print*, q_cons_hifu(qus_hifu_idx_ht)%sf(j,k,l), q_cons_hifu(qvis_hifu_idx)%sf(j,k,l), q_cons_hifu(qth_hifu_idx)%sf(j,k,l), q_cons_hifu(tt_hifu_idx)%sf(j,k,l),qvis_hifu_idx, qth_hifu_idx, rho_cp
 
             end do
         end do
+
+        !call s_mpi_abort('Debuging HEAT eqn')
  
     end subroutine s_rhs_heatEqn ! =============================================
 
