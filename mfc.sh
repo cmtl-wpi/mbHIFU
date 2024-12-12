@@ -35,7 +35,7 @@ elif [ "$1" '==' "format" ]; then
 elif [ "$1" '==' "venv" ]; then
     shift; . "$(pwd)/toolchain/bootstrap/python.sh"  $@; return
 elif [ "$1" '==' "clean" ]; then
-    rm -rf "$(pwd)/build/staging/"; exit 0
+    rm -rf "$(pwd)/build"; exit 0
 elif [ "$1" '==' "spelling" ]; then
     . "$(pwd)/toolchain/bootstrap/python.sh"
 
@@ -46,6 +46,10 @@ mkdir -p "$(pwd)/build"
 
 . "$(pwd)/toolchain/bootstrap/cmake.sh"
 . "$(pwd)/toolchain/bootstrap/python.sh"
+
+if [ "$1" '==' 'init' ]; then
+    exit 0
+fi
 
 echo
 
