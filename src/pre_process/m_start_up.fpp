@@ -131,13 +131,14 @@ contains
             pi_fac, perturb_flow, perturb_flow_fluid, perturb_flow_mag, &
             perturb_sph, perturb_sph_fluid, fluid_rho, &
             cyl_coord, loops_x, loops_y, loops_z, &
-            rhoref, pref, bubbles, R0ref, nb, &
+            rhoref, pref, bubbles_euler, R0ref, nb, &
             polytropic, thermal, Ca, Web, Re_inv, &
             polydisperse, poly_sigma, qbmm, &
             sigR, sigV, dist_type, rhoRV, R0_type, &
             file_per_process, relax, relax_model, &
             palpha_eps, ptgalpha_eps, ib, num_ibs, patch_ib, &
-            sigma, adv_n, cfl_adap_dt, cfl_const_dt, n_start, n_start_old
+            sigma, adv_n, cfl_adap_dt, cfl_const_dt, n_start, &
+            n_start_old, surface_tension, rkck_adap_dt
 
         ! Inquiring the status of the pre_process.inp file
         file_loc = 'pre_process.inp'
@@ -164,7 +165,7 @@ contains
 
             nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
 
-            if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
+            if (cfl_adap_dt .or. cfl_const_dt .or. rkck_adap_dt) cfl_dt = .true.
 
         else
             call s_mpi_abort('File pre_process.inp is missing. Exiting ...')
@@ -676,7 +677,7 @@ contains
 
             ! Initialize MPI data I/O
             if (ib) then
-                call s_initialize_mpi_data(q_cons_vf, ib_markers)
+                call s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm)
             else
                 call s_initialize_mpi_data(q_cons_vf)
             end if
@@ -762,11 +763,11 @@ contains
         ! needed to properly setup the modules
         call s_initialize_global_parameters_module()
         !Quadrature weights and nodes for polydisperse simulations
-        if (bubbles .and. nb > 1) then
+        if (bubbles_euler .and. nb > 1) then
             call s_simpson
         end if
         !Initialize variables for non-polytropic (Preston) model
-        if (bubbles .and. .not. polytropic) then
+        if (bubbles_euler .and. .not. polytropic) then
             call s_initialize_nonpoly()
         end if
         !Initialize pb based on surface tension for qbmm (polytropic)
@@ -783,16 +784,16 @@ contains
         call s_initialize_assign_variables_module()
         if (relax) call s_initialize_phasechange_module()
 
+        ! Create the D directory if it doesn't exit, to store
+        ! the serial data files
+        call s_create_directory('D')
+
         ! Associate pointers for serial or parallel I/O
         if (parallel_io .neqv. .true.) then
             s_generate_grid => s_generate_serial_grid
             s_read_grid_data_files => s_read_serial_grid_data_files
             s_read_ic_data_files => s_read_serial_ic_data_files
             s_write_data_files => s_write_serial_data_files
-
-            ! Create the D directory if it doesn't exit, to store
-            ! the serial data files
-            call s_create_directory('D')
         else
             s_generate_grid => s_generate_parallel_grid
             s_read_grid_data_files => s_read_parallel_grid_data_files
@@ -852,7 +853,7 @@ contains
             call s_infinite_relaxation_k(q_cons_vf)
         end if
 
-        call s_write_data_files(q_cons_vf, ib_markers)
+        call s_write_data_files(q_cons_vf, ib_markers, levelset, levelset_norm)
 
         call cpu_time(finish)
     end subroutine s_apply_initial_condition

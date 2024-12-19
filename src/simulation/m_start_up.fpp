@@ -55,7 +55,9 @@ module m_start_up
 
     use m_viscous
 
-    use m_bubbles
+    use m_bubbles_EE            !< Ensemble-averaged bubble dynamics routines
+
+    use m_bubbles_EL            !< Lagrange bubble dynamics routines
 
     use ieee_arithmetic
 
@@ -77,9 +79,7 @@ module m_start_up
 
     use m_body_forces
 
-    use m_particles
-
-    use m_hifu               !< HIFU
+    use m_hifu
 
     ! ==========================================================================
 
@@ -97,33 +97,35 @@ module m_start_up
  s_perform_time_step, s_save_data, &
  s_save_performance_metrics
 
-    abstract interface ! ===================================================
-
-        !! @param q_cons_vf  Conservative variables
-        subroutine s_read_abstract_data_files(q_cons_vf, q_cons_hifu, hifu_id)
-
-            import :: scalar_field, sys_size, pres_field, sys_size_hifu
-
-            type(scalar_field), &
-                dimension(sys_size), &
-                intent(inout) :: q_cons_vf
-            
-            type(scalar_field), &
-                dimension(sys_size_hifu), &
-                intent(inout), optional :: q_cons_hifu
-        
-            integer, intent(in), optional :: hifu_id
-            ! HIFU vars (in parallel)
-
-        end subroutine s_read_abstract_data_files
-
-    end interface ! ========================================================
 
     type(scalar_field), allocatable, dimension(:) :: grad_x_vf, grad_y_vf, grad_z_vf, norm_vf
 
-    procedure(s_read_abstract_data_files), pointer :: s_read_data_files => null()
+    real(kind(0d0)) :: dt_init
 
 contains
+
+   !> Read data files. Dispatch subroutine that replaces procedure pointer.
+        !! @param q_cons_vf Conservative variables
+    subroutine s_read_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+
+        type(scalar_field), &
+            dimension(sys_size), &
+            intent(inout) :: q_cons_vf
+        
+        type(scalar_field), &
+            dimension(sys_size_hifu), &
+            intent(inout), optional :: q_cons_hifu
+    
+        integer, intent(in), optional :: hifu_id
+        ! HIFU vars (in parallel)
+
+        if (.not. parallel_io) then
+            call s_read_serial_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+        else
+            call s_read_parallel_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+        end if
+
+    end subroutine s_read_data_files
 
     !>  The purpose of this procedure is to first verify that an
         !!      input file has been made available by the user. Provided
@@ -156,10 +158,10 @@ contains
             fd_order, probe, num_probes, t_step_old, &
             alt_soundspeed, mixture_err, weno_Re_flux, &
             null_weights, precision, parallel_io, cyl_coord, &
-            rhoref, pref, bubbles, bubble_model, &
+            rhoref, pref, bubbles_euler, bubble_model, &
             R0ref, chem_params, &
 #:if not MFC_CASE_OPTIMIZATION
-            nb, mapped_weno, wenoz, teno, weno_order, num_fluids, &
+            nb, mapped_weno, wenoz, teno, wenoz_q, weno_order, num_fluids, &
 #:endif
             Ca, Web, Re_inv, &
             acoustic_source, acoustic, num_source, &
@@ -173,23 +175,10 @@ contains
             k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, &
             g_x, g_y, g_z, n_start, t_save, t_stop, &
             cfl_adap_dt, cfl_const_dt, cfl_target, &
-            particleflag, avgdensFlag, particleoutFlag, &
-            particlestatFlag, RPflag, clusterflag, &
-            heatflag, massflag, csonhost, vischost, Thost, &
-            gammagas, gammavapor, pvap, cpgas, cpvapor, &
-            kgas, kvapor, Rgas, Rvap, diffcoefvap, &
-            sigmabubble, RKeps, ratiodt, &
-            projectiontype, smoothtype, epsilonb, &
-            coupledFlag, solverapproach, correctpresFlag, &
-            charwidth, valmaxvoid, dtmaxpart, &
-            lipidCoatingModel, sigma0_lipidCoat, &
-            surfaceDilatVisc_lipidCoat, surfaceElast_lipidCoat, &
-            hifu, hifu_intensityFlag, hifu_heateqnFlag, &
-            hifu_Tref, hifu_K, hifu_alpha, &
-            hifu_t_step_stopSource, hifu_intPrms, hifu_atmPres, &
-            hifu_absCoef, hifu_streaming, Pamp_bc, freq_bc, &
-            focLength_bc, aperture_bc, ncycles_bc, iwave_bc, &
-            Pbase_bc, rho_bc, cson_bc
+            viscous, surface_tension, &
+            bubbles_lagrange, lag_params, &
+            rkck_adap_dt, rkck_tolerance, &
+            hifu, hifu_params, acoustic_bc_params
 
         ! Checking that an input file has been provided by the user. If it
         ! has, then the input file is read in, otherwise, simulation exits.
@@ -221,7 +210,7 @@ contains
             n_glb = n
             p_glb = p
 
-            if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
+            if (cfl_adap_dt .or. cfl_const_dt .or. rkck_adap_dt) cfl_dt = .true.
 
         else
             call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
@@ -239,9 +228,6 @@ contains
 
         ! Logical used to check the existence of the current directory file
         logical :: file_exist
-
-        ! Generic loop iterators
-        integer :: i, j
 
         ! Logistics ========================================================
         file_path = trim(case_dir)//'/.'
@@ -387,7 +373,7 @@ contains
             end if
         end do
 
-        if ((bubbles .eqv. .true.) .or. (hypoelasticity .eqv. .true.)) then
+        if ((bubbles_euler .eqv. .true.) .or. (hypoelasticity .eqv. .true.)) then
             ! Read pb and mv for non-polytropic qbmm
             if (qbmm .and. .not. polytropic) then
                 do i = 1, nb
@@ -429,23 +415,51 @@ contains
         ! Read IBM Data ====================================================
 
         if (ib) then
+            ! Read IB markers
+            write (file_path, '(A,I0,A)') &
+                trim(t_step_dir)//'/ib.dat'
+            inquire (FILE=trim(file_path), EXIST=file_exist)
+            if (file_exist) then
+                open (2, FILE=trim(file_path), &
+                        FORM='unformatted', &
+                        ACTION='read', &
+                        STATUS='old')
+                read (2) ib_markers%sf(0:m, 0:n, 0:p); close (2)
+            else
+                call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
+            end if
+
+            ! Read Levelset
+            write (file_path, '(A)') &
+                trim(t_step_dir)//'/levelset.dat'
+            inquire (FILE=trim(file_path), EXIST=file_exist)
+            if (file_exist) then
+                open (2, FILE=trim(file_path), &
+                        FORM='unformatted', &
+                        ACTION='read', &
+                        STATUS='old')
+                read (2) levelset%sf(0:m, 0:n, 0:p, 1:num_ibs); close (2)
+                ! print*, 'check', STL_levelset(106, 50, 0, 1)
+            else
+                call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
+            end if
+
+            ! Read Levelset Norm
+            write (file_path, '(A)') &
+                trim(t_step_dir)//'/levelset_norm.dat'
+            inquire (FILE=trim(file_path), EXIST=file_exist)
+            if (file_exist) then
+                open (2, FILE=trim(file_path), &
+                        FORM='unformatted', &
+                        ACTION='read', &
+                        STATUS='old')
+                read (2) levelset_norm%sf(0:m, 0:n, 0:p, 1:num_ibs, 1:3); close (2)
+            else
+                call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
+            end if
+
             do i = 1, num_ibs
-                write (file_path, '(A,I0,A)') &
-                    trim(t_step_dir)//'/ib.dat'
-                inquire (FILE=trim(file_path), EXIST=file_exist)
-                if (file_exist) then
-                    open (2, FILE=trim(file_path), &
-                          FORM='unformatted', &
-                          ACTION='read', &
-                          STATUS='old')
-                    read (2) ib_markers%sf(0:m, 0:n, 0:p); close (2)
-                else
-                    call s_mpi_abort(trim(file_path)//' is missing. Exiting ...')
-                end if
-
                 if (patch_ib(i)%c > 0) then
-
-                    print *, "HERE Np", Np
                     allocate (airfoil_grid_u(1:Np))
                     allocate (airfoil_grid_l(1:Np))
 
@@ -601,7 +615,6 @@ contains
                 call s_int_to_str(t_step_start, t_step_start_string)
                 write (file_loc, '(I0,A1,I7.7,A)') t_step_start, '_', proc_rank, '.dat'
             end if
-
             file_loc = trim(case_dir)//'/restart_data/lustre_'//trim(t_step_start_string)//trim(mpiiofs)//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -611,7 +624,8 @@ contains
                 ! Initialize MPI data I/O
 
                 if (ib) then
-                    call s_initialize_mpi_data(q_cons_vf, ib_markers)
+                    call s_initialize_mpi_data(q_cons_vf, ib_markers, &
+                        levelset, levelset_norm)
                 else
                     call s_initialize_mpi_data(q_cons_vf)
                 end if
@@ -629,7 +643,7 @@ contains
                 NVARS_MOK = int(sys_size, MPI_OFFSET_KIND)
 
                 ! Read the data for each variable
-                if (bubbles .or. hypoelasticity) then
+                if (bubbles_euler .or. hypoelasticity) then
 
                     do i = 1, sys_size!adv_idx%end
                         var_MOK = int(i, MPI_OFFSET_KIND)
@@ -660,7 +674,7 @@ contains
                 call MPI_FILE_CLOSE(ifile, ierr)
 
                 if (ib) then
-
+                    ! Read IB Markers
                     write (file_loc, '(A)') 'ib.dat'
                     file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
                     inquire (FILE=trim(file_loc), EXIST=file_exist)
@@ -673,8 +687,48 @@ contains
 
                         call MPI_FILE_SET_VIEW(ifile, disp, MPI_INTEGER, MPI_IO_IB_DATA%view, &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_IB_DATA%var%sf, data_size, &
+                        call MPI_FILE_READ(ifile, MPI_IO_IB_DATA%var%sf, data_size * num_ibs, &
                                            MPI_INTEGER, status, ierr)
+
+                    else
+                        call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
+                    end if
+
+                    ! Read Levelset
+                    write (file_loc, '(A)') 'levelset.dat'
+                    file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+                    inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+                    if (file_exist) then
+
+                        call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
+
+                        disp = 0
+
+                        call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_levelset_DATA%view, &
+                                               'native', mpi_info_int, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelset_DATA%var%sf, data_size * num_ibs, &
+                                           MPI_DOUBLE_PRECISION, status, ierr)
+
+                    else
+                        call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
+                    end if
+
+                    ! Read Levelset Norm
+                    write (file_loc, '(A)') 'levelset_norm.dat'
+                    file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+                    inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+                    if (file_exist) then
+
+                        call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
+
+                        disp = 0
+
+                        call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_levelsetnorm_DATA%view, &
+                                               'native', mpi_info_int, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelsetnorm_DATA%var%sf, data_size * num_ibs * 3, &
+                                           MPI_DOUBLE_PRECISION, status, ierr)
 
                     else
                         call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
@@ -686,6 +740,7 @@ contains
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
             end if
         else
+
             ! Open the file to read conservative variables
             if (cfl_dt) then
                 if (present(hifu_id)) then
@@ -713,7 +768,7 @@ contains
                 ! Initialize MPI data I/O
 
                 if (ib) then
-                    call s_initialize_mpi_data(q_cons_vf, ib_markers)
+                    call s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm)
                 else if (present(hifu_id)) then
                     call s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
                 else
@@ -733,7 +788,7 @@ contains
                 NVARS_MOK = int(alt_sys, MPI_OFFSET_KIND)
 
                 ! Read the data for each variable
-                if (bubbles .or. hypoelasticity) then
+                if (bubbles_euler .or. hypoelasticity) then
 
                     do i = 1, sys_size!adv_idx%end
                         var_MOK = int(i, MPI_OFFSET_KIND)
@@ -790,6 +845,7 @@ contains
 
                 if (ib) then
 
+                    ! Read IB Markers
                     write (file_loc, '(A)') 'ib.dat'
                     file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
                     inquire (FILE=trim(file_loc), EXIST=file_exist)
@@ -809,27 +865,65 @@ contains
                         call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
                     end if
 
+                    ! Read Levelset
+                    write (file_loc, '(A)') 'levelset.dat'
+                    file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+                    inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+                    if (file_exist) then
+
+                        call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
+
+                        disp = 0
+
+                        call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_levelset_DATA%view, &
+                                               'native', mpi_info_int, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelset_DATA%var%sf, data_size, &
+                                           MPI_DOUBLE_PRECISION, status, ierr)
+
+                    else
+                        call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
+                    end if
+
+                    ! Read Levelset Norm
+                    write (file_loc, '(A)') 'levelset_norm.dat'
+                    file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+                    inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+                    if (file_exist) then
+
+                        call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
+
+                        disp = 0
+
+                        call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_levelsetnorm_DATA%view, &
+                                               'native', mpi_info_int, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelsetnorm_DATA%var%sf, data_size * num_ibs * 3, &
+                                           MPI_DOUBLE_PRECISION, status, ierr)
+
+                    else
+                        call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
+                    end if
+
                 end if
 
             else if (present(hifu_id)) then
 
-                call s_initialize_HIFU(q_cons_hifu)
-
-                if (hifu_intensityFlag .and. .not. hifu_heateqnFlag) then
+                if (hifu_params%sampling .and. .not. hifu_params%heatSolver) then
+                    call s_start_HIFU_vars()
                     if (proc_rank==0) print*, 'Initialize: Start calculating intensity avg'
                 else
                     call s_mpi_abort('Heat transfer eqn! Something when wrong. Exiting...')
                 end if
+
                 if (cfl_dt) then
                     call s_write_data_files(q_cons_vf, q_cons_vf, t_step=n_start, &
-                                            q_cons_hifu=q_cons_hifu, hifu_id=1)
+                                            q_cons_hifu=q_hifu, hifu_id=1)
                 else
                     call s_write_data_files(q_cons_vf, q_cons_vf, t_step=t_step_start, &
-                                            q_cons_hifu=q_cons_hifu, hifu_id=1)
+                                            q_cons_hifu=q_hifu, hifu_id=1)
                 end if
-
-                
-
+    
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
             end if
@@ -1127,7 +1221,7 @@ contains
         real(kind(0d0)) :: pi_inf
         real(kind(0d0)) :: qv
         real(kind(0d0)), dimension(2) :: Re
-        real(kind(0d0)) :: pres
+        real(kind(0d0)) :: pres, T
 
         integer :: i, j, k, l, c
 
@@ -1152,7 +1246,7 @@ contains
                     end if
 
                     call s_compute_pressure(v_vf(E_idx)%sf(j, k, l), 0d0, &
-                                            dyn_pres, pi_inf, gamma, rho, qv, rhoYks, pres)
+                                            dyn_pres, pi_inf, gamma, rho, qv, rhoYks, pres, T)
 
                     do i = 1, num_fluids
                         v_vf(i + internalEnergies_idx%beg - 1)%sf(j, k, l) = v_vf(i + adv_idx%beg - 1)%sf(j, k, l)* &
@@ -1176,18 +1270,19 @@ contains
         real(kind(0d0)), intent(inout) :: start, finish
         integer, intent(inout) :: nt
 
-        real(kind(0d0)) :: dt_init
-
-        integer :: i, j, k, l
+        integer :: i
 
         if (cfl_dt) then
-            if (cfl_const_dt .and. t_step == 0 .and. .not. particleflag) call s_compute_dt()
+            if (cfl_const_dt .and. t_step == 0 .and. .not. rkck_adap_dt) call s_compute_dt()
 
-            if (cfl_adap_dt .and. .not. particleflag) call s_compute_dt()
+            if (cfl_adap_dt .and. .not. rkck_adap_dt) call s_compute_dt()
 
             if (t_step == 0) dt_init = dt
 
-            if (dt < 1d-3*dt_init .and. cfl_adap_dt .and. .not. particleflag) call s_mpi_abort("Delta t has become too small")
+            if (dt < 1d-3*dt_init .and. cfl_adap_dt .and. proc_rank == 0 .and. .not. rkck_adap_dt) then
+                print*, "Delta t = ", dt
+                call s_mpi_abort("Delta t has become too small")
+            end if
         end if
 
         if (cfl_dt) then
@@ -1222,42 +1317,30 @@ contains
 
         call s_compute_derived_variables(t_step)
 
+
 #ifdef DEBUG
         print *, 'Computed derived vars'
 #endif
-        time_prev = mytime
+
         mytime = mytime + dt
 
-        if (particleflag) then 
-            ! (Adaptive) 4th and 5th order Runge-Kutta-Cash-Karp time-stepper           
-            dtnext = dt
-            call rkqs(time_prev, dtnext, dtdid, t_step)
-            mytime = time_prev + dtdid
-            if(particleoutFlag) call s_write_particles(mytime)
-            dt = dtnext
-
-        else if (hifu_heateqnFlag) then 
-            ! Solve heat eqn HIFU solver
+        if (hifu_params%heatSolver) then ! Solve heat eqn HIFU solver
             call s_time_stepper_heatEqn(t_step)
-            
-        else
-            ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-            if (time_stepper == 1) then
-                call s_1st_order_tvd_rk(t_step, time_avg)
-            elseif (time_stepper == 2) then
-                call s_2nd_order_tvd_rk(t_step, time_avg)
-            elseif (time_stepper == 3 .and. (.not. adap_dt)) then
-                call s_3rd_order_tvd_rk(t_step, time_avg)
-            elseif (time_stepper == 3 .and. adap_dt) then
-                call s_strang_splitting(t_step, time_avg)
-            end if
+        ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
+        elseif (time_stepper == 1) then
+            call s_1st_order_tvd_rk(t_step, time_avg)
+        elseif (time_stepper == 2) then
+            call s_2nd_order_tvd_rk(t_step, time_avg)
+        elseif (time_stepper == 3 .and. (.not. adap_dt)) then
+            call s_3rd_order_tvd_rk(t_step, time_avg)
+        elseif (time_stepper == 3 .and. adap_dt) then
+            call s_strang_splitting(t_step, time_avg)
+        elseif (time_stepper == 4) then
+            ! (Adaptive) 4th/5th order Runge—Kutta–Cash–Karp (RKCK) time-stepper (Cash J. and Karp A., 1990)         
+            call s_4th_5th_order_rkck(t_step, time_avg)
         end if
 
         if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
-
-        if (chemistry) then
-            call s_chemistry_normalize_cons(q_cons_ts(1)%vf)
-        end if
 
         ! Time-stepping loop controls
 
@@ -1337,7 +1420,7 @@ contains
         integer :: save_count
 
         call cpu_time(start)
-        !  call nvtxStartRange("I/O")
+        call nvtxStartRange("SAVE-DATA")
         do i = 1, sys_size
             !$acc update host(q_cons_ts(1)%vf(i)%sf)
             do l = 0, p
@@ -1364,20 +1447,22 @@ contains
         end if
 
         !HIFU
-        if (hifu_intensityFlag .or. hifu_heateqnFlag) then
-            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count, &
-                                    q_cons_hifu=q_cons_ts(3)%vf, hifu_id=1)
+        if (hifu_params%sampling .or. hifu_params%heatSolver) then
+            if (hifu_params%sampling) call s_write_Pmax(save_count)
+            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count, q_cons_hifu=q_hifu, hifu_id=1)
         end if
 
-        if(particleflag) then
-            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count, q_particle(1))
-            call s_write_restart_particles(save_count) !parallel 
-            if (particlestatFlag) call s_write_particle_stats
+        if (bubbles_lagrange) then
+            !$acc update host(q_beta%vf(1)%sf)
+            call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count, q_beta%vf(1))
+            !$acc update host(Rmax_stats, Rmin_stats, gas_p, gas_mv, intfc_rad, intfc_vel)
+            call s_write_restart_lag_bubbles(save_count) !parallel 
+            if (lag_params%write_bubbles_stats) call s_write_lag_bubble_stats()
         else
             call s_write_data_files(q_cons_ts(1)%vf, q_prim_vf, save_count)
         end if
-        
-        !  call nvtxEndRange
+
+        call nvtxEndRange
         call cpu_time(finish)
         if (cfl_dt) then
             nt = mytime/t_save
@@ -1391,16 +1476,19 @@ contains
             io_time_avg = (abs(finish - start) + io_time_avg*(nt - 1))/nt
         end if
 
+        if (hifu .and. hifu_params%automatic_stages) call s_HIFU_stages(t_step, q_cons_ts(1)%vf) ! stg1 -> stg2 -> stg3
+
     end subroutine s_save_data
 
     subroutine s_initialize_modules
+
         call s_initialize_global_parameters_module()
         !Quadrature weights and nodes for polydisperse simulations
-        if (bubbles .and. nb > 1 .and. R0_type == 1) then
+        if (bubbles_euler .and. nb > 1 .and. R0_type == 1) then
             call s_simpson
         end if
         !Initialize variables for non-polytropic (Preston) model
-        if (bubbles .and. .not. polytropic) then
+        if (bubbles_euler .and. .not. polytropic) then
             call s_initialize_nonpoly()
         end if
         !Initialize pb based on surface tension for qbmm (polytropic)
@@ -1419,7 +1507,7 @@ contains
         if (grid_geometry == 3) call s_initialize_fftw_module()
         call s_initialize_riemann_solvers_module()
 
-        if(bubbles) call s_initialize_bubbles_module()
+        if(bubbles_euler) call s_initialize_bubbles_EE_module()
         if (ib) call s_initialize_ibm_module()
         if (qbmm) call s_initialize_qbmm_module()
 
@@ -1431,13 +1519,13 @@ contains
             call s_initialize_acoustic_src()
         end if
 
-        if (any(Re_size > 0)) then
+        if (viscous) then
             call s_initialize_viscous_module()
         end if
 
         call s_initialize_rhs_module()
 
-        if (sigma .ne. dflt_real) call s_initialize_surface_tension_module()
+        if (surface_tension) call s_initialize_surface_tension_module()
 
 #if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
         call acc_present_dump()
@@ -1450,26 +1538,18 @@ contains
         call s_initialize_data_output_module()
         call s_initialize_derived_variables_module()
         call s_initialize_time_steppers_module()
+        if (hifu) call s_initialize_HIFU_module()
 
 #if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
         call acc_present_dump()
 #endif
 
-        ! Associate pointers for serial or parallel I/O
-        if (parallel_io .neqv. .true.) then
-            s_read_data_files => s_read_serial_data_files
-            s_write_data_files => s_write_serial_data_files
-        else
-            s_read_data_files => s_read_parallel_data_files
-            s_write_data_files => s_write_parallel_data_files
-        end if
-
         ! Reading in the user provided initial condition and grid data
         call s_read_data_files(q_cons_ts(1)%vf)
 
-        if (hifu_intensityFlag .or. hifu_heateqnFlag) then
-            call s_read_data_files(q_cons_ts(1)%vf, q_cons_hifu=q_cons_ts(3)%vf, hifu_id=1)
-            call s_populate_HIFU_variables_buffers(q_cons_ts(3)%vf)
+        if (hifu_params%sampling .or. hifu_params%heatSolver) then
+            call s_read_data_files(q_cons_ts(1)%vf, q_cons_hifu=q_hifu, hifu_id=1)
+            call s_populate_HIFU_variables_buffers(q_hifu)
         end if
 
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
@@ -1493,8 +1573,7 @@ contains
         call s_initialize_cbc_module()
 
         call s_initialize_derived_variables()
-
-        if (particleflag) call s_initialize_lagrangian_solver(q_cons_ts(1)%vf, q_prim_vf)
+        if (bubbles_lagrange) call s_initialize_bubbles_EL_module(q_cons_ts(1)%vf)
 
     end subroutine s_initialize_modules
 
@@ -1582,18 +1661,21 @@ contains
         if (qbmm .and. .not. polytropic) then
             !$acc update device(pb_ts(1)%sf, mv_ts(1)%sf)
         end if
-        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac, low_Mach)
+        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles_euler, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, n_idx, pi_fac, low_Mach)
         !$acc update device(R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, pv, M_n, M_v, k_n, k_v, pb0, mass_n0, mass_v0, Pe_T, Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN , mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
 
         !$acc update device(acoustic_source, num_source)
-        !$acc update device(sigma)
+        !$acc update device(sigma, surface_tension)
 
         !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
-
+   
         !$acc update device(bc_x%vb1, bc_x%vb2, bc_x%vb3, bc_x%ve1, bc_x%ve2, bc_x%ve3)
         !$acc update device(bc_y%vb1, bc_y%vb2, bc_y%vb3, bc_y%ve1, bc_y%ve2, bc_y%ve3)
         !$acc update device(bc_z%vb1, bc_z%vb2, bc_z%vb3, bc_z%ve1, bc_z%ve2, bc_z%ve3)
 
+        !$acc update device(bc_x%grcbc_in, bc_x%grcbc_out, bc_x%grcbc_vel_out)
+        !$acc update device(bc_y%grcbc_in, bc_y%grcbc_out, bc_y%grcbc_vel_out)
+        !$acc update device(bc_z%grcbc_in, bc_z%grcbc_out, bc_z%grcbc_vel_out)
 
         !$acc update device(relax, relax_model)
         if (relax) then
@@ -1603,9 +1685,6 @@ contains
     end subroutine s_initialize_gpu_vars
 
     subroutine s_finalize_modules
-        ! Disassociate pointers for serial and parallel I/O
-        s_read_data_files => null()
-        s_write_data_files => null()
 
         call s_finalize_time_steppers_module()
         call s_finalize_derived_variables_module()
@@ -1618,14 +1697,14 @@ contains
         if (grid_geometry == 3) call s_finalize_fftw_module
         call s_finalize_mpi_proxy_module()
         call s_finalize_global_parameters_module()
-        if (relax) call s_finalize_relaxation_solver_module()      
-        if(particleflag) call s_deallocate_particles() 
-
-        if (any(Re_size > 0)) then
+        if (relax) call s_finalize_relaxation_solver_module()
+        if (bubbles_lagrange) call s_finalize_lagrangian_solver() 
+        if (hifu) call s_finalize_HIFU_module()
+        if (viscous) then
             call s_finalize_viscous_module()
         end if
 
-        if (sigma .ne. dflt_real) call s_finalize_surface_tension_module()
+        if (surface_tension)  call s_finalize_surface_tension_module()
         if (bodyForces) call s_finalize_body_forces_module()
 
         ! Terminating MPI execution environment

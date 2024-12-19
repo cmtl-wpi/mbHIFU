@@ -29,7 +29,7 @@ module m_data_output
  s_open_formatted_database_file, &
  s_write_grid_to_formatted_database_file, &
  s_write_variable_to_formatted_database_file, &
- s_write_particle_results, &
+ s_write_lag_bubbles_results, &
  s_close_formatted_database_file, &
  s_finalize_data_output_module
 
@@ -113,7 +113,6 @@ contains
         ! Generic logical used to test the existence of a particular folder
         logical :: dir_check
 
-        ! Generic loop iterator
         integer :: i
 
         ! Allocating the generic storage for the flow variable(s) that are
@@ -289,16 +288,13 @@ contains
 
         end if
 
-        if (particleflag) then !Lagrangian solver
-            dbdir = trim(case_dir)//'/particles_data'
+        if (bubbles_lagrange) then !Lagrangian solver
+            dbdir = trim(case_dir)//'/lag_bubbles_post_process'
             file_loc = trim(dbdir)//'/.'
-            !INQUIRE( DIRECTORY = TRIM(file_loc), & ! Intel compiler
-            !        EXIST     = dir_check       )
-            inquire (FILE=trim(file_loc), & ! NAG/PGI/GCC compiler
-                     EXIST=dir_check)
+            call my_inquire(file_loc, dir_check)
 
             if (dir_check .neqv. .true.) then
-                call SYSTEM('mkdir '//trim(dbdir))
+                call s_create_directory(trim(dbdir))
             end if
         end if
 
@@ -956,15 +952,15 @@ contains
 
     end subroutine s_write_variable_to_formatted_database_file
 
-    !>  Subroutine that writes the post processed results in the folder 'particles_data'
+    !>  Subroutine that writes the post processed results in the folder 'lag_bubbles_data'
             !!  @param t_step Current time step
-    subroutine s_write_particle_results(t_step)
+    subroutine s_write_lag_bubbles_results(t_step)
 
         integer, intent(in) :: t_step
         character(len=len_trim(case_dir) + 2*name_len) :: t_step_dir
         character(len=len_trim(case_dir) + 3*name_len) :: file_loc
         logical :: dir_check
-        integer :: id, nparticles
+        integer :: id, nlg_bubs
 
 #ifdef MFC_MPI
         real(kind(0.d0)), dimension(20) :: inputvals
@@ -973,17 +969,14 @@ contains
         integer(KIND=MPI_OFFSET_KIND) :: disp
         integer :: view
 
-        type(particledata), pointer :: particleinfo
-        type(particleListinfo), pointer :: particleListaux
-
         integer, dimension(3) :: cell
-        logical :: indomain, particle_file, particle_data, file_exist
+        logical :: indomain, lg_bub_file, lg_bub_data, file_exist
 
         integer, dimension(2) :: gsizes, lsizes, start_idx_part
         integer :: ifile, ireq, ierr, data_size, tot_data
         integer :: i
 
-        write (file_loc, '(A,I0,A)') 'particle_mpi_io', t_step, '.dat'
+        write (file_loc, '(A,I0,A)') 'lag_bubbles_mpi_io_', t_step, '.dat'
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
         inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -1012,11 +1005,11 @@ contains
                                       MPI_ORDER_FORTRAN, MPI_DOUBLE_PRECISION, view, ierr)
         call MPI_TYPE_COMMIT(view, ierr)
 
-        write (file_loc, '(A,I0,A)') 'particle', t_step, '.dat'
+        write (file_loc, '(A,I0,A)') 'lag_bubbles_', t_step, '.dat'
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
-        inquire (FILE=trim(file_loc), EXIST=particle_file)
+        inquire (FILE=trim(file_loc), EXIST=lg_bub_file)
 
-        if (particle_file) then
+        if (lg_bub_file) then
 
             call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, &
                                mpi_info_int, ifile, ierr)
@@ -1025,22 +1018,22 @@ contains
             call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, view, &
                                    'native', mpi_info_null, ierr)
 
-            allocate (MPI_IO_DATA_particle(tot_data, 1:21))
+            allocate (MPI_IO_DATA_lg_bubbles(tot_data, 1:21))
 
-            call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA_particle, 21*tot_data, &
+            call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA_lg_bubbles, 21*tot_data, &
                                    MPI_DOUBLE_PRECISION, status, ierr)
 
-            write (file_loc, '(A,I0,A)') 'particles_data_', t_step, '.dat'
-            file_loc = trim(case_dir)//'/particles_data/'//trim(file_loc)
+            write (file_loc, '(A,I0,A)') 'lag_bubbles_post_process_', t_step, '.dat'
+            file_loc = trim(case_dir)//'/lag_bubbles_post_process/'//trim(file_loc)
 
             if (proc_rank == 0) then
                 open (unit=29, file=file_loc, form='formatted', position='rewind')
-                !write(29,*) 'particleID, x, y, z, xPrev, yPrev, zPrev, xVel, yVel, ',   &
+                !write(29,*) 'lg_bubID, x, y, z, xPrev, yPrev, zPrev, xVel, yVel, ',   &
                 !            'zVel, radius, interfaceVelocity, equilibriumRadius',       &
                 !            'Rmax, Rmin, dphidt, pressure, mv, mg, betaT, betaC, time'
                 do i = 1, tot_data
-                    id = int(MPI_IO_DATA_particle(i, 1))
-                    inputvals(1:20) = MPI_IO_DATA_particle(i, 2:21)
+                    id = int(MPI_IO_DATA_lg_bubbles(i, 1))
+                    inputvals(1:20) = MPI_IO_DATA_lg_bubbles(i, 2:21)
                     if (id > 0) then
                         write (29, 6) int(id), inputvals(1), inputvals(2), &
                             inputvals(3), inputvals(4), inputvals(5), inputvals(6), inputvals(7), &
@@ -1054,7 +1047,7 @@ contains
                 close (29)
             end if
 
-            deallocate (MPI_IO_DATA_particle)
+            deallocate (MPI_IO_DATA_lg_bubbles)
 
         end if
 
@@ -1064,7 +1057,7 @@ contains
 
 #endif
 
-    end subroutine s_write_particle_results
+    end subroutine s_write_lag_bubbles_results
 
     subroutine s_close_formatted_database_file
         ! Description: The purpose of this subroutine is to close any formatted

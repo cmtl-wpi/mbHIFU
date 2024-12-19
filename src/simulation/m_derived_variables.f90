@@ -162,8 +162,8 @@ contains
             end do
 
             !call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
-            if (hifu_heateqnFlag) then
-                call s_write_probe_files(t_step, q_cons_ts(3)%vf, accel_mag)
+            if (hifu_params%heatSolver) then
+                call s_write_probe_files(t_step, q_hifu, accel_mag)
             else
                 call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
             end if

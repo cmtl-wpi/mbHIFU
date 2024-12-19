@@ -27,22 +27,13 @@ module m_mpi_proxy
 
     use m_mpi_common
 
+    use m_nvtx
+
     use ieee_arithmetic
     ! ==========================================================================
 
     implicit none
 
-#ifdef CRAY_ACC_WAR
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:), q_cons_buff_send)
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:), q_cons_buff_recv)
-    @:CRAY_DECLARE_GLOBAL(integer, dimension(:), ib_buff_send)
-    @:CRAY_DECLARE_GLOBAL(integer, dimension(:), ib_buff_recv)
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:), c_divs_buff_send)
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:), c_divs_buff_recv)
-    !$acc declare link(q_cons_buff_recv, q_cons_buff_send)
-    !$acc declare link(ib_buff_send, ib_buff_recv)
-    !$acc declare link(c_divs_buff_send, c_divs_buff_recv)
-#else
     real(kind(0d0)), private, allocatable, dimension(:), target :: q_cons_buff_send !<
     !! This variable is utilized to pack and send the buffer of the cell-average
     !! conservative variables, for a single computational domain boundary at the
@@ -76,7 +67,7 @@ module m_mpi_proxy
     !$acc declare create(q_cons_buff_send, q_cons_buff_recv)
     !$acc declare create( ib_buff_send, ib_buff_recv)
     !$acc declare create(c_divs_buff_send, c_divs_buff_recv)
-#endif
+
     !> @name Generic flags used to identify and report MPI errors
     !> @{
     integer, private :: err_code, ierr, v_size
@@ -106,71 +97,63 @@ contains
         if (qbmm .and. .not. polytropic) then
             if (n > 0) then
                 if (p > 0) then
-                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*(sys_size + 2*nb*4)* &
+                    @:ALLOCATE(q_cons_buff_send(0:-1 + buff_size*(sys_size + 2*nb*4)* &
                                              & (m + 2*buff_size + 1)* &
                                              & (n + 2*buff_size + 1)* &
                                              & (p + 2*buff_size + 1)/ &
                                              & (min(m, n, p) + 2*buff_size + 1)))
                 else
-                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*(sys_size + 2*nb*4)* &
+                    @:ALLOCATE(q_cons_buff_send(0:-1 + buff_size*(sys_size + 2*nb*4)* &
                                              & (max(m, n) + 2*buff_size + 1)))
                 end if
             else
-                @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*(sys_size + 2*nb*4)))
+                @:ALLOCATE(q_cons_buff_send(0:-1 + buff_size*(sys_size + 2*nb*4)))
             end if
 
-            @:ALLOCATE_GLOBAL(q_cons_buff_recv(0:ubound(q_cons_buff_send, 1)))
+            @:ALLOCATE(q_cons_buff_recv(0:ubound(q_cons_buff_send, 1)))
 
             v_size = sys_size + 2*nb*4
         else
 
-            if (particleflag) then
-                if ((solverapproach == 2) .and. avgdensFlag) then
-                    v_size = adv_idx%end + 2
-                else
-                    v_size = adv_idx%end + 1
-                end if
-            else
-                v_size = sys_size
-            end if
-
             if (n > 0) then
                 if (p > 0) then
-                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*v_size* &
+                    @:ALLOCATE(q_cons_buff_send(0:-1 + buff_size*sys_size* &
                                              & (m + 2*buff_size + 1)* &
                                              & (n + 2*buff_size + 1)* &
                                              & (p + 2*buff_size + 1)/ &
                                              & (min(m, n, p) + 2*buff_size + 1)))
                 else
-                    @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*v_size* &
+                    @:ALLOCATE(q_cons_buff_send(0:-1 + buff_size*sys_size* &
                                              & (max(m, n) + 2*buff_size + 1)))
                 end if
             else
-                @:ALLOCATE_GLOBAL(q_cons_buff_send(0:-1 + buff_size*v_size))
+                @:ALLOCATE(q_cons_buff_send(0:-1 + buff_size*sys_size))
             end if
 
-            @:ALLOCATE_GLOBAL(q_cons_buff_recv(0:ubound(q_cons_buff_send, 1)))
+            @:ALLOCATE(q_cons_buff_recv(0:ubound(q_cons_buff_send, 1)))
+
+            v_size = sys_size
 
         end if
 
-        if (sigma /= dflt_real) then
+        if (surface_tension) then
             nVars = num_dims + 1
             if (n > 0) then
                 if (p > 0) then
-                    @:ALLOCATE_GLOBAL(c_divs_buff_send(0:-1 + buff_size*(num_dims+1)* &
+                    @:ALLOCATE(c_divs_buff_send(0:-1 + buff_size*(num_dims+1)* &
                                              & (m + 2*buff_size + 1)* &
                                              & (n + 2*buff_size + 1)* &
                                              & (p + 2*buff_size + 1)/ &
                                              & (min(m, n, p) + 2*buff_size + 1)))
                 else
-                    @:ALLOCATE_GLOBAL(c_divs_buff_send(0:-1 + buff_size*(num_dims+1)* &
+                    @:ALLOCATE(c_divs_buff_send(0:-1 + buff_size*(num_dims+1)* &
                                              & (max(m, n) + 2*buff_size + 1)))
                 end if
             else
-                @:ALLOCATE_GLOBAL(c_divs_buff_send(0:-1 + buff_size*(num_dims+1)))
+                @:ALLOCATE(c_divs_buff_send(0:-1 + buff_size*(num_dims+1)))
             end if
 
-            @:ALLOCATE_GLOBAL(c_divs_buff_recv(0:ubound(c_divs_buff_send, 1)))
+            @:ALLOCATE(c_divs_buff_recv(0:ubound(c_divs_buff_send, 1)))
         end if
         !$acc update device(v_size, nVars)
 
@@ -192,8 +175,7 @@ contains
         call MPI_BCAST(case_dir, len(case_dir), MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
 
         #:for VAR in ['k_x', 'k_y', 'k_z', 'w_x', 'w_y', 'w_z', 'p_x', 'p_y', &
-            & 'p_z', 'g_x', 'g_y', 'g_z', 'Pamp_bc', 'freq_bc',               &
-            & 'focLength_bc', 'aperture_bc', 'Pbase_bc', 'rho_bc', 'cson_bc']
+            & 'p_z', 'g_x', 'g_y', 'g_z']
             call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
@@ -203,74 +185,96 @@ contains
             & 'wave_speeds', 'avg_state', 'precision', 'bc_x%beg', 'bc_x%end', &
             & 'bc_y%beg', 'bc_y%end', 'bc_z%beg', 'bc_z%end',  'fd_order',     &
             & 'num_probes', 'num_integrals', 'bubble_model', 'thermal',        &
-            & 'R0_type', 'num_source', 'relax_model', 'num_ibs', 'n_start',    &
-            & 'ncycles_bc', 'iwave_bc']
+            & 'R0_type', 'num_source', 'relax_model', 'num_ibs', 'n_start']
             call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
         #:for VAR in [ 'run_time_info','cyl_coord', 'mpp_lim',     &
             &  'mp_weno', 'rdma_mpi', 'weno_flat', 'riemann_flat', &
             & 'weno_Re_flux', 'alt_soundspeed', 'null_weights', 'mixture_err',   &
-            & 'parallel_io', 'hypoelasticity', 'bubbles', 'polytropic',          &
+            & 'parallel_io', 'hypoelasticity', 'bubbles_euler', 'polytropic',    &
             & 'polydisperse', 'qbmm', 'acoustic_source', 'probe_wrt', 'integral_wrt',   &
             & 'prim_vars_wrt', 'weno_avg', 'file_per_process', 'relax',          &
             & 'adv_n', 'adap_dt', 'ib', 'bodyForces', 'bf_x', 'bf_y', 'bf_z',    &
-            & 'cfl_adap_dt', 'cfl_const_dt', 'cfl_dt', 'particleflag', 'hifu']
+            & 'bc_x%grcbc_in', 'bc_x%grcbc_out', 'bc_x%grcbc_vel_out',          &
+            & 'bc_y%grcbc_in', 'bc_y%grcbc_out', 'bc_y%grcbc_vel_out',          &
+            & 'bc_z%grcbc_in', 'bc_z%grcbc_out', 'bc_z%grcbc_vel_out',          &
+            & 'cfl_adap_dt', 'cfl_const_dt', 'cfl_dt', 'surface_tension',        &
+            & 'viscous', 'shear_stress', 'bulk_stress', 'bubbles_lagrange',     &
+            & 'rkck_adap_dt', 'hifu' ]
             call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
         if (chemistry) then
-            #:for VAR in [ 'advection', 'diffusion', 'reactions' ]
+            #:for VAR in [ 'diffusion', 'reactions' ]
                 call MPI_BCAST(chem_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+
+            #:for VAR in [ 'gamma_method' ]
+                call MPI_BCAST(chem_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
         end if
 
-        if (particleflag) then
-            #:for VAR in [ 'avgdensFlag', 'particleoutFlag', 'particlestatFlag',   &
-                & 'RPflag', 'coupledflag', 'correctpresFlag' ]
-                call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        if (bubbles_lagrange) then
+            #:for VAR in [ 'heatTransfer_model', 'massTransfer_model', 'pressure_corrector', &
+                & 'write_bubbles', 'write_bubbles_stats', 'coatedBub_model']
+                call MPI_BCAST(lag_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
-            #:for VAR in [ 'clusterflag', 'heatflag', 'massflag', 'ratiodt',       &
-                & 'smoothtype', 'projectiontype', 'solverapproach', 'lipidCoatingModel']
-                call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            #:for VAR in ['solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb']
+                call MPI_BCAST(lag_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
-            #:for VAR in [ 'csonhost', 'vischost', 'Thost', 'gammagas', 'gammavapor',  &
-                & 'pvap', 'cpgas', 'cpvapor', 'kgas', 'kvapor', 'Rgas', 'Rvap',        &
-                & 'diffcoefvap', 'sigmabubble', 'RKeps', 'epsilonb', 'charwidth',      &
-                &  'valmaxvoid', 'dtmaxpart', 'sigma0_lipidCoat',                      &
-                &  'surfaceDilatVisc_lipidCoat', 'surfaceElast_lipidCoat']
-                call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            #:for VAR in [ 'c0', 'rho0', 'T0', 'x0', 'diffcoefvap', 'epsilonb','charwidth', &
+                & 'valmaxvoid', 'Thost', 'ss0_ctdBub', 'srfDilVsc_ctdBub', 'srfElast_ctdBub']
+                call MPI_BCAST(lag_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
+
         end if
 
         if (hifu) then
-            #:for VAR in [ 'hifu_intensityFlag', 'hifu_heateqnFlag',     &
-            & 'hifu_intPrms', 'hifu_streaming']
-                call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            #:for VAR in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages', &
+                & 'stg1', 'stg2', 'stg3']
+                call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
-            #:for VAR in ['hifu_t_step_stopSource']
-                call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            #:for VAR in ['t_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3', 'stepStopSource']
+                call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
-            #:for VAR in [ 'hifu_Tref', 'hifu_K', 'hifu_alpha', 'hifu_atmPres', &
-            &  'hifu_absCoef']
-                call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            #:for VAR in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 'dt_stg3', 't_stop_stg1', &
+                & 't_stop_stg2']
+                call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
+
         end if
 
+        !> Acoustic wave parameters (boundary condition)
+        #:for VAR in ['iwave', 'ncycles']
+            call MPI_BCAST(acoustic_bc_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        #:endfor
+
+        #:for VAR in [ 'Pbase', 'rho', 'cson', 'Pamp', 'freq', 'focLen', 'focCal', 'apert']
+            call MPI_BCAST(acoustic_bc_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        #:endfor
 
         #:for VAR in [ 'dt','weno_eps','teno_CT','pref','rhoref','R0ref','Web','Ca', 'sigma', &
             & 'Re_inv', 'poly_sigma', 'palpha_eps', 'ptgalpha_eps', 'pi_fac',    &
             & 'bc_x%vb1','bc_x%vb2','bc_x%vb3','bc_x%ve1','bc_x%ve2','bc_x%ve2', &
             & 'bc_y%vb1','bc_y%vb2','bc_y%vb3','bc_y%ve1','bc_y%ve2','bc_y%ve3', &
             & 'bc_z%vb1','bc_z%vb2','bc_z%vb3','bc_z%ve1','bc_z%ve2','bc_z%ve3', &
+            & 'bc_x%pres_in','bc_x%pres_out','bc_y%pres_in','bc_y%pres_out', 'bc_z%pres_in','bc_z%pres_out', &
             & 'x_domain%beg', 'x_domain%end', 'y_domain%beg', 'y_domain%end',    &
-            & 'z_domain%beg', 'z_domain%end', 't_stop',  't_save', 'cfl_target']
+            & 'z_domain%beg', 'z_domain%end', 't_stop',  't_save', 'cfl_target', 'rkck_tolerance']
             call MPI_BCAST(${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         #:endfor
+
+        do i = 1, 3
+            #:for VAR in [ 'bc_x%vel_in', 'bc_x%vel_out', 'bc_y%vel_in', 'bc_y%vel_out',  &
+                & 'bc_z%vel_in', 'bc_z%vel_out']
+                call MPI_BCAST(${VAR}$ (i), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+        end do
 
         #:if not MFC_CASE_OPTIMIZATION
             call MPI_BCAST(mapped_weno, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
@@ -279,14 +283,21 @@ contains
             call MPI_BCAST(weno_order, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(nb, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(num_fluids, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(wenoz_q, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
         #:endif
 
         do i = 1, num_fluids_max
             #:for VAR in [ 'gamma','pi_inf','mul0','ss','pv','gamma_v','M_v',  &
-                & 'mu_v','k_v','G', 'cv', 'qv', 'qvp','rho_cp', 'tdiff', 'absCoef' ]
+                & 'mu_v','k_v', 'cp_v', 'G', 'cv', 'qv', 'qvp','rho_cp', 'tdiff', 'absCoef' ]
                 call MPI_BCAST(fluid_pp(i)%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
             call MPI_BCAST(fluid_pp(i)%Re(1), 2, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+        end do
+
+        do i = 1, num_fluids_max
+            #:for VAR in ['bc_x%alpha_rho_in','bc_x%alpha_in','bc_y%alpha_rho_in','bc_y%alpha_in','bc_z%alpha_rho_in','bc_z%alpha_in']
+                call MPI_BCAST(${VAR}$ (i), 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
         end do
 
         do i = 1, num_ibs
@@ -304,14 +315,15 @@ contains
 
             call MPI_BCAST(acoustic(j)%dipole, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
-            #:for VAR in [ 'pulse', 'support', 'num_elements', 'element_on' ]
+            #:for VAR in [ 'pulse', 'support', 'num_elements', 'element_on', 'bb_num_freq' ]
                 call MPI_BCAST(acoustic(j)%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
             #:for VAR in [ 'mag', 'length', 'height', &
                 'wavelength', 'frequency', 'gauss_sigma_dist', 'gauss_sigma_time', &
                 'npulse', 'dir', 'delay', 'foc_length', 'aperture', &
-                'element_spacing_angle', 'element_polygon_ratio', 'rotate_angle' ]
+                'element_spacing_angle', 'element_polygon_ratio', 'rotate_angle', &
+                'bb_bandwidth', 'bb_lowest_freq' ]
                 call MPI_BCAST(acoustic(j)%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
@@ -916,13 +928,12 @@ contains
 
         logical :: beg_end_geq_0
 
-        integer :: pack_offsets(1:3), unpack_offsets(1:3)
         integer :: pack_offset, unpack_offset
         real(kind(0d0)), pointer :: p_send, p_recv
-        integer, pointer, dimension(:) :: p_i_send, p_i_recv
 
 #ifdef MFC_MPI
 
+        call nvtxStartRange("RHS-COMM-PACKBUF")
         !$acc update device(v_size)
 
         if (qbmm .and. .not. polytropic) then
@@ -1138,6 +1149,7 @@ contains
                 #:endif
             end if
         #:endfor
+        call nvtxEndRange ! Packbuf
 
         ! Send/Recv
         #:for rdma_mpi in [False, True]
@@ -1147,26 +1159,34 @@ contains
                 #:if rdma_mpi
                     !$acc data attach(p_send, p_recv)
                     !$acc host_data use_device(p_send, p_recv)
+                    call nvtxStartRange("RHS-COMM-SENDRECV-RDMA")
                 #:else
+                    call nvtxStartRange("RHS-COMM-DEV2HOST")
                     !$acc update host(q_cons_buff_send, ib_buff_send)
+                    call nvtxEndRange
+                    call nvtxStartRange("RHS-COMM-SENDRECV-NO-RMDA")
                 #:endif
 
                 call MPI_SENDRECV( &
                     p_send, buffer_count, MPI_DOUBLE_PRECISION, dst_proc, send_tag, &
                     p_recv, buffer_count, MPI_DOUBLE_PRECISION, src_proc, recv_tag, &
                     MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
+                call nvtxEndRange ! RHS-MPI-SENDRECV-(NO)-RDMA
 
                 #:if rdma_mpi
                     !$acc end host_data
                     !$acc end data
                     !$acc wait
                 #:else
+                    call nvtxStartRange("RHS-COMM-HOST2DEV")
                     !$acc update device(q_cons_buff_recv)
+                    call nvtxEndRange
                 #:endif
             end if
         #:endfor
 
         ! Unpack Received Buffer
+        call nvtxStartRange("RHS-COMM-UNPACKBUF")
         #:for mpi_dir in [1, 2, 3]
             if (mpi_dir == ${mpi_dir}$) then
                 #:if mpi_dir == 1
@@ -1359,6 +1379,7 @@ contains
                 #:endif
             end if
         #:endfor
+        call nvtxEndRange
 
 #endif
 
@@ -1379,19 +1400,19 @@ contains
 
         if (n > 0) then
             if (p > 0) then
-                @:ALLOCATE_GLOBAL(ib_buff_send(0:-1 + gp_layers * &
+                @:ALLOCATE(ib_buff_send(0:-1 + gp_layers * &
                                         & (m + 2*gp_layers + 1)* &
                                         & (n + 2*gp_layers + 1)* &
                                         & (p + 2*gp_layers + 1)/ &
                                         & (min(m, n, p) + 2*gp_layers + 1)))
             else
-                @:ALLOCATE_GLOBAL(ib_buff_send(0:-1 + gp_layers* &
+                @:ALLOCATE(ib_buff_send(0:-1 + gp_layers* &
                                         & (max(m, n) + 2*gp_layers + 1)))
             end if
         else
-            @:ALLOCATE_GLOBAL(ib_buff_send(0:-1 + gp_layers))
+            @:ALLOCATE(ib_buff_send(0:-1 + gp_layers))
         end if
-        @:ALLOCATE_GLOBAL(ib_buff_recv(0:ubound(ib_buff_send, 1)))
+        @:ALLOCATE(ib_buff_recv(0:ubound(ib_buff_send, 1)))
 
         !nCalls_time = nCalls_time + 1
 
@@ -2228,7 +2249,6 @@ contains
 
         logical :: beg_end_geq_0
 
-        integer :: pack_offsets(1:3), unpack_offsets(1:3)
         integer :: pack_offset, unpack_offset
         real(kind(0d0)), pointer :: p_send, p_recv
 
@@ -2425,19 +2445,27 @@ contains
 
     end subroutine s_mpi_sendrecv_capilary_variables_buffers
 
+    subroutine s_mpi_send_random_number(phi_rn, num_freq)
+        integer, intent(in) :: num_freq
+        real(kind(0d0)), intent(inout), dimension(1:num_freq) :: phi_rn
+#ifdef MFC_MPI
+        call MPI_BCAST(phi_rn, num_freq, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
+    end subroutine s_mpi_send_random_number
+
     !> Module deallocation and/or disassociation procedures
     subroutine s_finalize_mpi_proxy_module
 
 #ifdef MFC_MPI
 
         ! Deallocating q_cons_buff_send and q_cons_buff_recv
-        @:DEALLOCATE_GLOBAL(q_cons_buff_send, q_cons_buff_recv)
+        @:DEALLOCATE(q_cons_buff_send, q_cons_buff_recv)
         if (ib) then
-            @:DEALLOCATE_GLOBAL(ib_buff_send, ib_buff_recv)
+            @:DEALLOCATE(ib_buff_send, ib_buff_recv)
         end if
 
-        if (sigma /= dflt_real) then
-            @:DEALLOCATE_GLOBAL(c_divs_buff_send, c_divs_buff_recv)
+        if (surface_tension) then
+            @:DEALLOCATE(c_divs_buff_send, c_divs_buff_recv)
         end if
 
 #endif

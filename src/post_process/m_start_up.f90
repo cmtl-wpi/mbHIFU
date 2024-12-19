@@ -33,8 +33,7 @@ module m_start_up
 
     use m_checker
 
-    use m_thermochem            !< Procedures used to compute thermodynamic
-                                !! quantities
+    use m_thermochem, only: num_species, species_names
 
     use m_finite_differences
 
@@ -68,7 +67,7 @@ contains
             weno_order, bc_x, &
             bc_y, bc_z, fluid_pp, format, precision, &
             hypoelasticity, G, &
-            chem_wrt_Y, chem_wrt_T, &
+            chem_wrt_Y, chem_wrt_T, avg_state, &
             alpha_rho_wrt, rho_wrt, mom_wrt, vel_wrt, &
             E_wrt, pres_wrt, alpha_wrt, gamma_wrt, &
             heat_ratio_wrt, pi_inf_wrt, pres_inf_wrt, &
@@ -76,12 +75,13 @@ contains
             omega_wrt, qm_wrt, schlieren_wrt, schlieren_alpha, &
             fd_order, mixture_err, alt_soundspeed, &
             flux_lim, flux_wrt, cyl_coord, &
-            parallel_io, rhoref, pref, bubbles, qbmm, sigR, &
+            parallel_io, rhoref, pref, bubbles_euler, qbmm, sigR, &
             R0ref, nb, polytropic, thermal, Ca, Web, Re_inv, &
             polydisperse, poly_sigma, file_per_process, relax, &
-            relax_model, cf_wrt, sigma, adv_n, ib, &
+            relax_model, cf_wrt, sigma, adv_n, ib, num_ibs, &
             cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, &
-            cfl_target, particleflag, avgdensFlag, solverapproach, hifu
+            cfl_target, surface_tension, bubbles_lagrange, rkck_adap_dt, &
+            hifu
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -110,7 +110,7 @@ contains
 
             nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
 
-            if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
+            if (cfl_adap_dt .or. cfl_const_dt .or. rkck_adap_dt) cfl_dt = .true.
 
         else
             call s_mpi_abort('File post_process.inp is missing. Exiting ...')
@@ -186,11 +186,11 @@ contains
         ! Populating the buffer regions of the conservative variables
         if (buff_size > 0) then
             call s_populate_conservative_variables_buffer_regions()
-            if (avgdensFlag) call s_populate_conservative_variables_buffer_regions(q_particle(1))
+            if (bubbles_lagrange) call s_populate_conservative_variables_buffer_regions(q_particle(1))
         end if
 
         ! Converting the conservative variables to the primitive ones
-        call s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf)
+        call s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf, idwbuff)
 
     end subroutine s_perform_time_step
 
@@ -306,19 +306,32 @@ contains
         ! ----------------------------------------------------------------------
 
         ! Adding the species' concentrations to the formatted database file ----
-        do i = 1, num_species
-            if (chem_wrt_Y(i) .or. prim_vars_wrt) then
-                q_sf = q_prim_vf(chemxb + i - 1)%sf(-offset_x%beg:m + offset_x%end, &
-                                                    -offset_y%beg:n + offset_y%end, &
-                                                    -offset_z%beg:p + offset_z%end)
+        if (chemistry) then
+            do i = 1, num_species
+                if (chem_wrt_Y(i) .or. prim_vars_wrt) then
+                    q_sf = q_prim_vf(chemxb + i - 1)%sf(-offset_x%beg:m + offset_x%end, &
+                                                        -offset_y%beg:n + offset_y%end, &
+                                                        -offset_z%beg:p + offset_z%end)
 
-                write (varname, '(A,A)') 'Y_', trim(species_names(i))
+                    write (varname, '(A,A)') 'Y_', trim(species_names(i))
+                    call s_write_variable_to_formatted_database_file(varname, t_step)
+
+                    varname(:) = ' '
+
+                end if
+            end do
+
+            if (chem_wrt_T) then
+                q_sf = q_prim_vf(T_idx)%sf(-offset_x%beg:m + offset_x%end, &
+                                           -offset_y%beg:n + offset_y%end, &
+                                           -offset_z%beg:p + offset_z%end)
+
+                write (varname, '(A)') 'T'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
                 varname(:) = ' '
-
             end if
-        end do
+        end if
 
         ! Adding the flux limiter function to the formatted database file
         do i = 1, E_idx - mom_idx%beg
@@ -382,7 +395,7 @@ contains
         ! ----------------------------------------------------------------------
 
         ! Adding the volume fraction(s) to the formatted database file ---------
-        if (((model_eqns == 2) .and. (bubbles .neqv. .true.)) &
+        if (((model_eqns == 2) .and. (bubbles_euler .neqv. .true.)) &
             .or. (model_eqns == 3) &
             ) then
 
@@ -498,7 +511,7 @@ contains
 
                         call s_compute_speed_of_sound(pres, rho_sf(i, j, k), &
                                                       gamma_sf(i, j, k), pi_inf_sf(i, j, k), &
-                                                      H, adv, 0d0, c)
+                                                      H, adv, 0d0, 0d0, c)
 
                         q_sf(i, j, k) = c
                     end do
@@ -592,7 +605,7 @@ contains
         ! ----------------------------------------------------------------------
 
         ! Adding the volume fraction(s) to the formatted database file ---------
-        if (bubbles) then
+        if (bubbles_euler) then
             do i = adv_idx%beg, adv_idx%end
                 q_sf = q_cons_vf(i)%sf( &
                        -offset_x%beg:m + offset_x%end, &
@@ -606,7 +619,7 @@ contains
         end if
 
         ! Adding the bubble variables  to the formatted database file ---------
-        if (bubbles) then
+        if (bubbles_euler) then
             !nR
             do i = 1, nb
                 q_sf = q_cons_vf(bub_idx%rs(i))%sf( &
@@ -665,17 +678,17 @@ contains
         end if
 
         ! Adding the lagrangian subgrid variables  to the formatted database file ---------
-        if (particleflag) then
-            if (avgdensFlag) then                 !! Void fraction field
-                q_sf = 1.0d0 - q_particle(1)%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
-                write (varname, '(A)') 'voidFraction'
-                call s_write_variable_to_formatted_database_file(varname, t_step)
-                varname(:) = ' '
-            end if
-            call s_write_particle_results(t_step) !! Individual evolution
+        if (bubbles_lagrange) then
+            !! Void fraction field
+            q_sf = 1.0d0 - q_particle(1)%sf( &
+                   -offset_x%beg:m + offset_x%end, &
+                   -offset_y%beg:n + offset_y%end, &
+                   -offset_z%beg:p + offset_z%end)
+            write (varname, '(A)') 'voidFraction'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            call s_write_lag_bubbles_results(t_step) !! Individual bubble evolution
         end if
 
         ! HIFU
@@ -800,7 +813,6 @@ contains
             write (varname, '(A)') 'Pmin'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
-        
         end if
 
         ! Closing the formatted database file
@@ -811,10 +823,10 @@ contains
         ! Computation of parameters, allocation procedures, and/or any other tasks
         ! needed to properly setup the modules
         call s_initialize_global_parameters_module()
-        if (bubbles .and. nb > 1) then
+        if (bubbles_euler .and. nb > 1) then
             call s_simpson
         end if
-        if (bubbles .and. .not. polytropic) then
+        if (bubbles_euler .and. .not. polytropic) then
             call s_initialize_nonpoly()
         end if
         if (num_procs > 1) call s_initialize_mpi_proxy_module()

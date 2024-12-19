@@ -1,4 +1,4 @@
-import os, typing, shutil, time
+import os, typing, shutil, time, itertools
 from random import sample
 
 import rich, rich.table
@@ -9,7 +9,6 @@ from ..state   import ARG
 from .case     import TestCase
 from .cases    import list_cases
 from ..        import sched
-from ..run.input import MFCInputFile
 from ..common  import MFCException, does_command_exist, format_list_to_string, get_program_output
 from ..build   import build, HDF5, PRE_PROCESS, SIMULATION, POST_PROCESS
 
@@ -20,9 +19,12 @@ from ..packer import packer
 nFAIL = 0
 nPASS = 0
 nSKIP = 0
+errors = []
 
 def __filter(cases_) -> typing.List[TestCase]:
     cases = cases_[:]
+    selected_cases = []
+    skipped_cases  = []
 
     # Check "--from" and "--to" exist and are in the right order
     bFoundFrom, bFoundTo = (False, False)
@@ -49,22 +51,25 @@ def __filter(cases_) -> typing.List[TestCase]:
             if not set(ARG("only")).issubset(set(checkCase)):
                 cases.remove(case)
 
-
     for case in cases[:]:
         if case.ppn > 1 and not ARG("mpi"):
             cases.remove(case)
+            skipped_cases.append(case)
 
     if ARG("percent") == 100:
-        return cases
+        return cases, skipped_cases
 
-    return sample(cases, k=int(len(cases)*ARG("percent")/100.0))
+    selected_cases = sample(cases, k=int(len(cases)*ARG("percent")/100.0))
+    skipped_cases = [item for item in cases if item not in selected_cases]
 
+    return selected_cases, skipped_cases
 
 def test():
     # pylint: disable=global-statement, global-variable-not-assigned
     global nFAIL, nPASS, nSKIP
+    global errors
 
-    cases = [ _.to_case() for _ in list_cases() ]
+    cases = list_cases()
 
     # Delete UUIDs that are not in the list of cases from tests/
     if ARG("remove_old_tests"):
@@ -77,7 +82,8 @@ def test():
 
         return
 
-    cases = __filter(cases)
+    cases, skipped_cases = __filter(cases)
+    cases = [ _.to_case() for _ in cases ]
 
     if ARG("list"):
         table = rich.table.Table(title="MFC Test Cases", box=rich.table.box.SIMPLE)
@@ -92,13 +98,16 @@ def test():
 
         return
 
+    # Some cases require a specific build of MFC for features like Chemistry,
+    # Analytically defined patches, and --case-optimization. Here, we build all
+    # the unique versions of MFC we need to run cases.
     codes = [PRE_PROCESS, SIMULATION] + ([POST_PROCESS] if ARG('test_all') else [])
-    if not ARG("case_optimization"):
-        build(codes)
-
-    for case in cases:
-        if case.rebuild:
-            build(codes, MFCInputFile(os.path.basename(case.get_dirpath()), case.get_dirpath(), case.params))
+    unique_builds = set()
+    for case, code in itertools.product(cases, codes):
+        slug = code.get_slug(case.to_input_file())
+        if slug not in unique_builds:
+            build(code, case.to_input_file())
+            unique_builds.add(slug)
 
     cons.print()
 
@@ -124,9 +133,23 @@ def test():
         [ sched.Task(ppn=case.ppn, func=handle_case, args=[case], load=case.get_cell_count()) for case in cases ],
         ARG("jobs"), ARG("gpus"))
 
+    nSKIP = len(skipped_cases)
     cons.print()
     cons.unindent()
-    cons.print(f"\nTest Summary: [bold green]{nPASS}[/bold green] passed, [bold red]{nFAIL}[/bold red] failed, [bold yellow]{nSKIP}[/bold yellow] skipped.")
+    cons.print(f"\nTest Summary: [bold green]{nPASS}[/bold green] passed, [bold red]{nFAIL}[/bold red] failed, [bold yellow]{nSKIP}[/bold yellow] skipped.\n")
+
+    # Print a summary of all errors at the end if errors exist
+    if len(errors) != 0:
+        cons.print(f"[bold red]Failed Cases[/bold red]\n")
+        for e in errors:
+            cons.print(e)
+
+    # Print the list of skipped cases
+    if len(skipped_cases) != 0:
+        cons.print("[bold yellow]Skipped Cases[/bold yellow]\n")
+        for c in skipped_cases:
+            cons.print(f"[bold yellow]{c.trace}[/bold yellow]")
+
     exit(nFAIL)
 
 
@@ -135,12 +158,10 @@ def _handle_case(case: TestCase, devices: typing.Set[int]):
     start_time = time.time()
 
     tol = case.compute_tolerance()
-
     case.delete_output()
     case.create_directory()
 
     cmd = case.run([PRE_PROCESS, SIMULATION], gpus=devices)
-
     out_filepath = os.path.join(case.get_dirpath(), "out_pre_sim.txt")
 
     common.file_write(out_filepath, cmd.stdout)
@@ -184,10 +205,8 @@ def _handle_case(case: TestCase, devices: typing.Set[int]):
         common.file_write(out_filepath, cmd.stdout)
 
         for silo_filepath in os.listdir(os.path.join(case.get_dirpath(), 'silo_hdf5', 'p0')):
-
             silo_filepath = os.path.join(case.get_dirpath(), 'silo_hdf5', 'p0', silo_filepath)
-
-            h5dump = f"{HDF5.get_install_dirpath(MFCInputFile(os.path.basename(case.get_filepath()), case.get_dirpath(), case.get_parameters()))}/bin/h5dump"
+            h5dump        = f"{HDF5.get_install_dirpath(case.to_input_file())}/bin/h5dump"
 
             if not os.path.exists(h5dump or ""):
                 if not does_command_exist("h5dump"):
@@ -217,6 +236,7 @@ def _handle_case(case: TestCase, devices: typing.Set[int]):
 def handle_case(case: TestCase, devices: typing.Set[int]):
     # pylint: disable=global-statement, global-variable-not-assigned
     global nFAIL, nPASS, nSKIP
+    global errors
 
     nAttempts = 0
 
@@ -229,9 +249,11 @@ def handle_case(case: TestCase, devices: typing.Set[int]):
         except Exception as exc:
             if nAttempts < ARG("max_attempts"):
                 cons.print(f"[bold yellow] Attempt {nAttempts}: Failed test {case.get_uuid()}. Retrying...[/bold yellow]")
+                errors.append(f"[bold yellow] Attempt {nAttempts}: Failed test {case.get_uuid()}. Retrying...[/bold yellow]")
                 continue
             nFAIL += 1
             cons.print(f"[bold red]Failed test {case} after {nAttempts} attempt(s).[/bold red]")
-            cons.print(f"{exc}")
+            errors.append(f"[bold red]Failed test {case} after {nAttempts} attempt(s).[/bold red]")
+            errors.append(f"{exc}")
 
         return

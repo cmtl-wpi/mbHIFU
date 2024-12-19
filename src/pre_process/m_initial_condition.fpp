@@ -30,6 +30,8 @@ module m_initial_condition
 
     use m_patches
 
+    use m_compute_levelset      ! Subroutines to calculate levelsets for IBs
+
     use m_assign_variables
 
     use m_perturbation          ! Subroutines to perturb initial flow fields
@@ -57,6 +59,9 @@ module m_initial_condition
     !! immersed boundary. The default is 0, otherwise the value is assigned
     !! to the patch ID of the immersed boundary.
 
+    type(levelset_field) :: levelset
+    type(levelset_norm_field) :: levelset_norm
+
 contains
 
     !> Computation of parameters, allocation procedures, and/or
@@ -78,6 +83,9 @@ contains
         allocate (patch_id_fp(0:m, 0:n, 0:p))
 
         allocate (ib_markers%sf(0:m, 0:n, 0:p))
+
+        allocate (levelset%sf(0:m, 0:n, 0:p, 1:num_ibs))
+        allocate (levelset_norm%sf(0:m, 0:n, 0:p, 1:num_ibs, 1:3))
 
         if (qbmm .and. .not. polytropic) then
             !Allocate bubble pressure pb and vapor mass mv for non-polytropic qbmm at all quad nodes and R0 bins
@@ -124,7 +132,8 @@ contains
         ! preexisting initial condition data files were read in on start-up
         if (old_ic) then
             call s_convert_conservative_to_primitive_variables(q_cons_vf, &
-                                                               q_prim_vf)
+                                                               q_prim_vf, &
+                                                               idwbuff)
         end if
 
         !  3D Patch Geometries =============================================
@@ -140,7 +149,7 @@ contains
                 !> @{
                 ! Spherical patch
                 if (patch_icpp(i)%geometry == 8) then
-                    call s_sphere(i, patch_id_fp, q_prim_vf, .false.)
+                    call s_sphere(i, patch_id_fp, q_prim_vf)
 
                     ! Cuboidal patch
                 elseif (patch_icpp(i)%geometry == 9) then
@@ -148,7 +157,7 @@ contains
 
                     ! Cylindrical patch
                 elseif (patch_icpp(i)%geometry == 10) then
-                    call s_cylinder(i, patch_id_fp, q_prim_vf, .false.)
+                    call s_cylinder(i, patch_id_fp, q_prim_vf)
 
                     ! Swept plane patch
                 elseif (patch_icpp(i)%geometry == 11) then
@@ -188,13 +197,19 @@ contains
                 end if
 
                 if (patch_ib(i)%geometry == 8) then
-                    call s_sphere(i, ib_markers%sf, q_prim_vf, .true.)
+                    call s_sphere(i, ib_markers%sf, q_prim_vf, ib)
+                    call s_sphere_levelset(levelset, levelset_norm, i)
                     ! Cylindrical patch
                 elseif (patch_ib(i)%geometry == 10) then
-                    call s_cylinder(i, ib_markers%sf, q_prim_vf, .true.)
-
+                    call s_cylinder(i, ib_markers%sf, q_prim_vf, ib)
+                    call s_cylinder_levelset(levelset, levelset_norm, i)
                 elseif (patch_ib(i)%geometry == 11) then
-                    call s_3D_airfoil(i, ib_markers%sf, q_prim_vf, .true.)
+                    call s_3D_airfoil(i, ib_markers%sf, q_prim_vf, ib)
+                    call s_3D_airfoil_levelset(levelset, levelset_norm, i)
+
+                    ! STL+IBM patch
+                elseif (patch_ib(i)%geometry == 12) then
+                    call s_model(i, ib_markers%sf, q_prim_vf, ib, levelset, levelset_norm)
                 end if
             end do
             !> @}
@@ -215,11 +230,11 @@ contains
                 !> @{
                 ! Circular patch
                 if (patch_icpp(i)%geometry == 2) then
-                    call s_circle(i, patch_id_fp, q_prim_vf, .false.)
+                    call s_circle(i, patch_id_fp, q_prim_vf)
 
                     ! Rectangular patch
                 elseif (patch_icpp(i)%geometry == 3) then
-                    call s_rectangle(i, patch_id_fp, q_prim_vf, .false.)
+                    call s_rectangle(i, patch_id_fp, q_prim_vf)
 
                     ! Swept line patch
                 elseif (patch_icpp(i)%geometry == 4) then
@@ -265,14 +280,18 @@ contains
                     print *, 'Processing 2D ib patch ', i
                 end if
                 if (patch_ib(i)%geometry == 2) then
-                    call s_circle(i, ib_markers%sf, q_prim_vf, .true.)
-
+                    call s_circle(i, ib_markers%sf, q_prim_vf, ib)
+                    call s_circle_levelset(levelset, levelset_norm, i)
                     ! Rectangular patch
                 elseif (patch_ib(i)%geometry == 3) then
-                    call s_rectangle(i, ib_markers%sf, q_prim_vf, .true.)
-
+                    call s_rectangle(i, ib_markers%sf, q_prim_vf, ib)
+                    call s_rectangle_levelset(levelset, levelset_norm, i)
                 elseif (patch_ib(i)%geometry == 4) then
-                    call s_airfoil(i, ib_markers%sf, q_prim_vf, .true.)
+                    call s_airfoil(i, ib_markers%sf, q_prim_vf, ib)
+                    call s_airfoil_levelset(levelset, levelset_norm, i)
+                    ! STL+IBM patch
+                elseif (patch_ib(i)%geometry == 5) then
+                    call s_model(i, ib_markers%sf, q_prim_vf, ib, levelset, levelset_norm)
                 end if
             end do
             !> @}

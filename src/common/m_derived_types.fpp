@@ -9,7 +9,8 @@
 module m_derived_types
 
     use m_constants  !< Constants
-    use m_thermochem !< Thermodynamic properties
+
+    use m_thermochem, only: num_species
 
     implicit none
 
@@ -33,6 +34,16 @@ module m_derived_types
         integer, pointer, dimension(:, :, :) :: sf => null()
     end type integer_field
 
+    !> Derived type for levelset
+    type levelset_field
+        real(kind(0d0)), pointer, dimension(:, :, :, :) :: sf => null()
+    end type levelset_field
+
+    !> Derived type for levelset norm
+    type levelset_norm_field
+        real(kind(0d0)), pointer, dimension(:, :, :, :, :) :: sf => null()
+    end type levelset_norm_field
+
     type mpi_io_var
         integer, allocatable, dimension(:) :: view
         type(scalar_field), allocatable, dimension(:) :: var
@@ -42,6 +53,16 @@ module m_derived_types
         integer :: view
         type(integer_field) :: var
     end type mpi_io_ib_var
+
+    type mpi_io_levelset_var
+        integer :: view
+        type(levelset_field) :: var
+    end type mpi_io_levelset_var
+
+    type mpi_io_levelset_norm_var
+        integer :: view
+        type(levelset_norm_field) :: var
+    end type mpi_io_levelset_norm_var
 
     !> Derived type annexing a vector field (VF)
     type vector_field
@@ -58,6 +79,10 @@ module m_derived_types
         real(kind(0d0)) :: ve1
         real(kind(0d0)) :: ve2
         real(kind(0d0)) :: ve3
+        real(kind(0d0)) :: pres_in, pres_out
+        real(kind(0d0)), dimension(3) :: vel_in, vel_out
+        real(kind(0d0)), dimension(num_fluids_max) :: alpha_rho_in, alpha_in
+        logical :: grcbc_in, grcbc_out, grcbc_vel_out
     end type int_bounds_info
 
     !> Derived type adding beginning (beg) and end bounds info as attributes
@@ -79,7 +104,7 @@ module m_derived_types
     end type bub_bounds_info
 
     !> Defines parameters for a Model Patch
-    type :: ic_model_parameters
+    type ic_model_parameters
         character(LEN=pathlen_max) :: filepath !<
         !! Path the STL file relative to case_dir.
 
@@ -140,8 +165,6 @@ module m_derived_types
         !! patch geometries. It is specified through its x-, y-, and z-components
         !! respectively.
 
-        type(ic_model_parameters) :: model !< Model parameters
-
         real(kind(0d0)) :: epsilon, beta !<
         !! The spherical harmonics eccentricity parameters.
 
@@ -195,6 +218,26 @@ module m_derived_types
         real(kind(0d0)) :: cf_val !! color function value
         real(kind(0d0)) :: Y(1:num_species)
 
+        !! STL or OBJ model input parameter
+        character(LEN=pathlen_max) :: model_filepath !<
+        !! Path the STL file relative to case_dir.
+
+        t_vec3 :: model_translate !<
+        !! Translation of the STL object.
+
+        t_vec3 :: model_scale !<
+        !! Scale factor for the STL object.
+
+        t_vec3 :: model_rotate !<
+        !! Angle to rotate the STL object along each cartesian coordinate axis,
+        !! in radians.
+
+        integer :: model_spc !<
+        !! Number of samples per cell to use when discretizing the STL object.
+
+        real(kind(0d0)) :: model_threshold !<
+        !! Threshold to turn on smoothen STL patch.
+
     end type ic_patch_parameters
 
     type ib_patch_parameters
@@ -213,6 +256,25 @@ module m_derived_types
 
         logical :: slip
 
+        !! STL or OBJ model input parameter
+        character(LEN=pathlen_max) :: model_filepath !<
+        !! Path the STL file relative to case_dir.
+
+        t_vec3 :: model_translate !<
+        !! Translation of the STL object.
+
+        t_vec3 :: model_scale !<
+        !! Scale factor for the STL object.
+
+        t_vec3 :: model_rotate !<
+        !! Angle to rotate the STL object along each cartesian coordinate axis,
+        !! in radians.
+
+        integer :: model_spc !<
+        !! Number of samples per cell to use when discretizing the STL object.
+
+        real(kind(0d0)) :: model_threshold !<
+        !! Threshold to turn on smoothen STL patch.
     end type ib_patch_parameters
 
     !> Derived type annexing the physical parameters (PP) of the fluids. These
@@ -231,6 +293,7 @@ module m_derived_types
         real(kind(0d0)) :: M_v     !< Bubble constants (see Preston (2007), Ando (2010))
         real(kind(0d0)) :: mu_v    !< Bubble constants (see Preston (2007), Ando (2010))
         real(kind(0d0)) :: k_v     !< Bubble constants (see Preston (2007), Ando (2010))
+        real(kind(0d0)) :: cp_v
         real(kind(0d0)) :: G
         real(kind(0d0)) :: rho_cp  !< hifu
         real(kind(0d0)) :: tdiff   !< Thermal diffusivity, hifu
@@ -280,8 +343,11 @@ module m_derived_types
         real(kind(0d0)) :: element_spacing_angle !< Spacing between aperture elements in 2D acoustic array
         real(kind(0d0)) :: element_polygon_ratio !< Ratio of aperture element diameter to side length of polygon connecting their centers, in 3D acoustic array
         real(kind(0d0)) :: rotate_angle !< Angle of rotation of the entire circular 3D acoustic array
+        real(kind(0d0)) :: bb_bandwidth !< Bandwidth of each frequency in broadband wave
+        real(kind(0d0)) :: bb_lowest_freq !< The lower frequency bound of broadband wave
         integer :: num_elements !< Number of elements in the acoustic array
         integer :: element_on !< Element in the acoustic array to turn on
+        integer :: bb_num_freq !< Number of frequencies in the broadband wave
     end type acoustic_parameters
 
     !> Acoustic source source_spatial pre-calculated values
@@ -315,65 +381,79 @@ module m_derived_types
     type chemistry_parameters
         character(LEN=name_len) :: cantera_file !< Path to Cantera file
 
-        logical :: advection
         logical :: diffusion
         logical :: reactions
+
+        !> Method of determining gamma.
+        !> gamma_method = 1: Ref. Section 2.3.1 Formulation of doi:10.7907/ZKW8-ES97.
+        !> gamma_method = 2: c_p / c_v where c_p, c_v are specific heats.
+        integer :: gamma_method
     end type chemistry_parameters
 
-    !> Lagrangian subgrid model parameters
-    type cellwbcoord
-        integer, dimension(3) :: coord
-    end type cellwbcoord
-    type cellwb
-        type(cellwb), pointer :: next, prev
-        type(cellwbcoord), pointer :: data
-    end type cellwb
-    type dirlist
-        type(dirlist), pointer :: next
-        integer :: dir
-    end type dirlist
-    type cellListinfo
-        type(cellwb), pointer :: List
-        integer :: nb ! number of cells in the list. It is useful to construct the sublists
-    end type cellListinfo
-    type particlederivative
-        real(kind(0.d0)), dimension(3) :: dxdt, dudt, dMdt
-        real(kind(0.d0)), dimension(2) :: dydt
-        real(kind(0.d0)) :: dpbdt, dmvdt, dphidt
-    end type particlederivative
-    type particletmp                        ! if this list is modified,transfertotmp has to be also modified
-        real(kind(0.d0)), dimension(3) :: x, s, u ! x: real eoord, s: comp coord, u: vel of the particle
-        real(kind(0.d0)), dimension(2) :: y ! y(1): radius, y(2): radial velocity
-        real(kind(0.d0)) :: p, mv
-        integer :: shell ! 1 => activate Marmotant model, 0 => no shell
-    end type particletmp
-    type particledata
-        integer :: id
-        real(kind(0.d0)), dimension(3) :: x, xprev      !physical and computational position
-        real(kind(0.d0)), dimension(3) :: u             !physical particle velocity
-        real(kind(0.d0)), dimension(2) :: y             !particle variables (rb,drbdt)
-        real(kind(0.d0)) :: R0, p, mg, mv ! initial values (mg = mass of noncondensable gas, Cvap: mass vapor fraction)
-        integer :: shell ! 1 => activate Marmotant model, 0 => no shell
-        real(kind(0.d0)) :: Rbuck, Rrupt
-        real(kind(0.d0)) :: betaC, betaT, dphidt
-        real(kind(0.d0)) :: Rmax, Rmin !statistical data
-        real(kind(0.d0)) :: qvis, qth  !HIFU time averages heat sources
-        logical :: equilibrium
-        type(particletmp) :: tmp        !temporal variable for intermediate steps
-        type(particlederivative) :: dbdt(6)    !derivatives. It could be an allocable pointer
-    end type particledata
-    type particlenode   ! This structure is just required if we want to create different lists to the same elements
-        type(particlenode), pointer :: next, prev !pointer to the next element
-        type(particledata), pointer :: data
-    end type particlenode
-    type particleListinfo
-        type(particlenode), pointer :: List
-        integer :: nb    !number of particles in the list. It is useful to construct the cell list
-        type(cellwb), pointer :: cellpointer !pointer to the list of the cells (to speed up the process of updating)
-        type(particleListinfo), pointer :: next, prev
-    end type particleListinfo
-    type :: list3D
-        type(particleListinfo), allocatable :: fp(:, :, :)
-    end type list3D
+    !> Lagrangian bubble parameters
+    type bubbles_lagrange_parameters
+
+        integer :: solver_approach          !< 1: One-way coupling, 2: two-way coupling
+        integer :: cluster_type             !< Cluster model to find p_inf
+        logical :: pressure_corrector       !< Cell pressure correction term
+        integer :: smooth_type              !< Smoothing function. 1: Gaussian, 2:Delta 3x3
+        logical :: heatTransfer_model       !< Activate HEAT transfer model at the bubble-liquid interface
+        logical :: massTransfer_model       !< Activate MASS transfer model at the bubble-liquid interface
+        logical :: coatedBub_model          !< Activates the Marmottant model for lipid shelled bubbles.
+        logical :: write_bubbles            !< Write files to track the bubble evolution each time step
+        logical :: write_bubbles_stats      !< Write the maximum and minimum radius of each bubble
+        integer :: nBubs_glb                !< Global number of bubbles
+        real(kind(0d0)) :: epsilonb         !< Standard deviation scaling for the gaussian function (default: 1.0d0)
+        real(kind(0d0)) :: charwidth        !< Domain virtual depth (z direction, for 2D simulations)
+        real(kind(0d0)) :: valmaxvoid       !< Maximum void fraction permitted
+        real(kind(0d0)) :: c0               !< Reference speed
+        real(kind(0d0)) :: rho0             !< Reference density
+        real(kind(0d0)) :: T0, Thost        !< Reference temperature and host temperature
+        real(kind(0d0)) :: x0               !< Reference length
+        real(kind(0d0)) :: diffcoefvap      !< Vapor diffusivity in the gas
+        real(kind(0d0)) :: ss0_ctdBub       !< Surface tension of the lipid-coated bubble when R=R0
+        real(kind(0d0)) :: srfDilVsc_ctdBub !< Surface dilatation viscosity of the lipid monolayer
+        real(kind(0d0)) :: srfElast_ctdBub  !< Surface elasticity of the lipid monolayer
+
+    end type bubbles_lagrange_parameters
+
+    !> HIFU parameters
+    type hifu_parameters
+
+        logical :: sampling
+        logical :: heatSolver
+        logical :: intPrms
+        logical :: streaming
+        real(kind(0d0)) :: Tref         !< Initial temperature in the domain to start heat eqn
+        real(kind(0d0)) :: K            !< Dimensionless thermal conductivity (refer to notes)
+        real(kind(0d0)) :: alpha        !< Dimensionless thermal diffusivity (refer to notes)
+        integer :: stepStopSource       !< Time step to stop the source heat
+        real(kind(0d0)) :: atmPres
+        real(kind(0d0)) :: absCoef      !< needed to find q_us from Prms (probably no needed)
+
+        logical :: automatic_stages     !< Automatic changes from stg1 -> stg2 -> stg3. 
+                                        !                           Need to start from fresh always (*) 
+        logical :: stg1, stg2, stg3     !< Activate different stages  (*)
+        integer :: t_step_stop_stg1, t_step_stop_stg2, t_step_stop_stg3 !> Time step to stop stages  (*)
+        real(kind(0d0)) :: t_stop_stg1, t_stop_stg2                     !> Stop time at diff stages (adapt dt)  (*)
+        real(kind(0d0)) :: dt_stg3      !< dt in stage 3 (heat solver)  (*)
+
+    end type hifu_parameters
+
+    !> Acoustic wave parameters (boundary condition)
+    type acoustic_bc_parameters
+
+        integer :: iwave            !< Wave type (1: planar, 2: transducer)
+        real(kind(0d0)) :: Pbase    !< Base pressure (atmospheric pressure)
+        real(kind(0d0)) :: rho      !< Density
+        real(kind(0d0)) :: cson     !< Speed of sound
+        real(kind(0d0)) :: Pamp     !< Pressure amplitude
+        real(kind(0d0)) :: freq     !< Frequency
+        real(kind(0d0)) :: focLen   !< Focal lenght
+        real(kind(0d0)) :: focCal   !< Focus calibration
+        real(kind(0d0)) :: apert    !< Aperture
+        integer :: ncycles          !<  Number of cycles, 
+
+    end type acoustic_bc_parameters
 
 end module m_derived_types

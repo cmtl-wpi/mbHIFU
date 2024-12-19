@@ -18,7 +18,7 @@ module m_global_parameters
 
     use m_helper_basic          ! Functions to compare floating point numbers
 
-    use m_thermochem            ! Thermodynamic and chemical properties
+    use m_thermochem, only: num_species
 
     ! ==========================================================================
 
@@ -106,7 +106,16 @@ module m_global_parameters
     type(int_bounds_info) :: stress_idx            !< Indexes of elastic shear stress eqns.
     integer :: c_idx                               !< Index of the color function
     type(int_bounds_info) :: species_idx           !< Indexes of first & last concentration eqns.
-    type(int_bounds_info) :: temperature_idx       !< Indexes of first & last temperature eqns.
+    integer :: T_idx                               !< Index of temperature eqn.
+
+    ! Cell Indices for the (local) interior points (O-m, O-n, 0-p).
+    ! Stands for "InDices With BUFFer".
+    type(int_bounds_info) :: idwint(1:3)
+
+    ! Cell Indices for the entire (local) domain. In simulation and post_process,
+    ! this includes the buffer region. idwbuff and idwint are the same otherwise.
+    ! Stands for "InDices With BUFFer".
+    type(int_bounds_info) :: idwbuff(1:3)
 
     type(int_bounds_info) :: bc_x, bc_y, bc_z !<
     !! Boundary conditions in the x-, y- and z-coordinate directions
@@ -141,6 +150,8 @@ module m_global_parameters
     type(mpi_io_var), public :: MPI_IO_DATA
     type(mpi_io_ib_var), public :: MPI_IO_IB_DATA
     type(mpi_io_airfoil_ib_var), public :: MPI_IO_airfoil_IB_DATA
+    type(mpi_io_levelset_var), public :: MPI_IO_levelset_DATA
+    type(mpi_io_levelset_norm_var), public :: MPI_IO_levelsetnorm_DATA
     type(mpi_io_var), public :: MPI_IO_HIFU_DATA
 
     character(LEN=name_len) :: mpiiofs
@@ -178,7 +189,7 @@ module m_global_parameters
     real(kind(0d0)) :: R0ref
     real(kind(0d0)) :: Ca, Web, Re_inv
     real(kind(0d0)), dimension(:), allocatable :: weight, R0, V0
-    logical :: bubbles
+    logical :: bubbles_euler
     logical :: qbmm      !< Quadrature moment method
     integer :: nmom  !< Number of carried moments
     real(kind(0d0)) :: sigR, sigV, rhoRV !< standard deviations in R/V
@@ -220,6 +231,7 @@ module m_global_parameters
     !> @name Surface Tension Modeling
     !> @{
     real(kind(0d0)) :: sigma
+    logical :: surface_tension
     !> @}
 
     !> @name Index variables used for m_variables_conversion
@@ -231,7 +243,10 @@ module m_global_parameters
     integer :: bubxb, bubxe
     integer :: strxb, strxe
     integer :: chemxb, chemxe
-    integer :: tempxb, tempxe
+    !> @}
+
+    !> @ lagrangian solver parameters
+    logical :: rkck_adap_dt
     !> @}
 
     integer, allocatable, dimension(:, :, :) :: logic_grid
@@ -334,11 +349,11 @@ contains
 
         do i = 1, num_patches_max
             patch_icpp(i)%geometry = dflt_int
-            patch_icpp(i)%model%scale(:) = 1d0
-            patch_icpp(i)%model%translate(:) = 0d0
-            patch_icpp(i)%model%filepath(:) = ' '
-            patch_icpp(i)%model%spc = 10
-            patch_icpp(i)%model%threshold = 0.9d0
+            patch_icpp(i)%model_scale(:) = 1d0
+            patch_icpp(i)%model_translate(:) = 0d0
+            patch_icpp(i)%model_filepath(:) = dflt_char
+            patch_icpp(i)%model_spc = num_ray
+            patch_icpp(i)%model_threshold = ray_tracing_threshold
             patch_icpp(i)%x_centroid = dflt_real
             patch_icpp(i)%y_centroid = dflt_real
             patch_icpp(i)%z_centroid = dflt_real
@@ -385,7 +400,7 @@ contains
         pref = dflt_real
 
         ! Bubble modeling
-        bubbles = .false.
+        bubbles_euler = .false.
         polytropic = .true.
         polydisperse = .false.
 
@@ -397,6 +412,7 @@ contains
         Re_inv = dflt_real
         Web = dflt_real
         poly_sigma = dflt_real
+        surface_tension = .false.
 
         adv_n = .false.
 
@@ -438,6 +454,14 @@ contains
             patch_ib(i)%m = dflt_real
             patch_ib(i)%p = dflt_real
             patch_ib(i)%slip = .false.
+
+            ! Proper default values for translating STL models
+            patch_ib(i)%model_scale(:) = 1d0
+            patch_ib(i)%model_translate(:) = 0d0
+            patch_ib(i)%model_rotate(:) = 0d0
+            patch_ib(i)%model_filepath(:) = dflt_char
+            patch_ib(i)%model_spc = num_ray
+            patch_ib(i)%model_threshold = ray_tracing_threshold
         end do
 
         ! Fluids physical parameters
@@ -457,8 +481,8 @@ contains
             fluid_pp(i)%G = 0d0
         end do
 
-        !Lagrangian solver
-        solverapproach = 2
+        ! Lagrangian solver
+        rkck_adap_dt = .false.
 
     end subroutine s_assign_default_values_to_user_inputs
 
@@ -510,13 +534,13 @@ contains
 
             sys_size = adv_idx%end
 
-            if (bubbles) then
+            if (bubbles_euler) then
                 alf_idx = adv_idx%end
             else
                 alf_idx = 1
             end if
 
-            if (bubbles) then
+            if (bubbles_euler) then
                 bub_idx%beg = sys_size + 1
                 if (qbmm) then
                     if (nnode == 4) then
@@ -615,7 +639,7 @@ contains
                 sys_size = stress_idx%end
             end if
 
-            if (sigma /= dflt_real) then
+            if (surface_tension) then
                 c_idx = sys_size + 1
                 sys_size = c_idx
             end if
@@ -639,14 +663,14 @@ contains
             internalEnergies_idx%end = adv_idx%end + num_fluids
             sys_size = internalEnergies_idx%end
 
-            if (sigma /= dflt_real) then
+            if (surface_tension) then
                 c_idx = sys_size + 1
                 sys_size = c_idx
             end if
 
             !========================
         else if (model_eqns == 4) then
-            ! 4 equation model with subgrid bubbles
+            ! 4 equation model with subgrid bubbles_euler
             cont_idx%beg = 1 ! one continuity equation
             cont_idx%end = 1 ! num_fluids
             mom_idx%beg = cont_idx%end + 1 ! one momentum equation in each direction
@@ -657,7 +681,7 @@ contains
             alf_idx = adv_idx%end
             sys_size = alf_idx !adv_idx%end
 
-            if (bubbles) then
+            if (bubbles_euler) then
                 bub_idx%beg = sys_size + 1
                 bub_idx%end = sys_size + 2*nb
                 if (.not. polytropic) then
@@ -708,9 +732,8 @@ contains
             species_idx%end = sys_size + num_species
             sys_size = species_idx%end
 
-            temperature_idx%beg = sys_size + 1
-            temperature_idx%end = sys_size + 1
-            sys_size = temperature_idx%end
+            T_idx = sys_size + 1
+            sys_size = T_idx
         end if
 
         momxb = mom_idx%beg
@@ -727,9 +750,13 @@ contains
         intxe = internalEnergies_idx%end
         chemxb = species_idx%beg
         chemxe = species_idx%end
-        tempxb = temperature_idx%beg
-        tempxe = temperature_idx%end
 
+        ! Configuring Coordinate Direction Indexes =========================
+        idwint(1)%beg = 0; idwint(2)%beg = 0; idwint(3)%beg = 0
+        idwint(1)%end = m; idwint(2)%end = n; idwint(3)%end = p
+
+        ! There is no buffer region in pre_process.
+        idwbuff(1) = idwint(1); idwbuff(2) = idwint(2); idwbuff(3) = idwint(3)
         ! ==================================================================
 
 #ifdef MFC_MPI
@@ -753,8 +780,11 @@ contains
             end do
         end if
 
-        if (ib) allocate (MPI_IO_IB_DATA%var%sf(0:m, 0:n, 0:p))
-
+        if (ib) then
+            allocate (MPI_IO_IB_DATA%var%sf(0:m, 0:n, 0:p))
+            allocate (MPI_IO_levelset_DATA%var%sf(0:m, 0:n, 0:p, 1:num_ibs))
+            allocate (MPI_IO_levelsetnorm_DATA%var%sf(0:m, 0:n, 0:p, 1:num_ibs, 1:3))
+        end if
 #endif
 
         ! Allocating grid variables for the x-direction

@@ -21,7 +21,9 @@ module m_time_steppers
 
     use m_data_output          !< Run-time info & solution data output procedures
 
-    use m_bubbles              !< Bubble dynamics routines
+    use m_bubbles_EE           !< Ensemble-averaged bubble dynamics routines
+
+    use m_bubbles_EL           !< Lagrange bubble dynamics routines
 
     use m_ibm
 
@@ -37,13 +39,9 @@ module m_time_steppers
 
     use m_nvtx
 
-    use m_thermochem
+    use m_thermochem, only: num_species
 
     use m_body_forces
-
-    use m_particles             !< Lagrangian solver
-
-    use m_kernel_functions
 
     use m_hifu                 !< HIFU
 
@@ -51,30 +49,6 @@ module m_time_steppers
 
     implicit none
 
-#ifdef CRAY_ACC_WAR
-    @:CRAY_DECLARE_GLOBAL(type(vector_field), dimension(:), q_cons_ts)
-    !! Cell-average conservative variables at each time-stage (TS)
-
-    @:CRAY_DECLARE_GLOBAL(type(scalar_field), dimension(:), q_prim_vf)
-    !! Cell-average primitive variables at the current time-stage
-
-    @:CRAY_DECLARE_GLOBAL(type(scalar_field), dimension(:), rhs_vf)
-    !! Cell-average RHS variables at the current time-stage
-
-    @:CRAY_DECLARE_GLOBAL(type(vector_field), dimension(:), q_prim_ts)
-    !! Cell-average primitive variables at consecutive TIMESTEPS
-
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:, :, :, :, :), rhs_pb)
-
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:, :, :, :, :), rhs_mv)
-
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension( :, :, :), max_dt)
-
-    integer, private :: num_ts !<
-    !! Number of time stages in the time-stepping scheme
-
-    !$acc declare link(q_cons_ts,q_prim_vf,rhs_vf,q_prim_ts, rhs_mv, rhs_pb, max_dt)
-#else
     type(vector_field), allocatable, dimension(:) :: q_cons_ts !<
     !! Cell-average conservative variables at each time-stage (TS)
 
@@ -83,6 +57,10 @@ module m_time_steppers
 
     type(scalar_field), allocatable, dimension(:) :: rhs_vf !<
     !! Cell-average RHS variables at the current time-stage
+
+    type(vector_field), allocatable, dimension(:) :: rhs_ts_rkck
+    !! Cell-average RHS variables at each time-stage (TS)
+    !! Adaptive 4th/5th order Runge—Kutta–Cash–Karp (RKCK) time stepper
 
     type(vector_field), allocatable, dimension(:) :: q_prim_ts !<
     !! Cell-average primitive variables at consecutive TIMESTEPS
@@ -93,14 +71,10 @@ module m_time_steppers
 
     real(kind(0d0)), allocatable, dimension(:, :, :) :: max_dt
 
-    integer, private :: num_ts, num_ts_hifu !<
+    integer, private :: num_ts !<
     !! Number of time stages in the time-stepping scheme
 
-    !$acc declare create(q_cons_ts,q_prim_vf,rhs_vf,q_prim_ts, rhs_mv, rhs_pb, max_dt)
-#endif
-
-    type(vector_field), allocatable, dimension(:) :: rhs_vp_adapt
-    !! Adaptive 4th and 5th order Runge-Kutta-Cash-Karp time stepper
+    !$acc declare create(q_cons_ts,q_prim_vf,rhs_vf,rhs_ts_rkck,q_prim_ts, rhs_mv, rhs_pb, max_dt)
 
 contains
 
@@ -109,13 +83,12 @@ contains
         !!      other procedures that are necessary to setup the module.
     subroutine s_initialize_time_steppers_module
 
-        type(int_bounds_info) :: ix_t, iy_t, iz_t !<
-            !! Indical bounds in the x-, y- and z-directions
-
         integer :: i, j !< Generic loop iterators
 
         ! Setting number of time-stages for selected time-stepping scheme
-        if (coupledflag) then !Euler-Lagrangian solver
+        if (time_stepper == 1) then
+            num_ts = 1
+        elseif (any(time_stepper == (/2, 3, 4/))) then
             num_ts = 2
         else
             if (time_stepper == 1) then
@@ -125,26 +98,8 @@ contains
             end if
         end if
 
-        if (hifu_intensityFlag .or. hifu_heateqnFlag) num_ts_hifu = 3
-
-        ! Setting the indical bounds in the x-, y- and z-directions
-        ix_t%beg = -buff_size; ix_t%end = m + buff_size
-
-        if (n > 0) then
-            iy_t%beg = -buff_size; iy_t%end = n + buff_size
-
-            if (p > 0) then
-                iz_t%beg = -buff_size; iz_t%end = p + buff_size
-            else
-                iz_t%beg = 0; iz_t%end = 0
-            end if
-        else
-            iy_t%beg = 0; iy_t%end = 0
-            iz_t%beg = 0; iz_t%end = 0
-        end if
-
         ! Allocating the cell-average conservative variables
-        @:ALLOCATE_GLOBAL(q_cons_ts(1:max(num_ts,num_ts_hifu)))
+        @:ALLOCATE(q_cons_ts(1:num_ts))
 
         do i = 1, num_ts
             @:ALLOCATE(q_cons_ts(i)%vf(1:sys_size))
@@ -152,28 +107,16 @@ contains
 
         do i = 1, num_ts
             do j = 1, sys_size
-                @:ALLOCATE(q_cons_ts(i)%vf(j)%sf(ix_t%beg:ix_t%end, &
-                    iy_t%beg:iy_t%end, &
-                    iz_t%beg:iz_t%end))
+                @:ALLOCATE(q_cons_ts(i)%vf(j)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                    idwbuff(2)%beg:idwbuff(2)%end, &
+                    idwbuff(3)%beg:idwbuff(3)%end))
             end do
             @:ACC_SETUP_VFs(q_cons_ts(i))
-        end do
-
-        if (hifu_intensityFlag .or. hifu_heateqnFlag) then
-            @:ALLOCATE(q_cons_ts(num_ts_hifu)%vf(1:max(sys_size,sys_size_hifu)))
-            do j = 1, max(sys_size,sys_size_hifu)
-                @:ALLOCATE(q_cons_ts(num_ts_hifu)%vf(j)%sf(ix_t%beg:ix_t%end, &
-                    iy_t%beg:iy_t%end, &
-                    iz_t%beg:iz_t%end))
-            end do
-        end if
-        do i=1, num_ts_hifu
-           if (proc_rank==0) print*,'DiegoV: q',i, 'size: ', size(q_cons_ts(i)%vf), sys_size
-        end do        
+        end do      
 
         ! Allocating the cell-average primitive ts variables
         if (probe_wrt) then
-            @:ALLOCATE_GLOBAL(q_prim_ts(0:3))
+            @:ALLOCATE(q_prim_ts(0:3))
 
             do i = 0, 3
                 @:ALLOCATE(q_prim_ts(i)%vf(1:sys_size))
@@ -181,9 +124,9 @@ contains
 
             do i = 0, 3
                 do j = 1, sys_size
-                    @:ALLOCATE(q_prim_ts(i)%vf(j)%sf(ix_t%beg:ix_t%end, &
-                        iy_t%beg:iy_t%end, &
-                        iz_t%beg:iz_t%end))
+                    @:ALLOCATE(q_prim_ts(i)%vf(j)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                        idwbuff(2)%beg:idwbuff(2)%end, &
+                        idwbuff(3)%beg:idwbuff(3)%end))
                 end do
             end do
 
@@ -193,26 +136,26 @@ contains
         end if
 
         ! Allocating the cell-average primitive variables
-        @:ALLOCATE_GLOBAL(q_prim_vf(1:sys_size))
+        @:ALLOCATE(q_prim_vf(1:sys_size))
 
         do i = 1, adv_idx%end
-            @:ALLOCATE(q_prim_vf(i)%sf(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end))
+            @:ALLOCATE(q_prim_vf(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end))
             @:ACC_SETUP_SFs(q_prim_vf(i))
         end do
 
-        if (bubbles) then
+        if (bubbles_euler) then
             do i = bub_idx%beg, bub_idx%end
-                @:ALLOCATE(q_prim_vf(i)%sf(ix_t%beg:ix_t%end, &
-                    iy_t%beg:iy_t%end, &
-                    iz_t%beg:iz_t%end))
+                @:ALLOCATE(q_prim_vf(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                    idwbuff(2)%beg:idwbuff(2)%end, &
+                    idwbuff(3)%beg:idwbuff(3)%end))
                 @:ACC_SETUP_SFs(q_prim_vf(i))
             end do
             if (adv_n) then
-                @:ALLOCATE(q_prim_vf(n_idx)%sf(ix_t%beg:ix_t%end, &
-                    iy_t%beg:iy_t%end, &
-                    iz_t%beg:iz_t%end))
+                @:ALLOCATE(q_prim_vf(n_idx)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                    idwbuff(2)%beg:idwbuff(2)%end, &
+                    idwbuff(3)%beg:idwbuff(3)%end))
                 @:ACC_SETUP_SFs(q_prim_vf(n_idx))
             end if
         end if
@@ -220,127 +163,127 @@ contains
         if (hypoelasticity) then
 
             do i = stress_idx%beg, stress_idx%end
-                @:ALLOCATE(q_prim_vf(i)%sf(ix_t%beg:ix_t%end, &
-                    iy_t%beg:iy_t%end, &
-                    iz_t%beg:iz_t%end))
+                @:ALLOCATE(q_prim_vf(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                    idwbuff(2)%beg:idwbuff(2)%end, &
+                    idwbuff(3)%beg:idwbuff(3)%end))
                 @:ACC_SETUP_SFs(q_prim_vf(i))
             end do
         end if
 
         if (model_eqns == 3) then
             do i = internalEnergies_idx%beg, internalEnergies_idx%end
-                @:ALLOCATE(q_prim_vf(i)%sf(ix_t%beg:ix_t%end, &
-                    iy_t%beg:iy_t%end, &
-                    iz_t%beg:iz_t%end))
+                @:ALLOCATE(q_prim_vf(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                    idwbuff(2)%beg:idwbuff(2)%end, &
+                    idwbuff(3)%beg:idwbuff(3)%end))
                 @:ACC_SETUP_SFs(q_prim_vf(i))
             end do
         end if
 
-        if (sigma /= dflt_real) then
-            @:ALLOCATE(q_prim_vf(c_idx)%sf(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end))
+        if (surface_tension) then
+            @:ALLOCATE(q_prim_vf(c_idx)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end))
             @:ACC_SETUP_SFs(q_prim_vf(c_idx))
         end if
 
         if (chemistry) then
             do i = chemxb, chemxe
-                @:ALLOCATE(q_prim_vf(i)%sf(ix_t%beg:ix_t%end, &
-                    iy_t%beg:iy_t%end, &
-                    iz_t%beg:iz_t%end))
+                @:ALLOCATE(q_prim_vf(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                    idwbuff(2)%beg:idwbuff(2)%end, &
+                    idwbuff(3)%beg:idwbuff(3)%end))
                 @:ACC_SETUP_SFs(q_prim_vf(i))
             end do
 
-            @:ALLOCATE(q_prim_vf(tempxb)%sf(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end))
-            @:ACC_SETUP_SFs(q_prim_vf(tempxb))
+            @:ALLOCATE(q_prim_vf(T_idx)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end))
+            @:ACC_SETUP_SFs(q_prim_vf(T_idx))
         end if
 
-        @:ALLOCATE_GLOBAL(pb_ts(1:2))
+        @:ALLOCATE(pb_ts(1:2))
         !Initialize bubble variables pb and mv at all quadrature nodes for all R0 bins
         if (qbmm .and. (.not. polytropic)) then
-            @:ALLOCATE(pb_ts(1)%sf(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end, 1:nnode, 1:nb))
+            @:ALLOCATE(pb_ts(1)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(pb_ts(1))
 
-            @:ALLOCATE(pb_ts(2)%sf(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end, 1:nnode, 1:nb))
+            @:ALLOCATE(pb_ts(2)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(pb_ts(2))
 
-            @:ALLOCATE_GLOBAL(rhs_pb(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end, 1:nnode, 1:nb))
+            @:ALLOCATE(rhs_pb(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end, 1:nnode, 1:nb))
         else if (qbmm .and. polytropic) then
-            @:ALLOCATE(pb_ts(1)%sf(ix_t%beg:ix_t%beg + 1, &
-                iy_t%beg:iy_t%beg + 1, &
-                iz_t%beg:iz_t%beg + 1, 1:nnode, 1:nb))
+            @:ALLOCATE(pb_ts(1)%sf(idwbuff(1)%beg:idwbuff(1)%beg + 1, &
+                idwbuff(2)%beg:idwbuff(2)%beg + 1, &
+                idwbuff(3)%beg:idwbuff(3)%beg + 1, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(pb_ts(1))
 
-            @:ALLOCATE(pb_ts(2)%sf(ix_t%beg:ix_t%beg + 1, &
-                iy_t%beg:iy_t%beg + 1, &
-                iz_t%beg:iz_t%beg + 1, 1:nnode, 1:nb))
+            @:ALLOCATE(pb_ts(2)%sf(idwbuff(1)%beg:idwbuff(1)%beg + 1, &
+                idwbuff(2)%beg:idwbuff(2)%beg + 1, &
+                idwbuff(3)%beg:idwbuff(3)%beg + 1, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(pb_ts(2))
 
-            @:ALLOCATE_GLOBAL(rhs_pb(ix_t%beg:ix_t%beg + 1, &
-                iy_t%beg:iy_t%beg + 1, &
-                iz_t%beg:iz_t%beg + 1, 1:nnode, 1:nb))
+            @:ALLOCATE(rhs_pb(idwbuff(1)%beg:idwbuff(1)%beg + 1, &
+                idwbuff(2)%beg:idwbuff(2)%beg + 1, &
+                idwbuff(3)%beg:idwbuff(3)%beg + 1, 1:nnode, 1:nb))
         end if
 
-        @:ALLOCATE_GLOBAL(mv_ts(1:2))
+        @:ALLOCATE(mv_ts(1:2))
 
         if (qbmm .and. (.not. polytropic)) then
-            @:ALLOCATE(mv_ts(1)%sf(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end, 1:nnode, 1:nb))
+            @:ALLOCATE(mv_ts(1)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(mv_ts(1))
 
-            @:ALLOCATE(mv_ts(2)%sf(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end, 1:nnode, 1:nb))
+            @:ALLOCATE(mv_ts(2)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(mv_ts(2))
 
-            @:ALLOCATE_GLOBAL(rhs_mv(ix_t%beg:ix_t%end, &
-                iy_t%beg:iy_t%end, &
-                iz_t%beg:iz_t%end, 1:nnode, 1:nb))
+            @:ALLOCATE(rhs_mv(idwbuff(1)%beg:idwbuff(1)%end, &
+                idwbuff(2)%beg:idwbuff(2)%end, &
+                idwbuff(3)%beg:idwbuff(3)%end, 1:nnode, 1:nb))
 
         else if (qbmm .and. polytropic) then
-            @:ALLOCATE(mv_ts(1)%sf(ix_t%beg:ix_t%beg + 1, &
-                iy_t%beg:iy_t%beg + 1, &
-                iz_t%beg:iz_t%beg + 1, 1:nnode, 1:nb))
+            @:ALLOCATE(mv_ts(1)%sf(idwbuff(1)%beg:idwbuff(1)%beg + 1, &
+                idwbuff(2)%beg:idwbuff(2)%beg + 1, &
+                idwbuff(3)%beg:idwbuff(3)%beg + 1, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(mv_ts(1))
 
-            @:ALLOCATE(mv_ts(2)%sf(ix_t%beg:ix_t%beg + 1, &
-                iy_t%beg:iy_t%beg + 1, &
-                iz_t%beg:iz_t%beg + 1, 1:nnode, 1:nb))
+            @:ALLOCATE(mv_ts(2)%sf(idwbuff(1)%beg:idwbuff(1)%beg + 1, &
+                idwbuff(2)%beg:idwbuff(2)%beg + 1, &
+                idwbuff(3)%beg:idwbuff(3)%beg + 1, 1:nnode, 1:nb))
             @:ACC_SETUP_SFs(mv_ts(2))
 
-            @:ALLOCATE_GLOBAL(rhs_mv(ix_t%beg:ix_t%beg + 1, &
-                iy_t%beg:iy_t%beg + 1, &
-                iz_t%beg:iz_t%beg + 1, 1:nnode, 1:nb))
+            @:ALLOCATE(rhs_mv(idwbuff(1)%beg:idwbuff(1)%beg + 1, &
+                idwbuff(2)%beg:idwbuff(2)%beg + 1, &
+                idwbuff(3)%beg:idwbuff(3)%beg + 1, 1:nnode, 1:nb))
         end if
 
-        ! Allocating the cell-average RHS variables
-        @:ALLOCATE_GLOBAL(rhs_vf(1:sys_size))
-
-        do i = 1, sys_size
-            @:ALLOCATE(rhs_vf(i)%sf(0:m, 0:n, 0:p))
-            @:ACC_SETUP_SFs(rhs_vf(i))
-        end do
-
-        ! Allocating the cell-average RHS variable for adaptive method, Lagrangian solver
-        if (coupledflag .or. (solverapproach == 2)) then
-            @:ALLOCATE_GLOBAL(rhs_vp_adapt(1:6))
-            do i = 1, 6
-                @:ALLOCATE(rhs_vp_adapt(i)%vf(1:sys_size))
+        ! Allocating the cell-average RHS time-stages for adaptive RKCK stepper
+        if (bubbles_lagrange .and. time_stepper == 4) then
+            @:ALLOCATE(rhs_ts_rkck(1:num_ts_rkck))
+            do i = 1, num_ts_rkck
+                @:ALLOCATE(rhs_ts_rkck(i)%vf(1:sys_size))
             end do
-            do i = 1, 6
+            do i = 1, num_ts_rkck
                 do j = 1, sys_size
-                    @:ALLOCATE(rhs_vp_adapt(i)%vf(j)%sf(0:m,0:n,0:p))
+                    @:ALLOCATE(rhs_ts_rkck(i)%vf(j)%sf(0:m, 0:n, 0:p))
                 end do
-                @:ACC_SETUP_SFs(rhs_vp_adapt(i))
+                @:ACC_SETUP_VFs(rhs_ts_rkck(i))
+            end do
+        else
+            ! Allocating the cell-average RHS variables
+            @:ALLOCATE(rhs_vf(1:sys_size))
+
+            do i = 1, sys_size
+                @:ALLOCATE(rhs_vf(i)%sf(0:m, 0:n, 0:p))
+                @:ACC_SETUP_SFs(rhs_vf(i))
             end do
         end if
 
@@ -350,7 +293,7 @@ contains
         end if
 
         if (cfl_dt) then
-            @:ALLOCATE_GLOBAL(max_dt(0:m, 0:n, 0:p))
+            @:ALLOCATE(max_dt(0:m, 0:n, 0:p))
         end if
 
     end subroutine s_initialize_time_steppers_module
@@ -375,7 +318,7 @@ contains
 
         if (t_step == t_step_start .and. proc_rank==0) print*, 'HIFU simulation >>>> Stage 3: Finding the final temperature distribution'
 
-        call s_rhs_heatEqn(q_cons_ts(3)%vf, q_cons_ts(1)%vf, t_step)
+        call s_rhs_heatEqn(q_cons_ts(1)%vf, t_step)
 
         if (t_step == t_step_stop) return
 
@@ -384,9 +327,9 @@ contains
             do k = 0, n
   
                 !Forward euler time scheme, explicit
-                q_cons_ts(3)%vf(T_hifu_idx)%sf(j, k, l) = q_cons_ts(3)%vf(T_hifu_idx)%sf(j, k, l) + q_cons_ts(3)%vf(T_hifu_idx+1)%sf(j, k, l)*dt
+                q_hifu(T_hifu_idx)%sf(j, k, l) = q_hifu(T_hifu_idx)%sf(j, k, l) + q_hifu(T_hifu_idx+1)%sf(j, k, l)*dt
 
-                if (ieee_is_nan(q_cons_ts(3)%vf(T_hifu_idx)%sf(j, k, l))) then
+                if (ieee_is_nan(q_hifu(T_hifu_idx)%sf(j, k, l))) then
                     call s_mpi_abort('Temperature value is NaN!!')
                 end if
 
@@ -408,16 +351,10 @@ contains
         integer, intent(in) :: t_step
         real(kind(0d0)), intent(inout) :: time_avg
 
-        integer :: i, j, k, l, q!< Generic loop iterator
-        real(kind(0d0)) :: nR3bar
-        real(kind(0d0)) :: e_mix
-
-        real(kind(0d0)) :: T
-        real(kind(0d0)), dimension(num_species) :: Ys
+        integer :: i, j, k, l, q !< Generic loop iterator
 
         ! Stage 1 of 1 =====================================================
-
-        call nvtxStartRange("Time_Step")
+        call nvtxStartRange("TIMESTEP")
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
 
@@ -449,6 +386,11 @@ contains
             if (mytime >= t_stop) return
         else
             if (t_step == t_step_stop) return
+        end if
+
+        if (bubbles_lagrange) then
+            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
+            call s_update_lagrange_tdv_rk(stage=1)
         end if
 
         !$acc parallel loop collapse(4) gang vector default(present)
@@ -499,7 +441,6 @@ contains
             end do
         end if
 
-        call nvtxStartRange("body_forces")
         if (bodyForces) call s_apply_bodyforces(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, dt)
         call nvtxEndRange
 
@@ -517,8 +458,6 @@ contains
             end if
         end if
 
-        call nvtxEndRange
-
         ! ==================================================================
 
     end subroutine s_1st_order_tvd_rk
@@ -532,13 +471,12 @@ contains
 
         integer :: i, j, k, l, q!< Generic loop iterator
         real(kind(0d0)) :: start, finish
-        real(kind(0d0)) :: nR3bar
 
         ! Stage 1 of 2 =====================================================
 
         call cpu_time(start)
 
-        call nvtxStartRange("Time_Step")
+        call nvtxStartRange("TIMESTEP")
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
 
@@ -562,6 +500,11 @@ contains
             if (mytime >= t_stop) return
         else
             if (t_step == t_step_stop) return
+        end if
+
+        if (bubbles_lagrange) then
+            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
+            call s_update_lagrange_tdv_rk(stage=1)
         end if
 
         !$acc parallel loop collapse(4) gang vector default(present)
@@ -612,9 +555,7 @@ contains
             end do
         end if
 
-        call nvtxStartRange("body_forces")
-        if (bodyForces) call s_apply_bodyforces(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, dt)
-        call nvtxEndRange
+        if (bodyForces) call s_apply_bodyforces(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, dt)
 
         if (grid_geometry == 3) call s_apply_fourier_filter(q_cons_ts(2)%vf)
 
@@ -636,6 +577,11 @@ contains
         ! Stage 2 of 2 =====================================================
 
         call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
+
+        if (bubbles_lagrange) then
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, stage=2)
+            call s_update_lagrange_tdv_rk(stage=2)
+        end if
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -687,9 +633,7 @@ contains
             end do
         end if
 
-        call nvtxStartRange("body_forces")
         if (bodyForces) call s_apply_bodyforces(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, 2d0*dt/3d0)
-        call nvtxEndRange
 
         if (grid_geometry == 3) call s_apply_fourier_filter(q_cons_ts(1)%vf)
 
@@ -722,18 +666,20 @@ contains
         real(kind(0d0)), intent(INOUT) :: time_avg
 
         integer :: i, j, k, l, q !< Generic loop iterator
-        real(kind(0d0)) :: ts_error, denom, error_fraction, time_step_factor !< Generic loop iterator
         real(kind(0d0)) :: start, finish
-        real(kind(0d0)) :: nR3bar
 
         ! Stage 1 of 3 =====================================================
 
         if (.not. adap_dt) then
             call cpu_time(start)
-            call nvtxStartRange("Time_Step")
+            call nvtxStartRange("TIMESTEP")
         end if
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+
+        if (hifu_params%sampling) then !HIFU sampling vars
+            call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
+        end if
 
         if (run_time_info) then
             call s_write_run_time_information(q_prim_vf, t_step)
@@ -741,16 +687,17 @@ contains
 
         if (probe_wrt) then
             call s_time_step_cycling(t_step)
-        end if
-
-        if (hifu_intensityFlag) then !HIFU obtain intentities
-            call s_update_HIFU_vars_stg2(q_cons_ts(1)%vf, q_prim_vf, q_cons_ts(3)%vf, t_step, dt)
-        end if
+        end if     
 
         if (cfl_dt) then
             if (mytime >= t_stop) return
         else
             if (t_step == t_step_stop) return
+        end if
+
+        if (bubbles_lagrange) then
+            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
+            call s_update_lagrange_tdv_rk(stage=1)
         end if
 
         !$acc parallel loop collapse(4) gang vector default(present)
@@ -801,9 +748,7 @@ contains
             end do
         end if
 
-        call nvtxStartRange("body_forces")
-        if (bodyForces) call s_apply_bodyforces(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, dt)
-        call nvtxEndRange
+        if (bodyForces) call s_apply_bodyforces(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, dt)
 
         if (grid_geometry == 3) call s_apply_fourier_filter(q_cons_ts(2)%vf)
 
@@ -825,6 +770,11 @@ contains
         ! Stage 2 of 3 =====================================================
 
         call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
+
+        if (bubbles_lagrange) then
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, stage=2)
+            call s_update_lagrange_tdv_rk(stage=2)
+        end if
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -876,9 +826,7 @@ contains
             end do
         end if
 
-        call nvtxStartRange("body_forces")
         if (bodyForces) call s_apply_bodyforces(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, dt/4d0)
-        call nvtxEndRange
 
         if (grid_geometry == 3) call s_apply_fourier_filter(q_cons_ts(2)%vf)
 
@@ -899,6 +847,11 @@ contains
 
         ! Stage 3 of 3 =====================================================
         call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
+
+        if (bubbles_lagrange) then
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, stage=3)
+            call s_update_lagrange_tdv_rk(stage=3)
+        end if
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -950,9 +903,7 @@ contains
             end do
         end if
 
-        call nvtxStartRange("body_forces")
         if (bodyForces) call s_apply_bodyforces(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, 2d0*dt/3d0)
-        call nvtxEndRange
 
         if (grid_geometry == 3) call s_apply_fourier_filter(q_cons_ts(1)%vf)
 
@@ -989,12 +940,11 @@ contains
         integer, intent(in) :: t_step
         real(kind(0d0)), intent(inout) :: time_avg
 
-        integer :: i, j, k, l !< Generic loop iterator
         real(kind(0d0)) :: start, finish
 
         call cpu_time(start)
 
-        call nvtxStartRange("Time_Step")
+        call nvtxStartRange("TIMESTEP")
 
         ! Stage 1 of 3 =====================================================
         call s_adaptive_dt_bubble(t_step)
@@ -1021,20 +971,15 @@ contains
 
         integer, intent(in) :: t_step
 
-        type(int_bounds_info) :: ix, iy, iz
         type(vector_field) :: gm_alpha_qp
 
-        integer :: i, j, k, l, q !< Generic loop iterator
-
-        ix%beg = 0; iy%beg = 0; iz%beg = 0
-        ix%end = m; iy%end = n; iz%end = p
         call s_convert_conservative_to_primitive_variables( &
             q_cons_ts(1)%vf, &
             q_prim_vf, &
-            gm_alpha_qp%vf, &
-            ix, iy, iz)
+            idwint, &
+            gm_alpha_qp%vf)
 
-        call s_compute_bubble_source(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf)
+        call s_compute_bubble_EE_source(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf)
 
     end subroutine s_adaptive_dt_bubble
 
@@ -1052,17 +997,13 @@ contains
         real(kind(0d0)), dimension(2) :: Re         !< Cell-avg. Reynolds numbers
         type(vector_field) :: gm_alpha_qp
         real(kind(0d0)) :: dt_local
-        type(int_bounds_info) :: ix, iy, iz
-        integer :: i, j, k, l, q !< Generic loop iterators
-
-        ix%beg = 0; iy%beg = 0; iz%beg = 0
-        ix%end = m; iy%end = n; iz%end = p
+        integer :: j, k, l !< Generic loop iterators
 
         call s_convert_conservative_to_primitive_variables( &
             q_cons_ts(1)%vf, &
             q_prim_vf, &
-            gm_alpha_qp%vf, &
-            ix, iy, iz)
+            idwint, &
+            gm_alpha_qp%vf)
 
         !$acc parallel loop collapse(3) gang vector default(present) private(vel, alpha, Re)
         do l = 0, p
@@ -1071,7 +1012,7 @@ contains
                     call s_compute_enthalpy(q_prim_vf, pres, rho, gamma, pi_inf, Re, H, alpha, vel, vel_sum, j, k, l)
 
                     ! Compute mixture sound speed
-                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, c)
+                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, 0d0, c)
 
                     call s_compute_dt_from_cfl(vel, c, max_dt, rho, Re, j, k, l)
                 end do
@@ -1104,6 +1045,7 @@ contains
 
         integer :: i, j, k, l
 
+        call nvtxStartRange("RHS-BODYFORCES")
         call s_compute_body_forces_rhs(q_prim_vf, q_cons_vf, rhs_vf)
 
         !$acc parallel loop collapse(4) gang vector default(present)
@@ -1117,6 +1059,8 @@ contains
                 end do
             end do
         end do
+
+        call nvtxEndRange
 
     end subroutine s_apply_bodyforces
 
@@ -1160,233 +1104,150 @@ contains
 
     end subroutine s_time_step_cycling
 
-    !> Cash-Karp Runge-Kutta 4th/5th order time-stepping algorithm
-        !! @param realtime
-        !! @param hnext
-        !! @param hdid 
+    !> (Adaptive) 4th/5th order Runge—Kutta–Cash–Karp (RKCK) time-stepping algorithm (Cash J. and Karp A., 1990)
+        !!      Method for initial value problems with rapidly varying RHS. A maximum error between the 4th and 5th
+        !!      order Runge-Kutta-Cash-Karp solutions for the same time step size is calculated. If the error is
+        !!      smaller than a tolerance, then the algorithm employs the 5th order solution, while if not, both
+        !!      eulerian/lagrangian variables are re-calculated with a smaller time step size.
         !! @param t_step Current time-step
-    subroutine rkqs(realtime, hnext, hdid, t_step)
+        !! @param hdid Advanced time increment (adaptive time stepping)
+    subroutine s_4th_5th_order_rkck(t_step, time_avg)
 
-        logical :: largestep
-        real(kind(0.d0)) :: newtime, errmax, errmax_glb, qtime, hdid, hnext, dttarget
-        real(kind(0.d0)) :: RKh, RKh_glb, htemp, SAFETY = 0.9d0, PGROW = -0.2d0, &
-                            PSHRNK = -0.25d0, ERRCON = 1.89d-4
-        integer :: i, j, k
-        real(kind(0.d0)), intent(in) :: realtime
         integer, intent(in) :: t_step
+        real(kind(0d0)), intent(out) :: time_avg
 
-        qtime = realtime
-        dttarget = dt
+        logical :: restart_rkck_step, start_rkck_step
+        real(kind(0.d0)) :: lag_largestep, rkck_errmax, dt_did
+        integer :: RKstep
+
+        mytime = mytime - dt
+
+        start_rkck_step = .true.
+        restart_rkck_step = .false.
+
+        do while (start_rkck_step .or. restart_rkck_step)
+
+            start_rkck_step = .false.
+            restart_rkck_step = .false.
+
+            ! FIRST TIME-STAGE
+            RKstep = 1
+            rkck_time_tmp = mytime + rkck_c1*dt
+!$acc update device (rkck_time_tmp)
+
+#ifdef DEBUG
+            if (proc_rank == 0) print *, 'RKCK 1st time-stage at', rkck_time_tmp
+#endif
+            call s_compute_rhs(q_cons_ts(1)%vf, q_prim_vf, rhs_ts_rkck(1)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_ts_rkck(1)%vf, RKstep)
+            call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
+            if (lag_largestep > 0.0d0) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
+            if (restart_rkck_step) cycle
+
+            ! SECOND TIME-STAGE
+            RKstep = 2
+            rkck_time_tmp = mytime + rkck_c2*dt
+!$acc update device (rkck_time_tmp)
+
+#ifdef DEBUG
+            if (proc_rank == 0) print *, 'RKCK 2nd time-stage at', rkck_time_tmp
+#endif
+            call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(2)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(2)%vf, RKstep)
+            call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
+            if (lag_largestep > 0.0d0) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
+            if (restart_rkck_step) cycle
+
+            ! THIRD TIME-STAGE
+            RKstep = 3
+            rkck_time_tmp = mytime + rkck_c3*dt
+!$acc update device (rkck_time_tmp)
+
+#ifdef DEBUG
+            if (proc_rank == 0) print *, 'RKCK 3rd time-stage at', rkck_time_tmp
+#endif
+            call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(3)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(3)%vf, RKstep)
+            call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
+            if (lag_largestep > 0.0d0) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
+            if (restart_rkck_step) cycle
+
+            ! FOURTH TIME-STAGE
+            RKstep = 4
+            rkck_time_tmp = mytime + rkck_c4*dt
+!$acc update device (rkck_time_tmp)
+
+#ifdef DEBUG
+            if (proc_rank == 0) print *, 'RKCK 4th time-stage at', rkck_time_tmp
+#endif
+            call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(4)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(4)%vf, RKstep)
+            call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
+            if (lag_largestep > 0.0d0) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
+            if (restart_rkck_step) cycle
+
+            ! FIFTH TIME-STAGE
+            RKstep = 5
+            rkck_time_tmp = mytime + rkck_c5*dt
+!$acc update device (rkck_time_tmp)
+
+#ifdef DEBUG
+            if (proc_rank == 0) print *, 'RKCK 5th time-stage at', rkck_time_tmp
+#endif
+            call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(5)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(5)%vf, 5)
+            call s_update_tmp_rkck(5, q_cons_ts, rhs_ts_rkck, lag_largestep)
+            if (lag_largestep > 0.0d0) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
+            if (restart_rkck_step) cycle
+
+            ! SIXTH TIME-STAGE
+            RKstep = 6
+            rkck_time_tmp = mytime + rkck_c6*dt
+!$acc update device (rkck_time_tmp)
+
+#ifdef DEBUG
+            if (proc_rank == 0) print *, 'RKCK 6th time-stage at', rkck_time_tmp
+#endif
+            call s_compute_rhs(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(6)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(6)%vf, 6)
+            call s_update_tmp_rkck(6, q_cons_ts, rhs_ts_rkck, lag_largestep)
+            if (lag_largestep > 0.0d0) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
+            if (restart_rkck_step) cycle
+
+            dt_did = dt
+
+            if (rkck_adap_dt) then
+                ! TRUNCATION ERROR
+#ifdef DEBUG
+                if (proc_rank == 0) print *, 'Computing truncation error (4th/5th RKCK)'
+#endif
+                call s_calculate_rkck_truncation_error(rkck_errmax)
+                call s_compute_rkck_dt(lag_largestep, restart_rkck_step, rkck_errmax)
+                if (restart_rkck_step) cycle
+            end if
+
+        end do
+
+        !> Update values
+        mytime = mytime + dt_did
+        call s_update_rkck(q_cons_ts)
+
+        if (hifu_params%sampling) then !HIFU sampling vars
+            call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt_did)
+        end if
+        call s_compute_bubble_heat_sources_HIFU(dt_did)
+        call s_write_void_evol(mytime)
+        if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
+        if (lag_params%write_bubbles) then
+            !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
+            call s_write_lag_particles(mytime)
+        end if
 
         if (run_time_info) then
             call s_write_run_time_information(q_prim_vf, t_step)
         end if
 
-        !> Starting adaptive Runge-Kutta
-        RKh = min(hnext, dttarget)
-        RKh = max(Rkh, 1.0d-12)
-        if (num_procs > 1) then
-            call s_mpi_allreduce_min(RKh, RKh_glb)
-            RKh = RKh_glb
-        end if
-
-        largestep = .false.
-        if (coupledFlag .or. bubblesources) then
-            call s_RK_particle_dynamics(qtime, 1, q_cons_ts(1)%vf, t_step, q_prim_vf, rhs_vp_adapt(1)%vf)
-        else
-            call s_RK_particle_dynamics(qtime, 1, q_cons_ts(1)%vf, t_step, q_prim_vf)
-        end if
-
-        !> Take a step
-502     errmax = 0.0d0
-        call rkck(qtime, RKh, errmax, largestep, t_step)
-
-        if (largestep) then ! Negative radius, need to reduce time step
-            if (cfl_dt) then
-                if (RKh .gt. 1.0d-14) then
-                    RKh = RKh/2.0d0
-                    if (proc_rank==0) print*, '>>>>> WARNING: Reducing dt and restarting time step, now dt: ', RKh
-                    largestep = .false.
-                    goto 502
-                else
-                    call s_mpi_abort('Time step smaller than 1e-14')
-                end if
-            else
-                call s_mpi_abort('Time step too large, please reduce dt or enable cfl_adapt_dt')
-            end if
-        end if
-
-        if (cfl_dt) then !Check truncation error
-            errmax = min(errmax,1.0d0)
-            if (num_procs > 1) then
-                call s_mpi_allreduce_max(errmax, errmax_glb)
-                errmax=errmax_glb
-            end if
-            errmax=errmax/RKeps !Scale relative to USER required tolerance.
-            if ((errmax .gt. 1.0d0)) then !Truncation error too large, reduce stepsize.
-                htemp=SAFETY*RKh*(errmax**PSHRNK)
-                RKh=sign(max(abs(htemp),0.1d0*abs(RKh)),RKh)  ! No more than a factor of 10.
-                if (proc_rank==0) print*, '>>>>> WARNING: Truncation error found. Reducing dt and restaring time step, now dt: ', RKh
-                goto 502         
-            else ! Step succeeded. Compute size of next step.
-                if (errmax .gt. ERRCON) then
-                    hnext=SAFETY*RKh*(errmax**PGROW) ! No more than a factor of 5 increase. 
-                else    
-                    hnext=2.0d0*RKh !Truncation error too small (< 1.89e-4), increase time step
-                end if    
-            end if 
-            hnext = min(hnext, dt0)
-            
-        else
-            hnext = RKh
-        end if
-        
-        !if (proc_rank==0) print*, hnext, RKh, errmax, PGROW, SAFETY
-        hdid = RKh
-
-        !> Update values
-        qtime = qtime + hdid
-
-        if (hifu_intensityFlag) then !HIFU obtain intentities
-            call s_update_RK(q_cons_ts, .true., q_prim_vf, q_cons_ts(3)%vf, hdid)
-            call s_update_HIFU_vars_stg2(q_cons_ts(1)%vf, q_prim_vf, q_cons_ts(3)%vf, t_step, hdid)
-        else
-            call s_update_RK(q_cons_ts, .true., q_prim_vf)
-        end if
-
-        if (avgdensflag) call s_write_void_evol(qtime)
-        if (particlestatFlag) call s_calculate_particle_stats()
-
-        return
-
-    end subroutine rkqs
-
-    !> Cash-Karp Runge-Kutta step
-    subroutine rkck(qtime, RKh, errmax, largestep, t_step)
-        !> USES derivs
-        !> Given values for n variables y and their derivatives dydx known at x, use the .fth-order
-        !> Cash-Karp Runge-Kutta method to advance the solution over an interval h and return
-        !> the incremented variables as yout. Also return an estimate of the local truncation error
-        !> in yout using the embedded fourth-order method. The user supplies the subroutine
-        !> derivs(x,y,dydx), which returns derivatives dydx at x.
-
-        logical :: largestep
-        real(kind(0.d0)) :: RKh, qtime, errmax
-        integer, intent(in) :: t_step
-        integer :: i, j, k, l
-        real(kind(0.d0)) :: A2 = 0.2d0, A3 = 0.3d0, A4 = 0.6d0, A5 = 1.0d0, A6 = 0.875d0
-        real(kind(0.d0)), dimension(6) :: &
-            RKcoef1 = (/0.2d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0/), &
-            RKcoef2 = (/3.0d0/40.0d0, 9.0d0/40.0d0, 0.0d0, 0.0d0, 0.0d0, 0.0d0/), &
-            RKcoef3 = (/0.3d0, -0.9d0, 1.2d0, 0.0d0, 0.0d0, 0.0d0/), &
-            RKcoef4 = (/-11.0d0/54.0d0, 2.5d0, -70.0d0/27.0d0, 35.d0/27.d0, 0.0d0, 0.0d0/), &
-            RKcoef5 = (/1631.0d0/55296.0d0, 175.0d0/512.0d0, 575.d0/13824.d0, 44275.d0/110592.d0, 253.d0/4096.d0, 0.0d0/), &
-            RKcoef6 = (/37.d0/378.d0, 0.0d0, 250.d0/621.d0, 125.0d0/594.0d0, 0.0d0, 512.0d0/1771.0d0/), &
-            RKcoefE = (/37.d0/378.d0 - 2825.0d0/27648.0d0, 0.0d0, 250.d0/621.d0 - 18575.0d0/48384.0d0, &
-                        125.0d0/594.0d0 - 13525.0d0/55296.0d0, -277.0d0/14336.0d0, 512.0d0/1771.0d0 - 0.25d0/)
-
-        if (coupledFlag .or. bubblesources) then
-
-            !> First step
-            !if (proc_rank == 0) print *, 'rkqs 1st step at', qtime
-            call s_update_particle(RKh, 1, RKcoef1, largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf, .true.)
-            if (largestep) return
-
-            !> Second step
-            !if (proc_rank == 0) print *, 'rkqs 2nd step at', qtime + A2*RKh
-            call s_RK_particle_dynamics(qtime + A2*RKh, 2, q_cons_ts(2)%vf, t_step, q_prim_vf, rhs_vp_adapt(2)%vf)
-            call s_update_particle(RKh, 2, RKcoef2, largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
-            if (largestep) return
-
-            !> Third step
-            !if (proc_rank == 0) print *, 'rkqs 3rd step at', qtime + A3*RKh
-            call s_RK_particle_dynamics(qtime + A3*RKh, 3, q_cons_ts(2)%vf, t_step, q_prim_vf, rhs_vp_adapt(3)%vf)
-            call s_update_particle(RKh, 3, RKcoef3, largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
-            if (largestep) return
-
-            !> Fourth step
-            !if (proc_rank == 0) print *, 'rkqs 4th step at', qtime + A4*RKh
-            call s_RK_particle_dynamics(qtime + A4*RKh, 4, q_cons_ts(2)%vf, t_step, q_prim_vf, rhs_vp_adapt(4)%vf)
-            call s_update_particle(RKh, 4, RKcoef4, largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
-            if (largestep) return
-
-            !> Fifth step
-            !if (proc_rank == 0) print *, 'rkqs 5th step at', qtime + A5*RKh
-            call s_RK_particle_dynamics(qtime + A5*RKh, 5, q_cons_ts(2)%vf, t_step, q_prim_vf, rhs_vp_adapt(5)%vf)
-            call s_update_particle(RKh, 5, RKcoef5, largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
-            if (largestep) return
-
-            !> Sixth step
-            !if (proc_rank == 0) print *, 'rkqs 6th step at', qtime + A6*RKh
-            call s_RK_particle_dynamics(qtime + A6*RKh, 6, q_cons_ts(2)%vf, t_step, q_prim_vf, rhs_vp_adapt(6)%vf)
-            call s_update_particle(RKh, 6, RKcoef6, largestep, q_cons_ts, rhs_vp_adapt, q_prim_vf)
-            if (largestep) return
-
-            ! Configuring Coordinate Direction indexes =========================
-            ix%beg = -buff_size; iy%beg = 0; iz%beg = 0
-
-            if (n > 0) iy%beg = -buff_size; if (p > 0) iz%beg = -buff_size
-
-            ix%end = m - ix%beg; iy%end = n - iy%beg; iz%end = p - iz%beg
-            ! ==================================================================
-
-            do i = 1, cont_idx%end
-                do l = iz%beg, iz%end
-                    do k = iy%beg, iy%end
-                        do j = ix%beg, ix%end
-                            q_prim_vf(i)%sf(j, k, l) = q_cons_ts(1)%vf(i)%sf(j, k, l)
-                        end do
-                    end do
-                end do
-            end do
-            do i = adv_idx%beg, sys_size
-                do l = iz%beg, iz%end
-                    do k = iy%beg, iy%end
-                        do j = ix%beg, ix%end
-                            q_prim_vf(i)%sf(j, k, l) = q_cons_ts(1)%vf(i)%sf(j, k, l)
-                        end do
-                    end do
-                end do
-            end do
-
-            call s_calculate_RKerror(qtime + RKh, RKh, RKcoefE, errmax, t_step, q_cons_ts, q_prim_vf, rhs_vp_adapt)
-
-        else
-
-            !> First step
-            call s_update_particle(RKh, 1, RKcoef1, largestep)
-            if (largestep) return
-
-            !> Second step
-            call s_RK_particle_dynamics(qtime + A2*RKh, 2, q_cons_ts(1)%vf, t_step, q_prim_vf)
-            call s_update_particle(RKh, 2, RKcoef2, largestep)
-            if (largestep) return
-
-            !> Third step
-            call s_RK_particle_dynamics(qtime + A3*RKh, 3, q_cons_ts(1)%vf, t_step, q_prim_vf)
-            call s_update_particle(RKh, 3, RKcoef3, largestep)
-            if (largestep) return
-
-            !> Fourth step
-            call s_RK_particle_dynamics(qtime + A4*RKh, 4, q_cons_ts(1)%vf, t_step, q_prim_vf)
-            call s_update_particle(RKh, 4, RKcoef4, largestep)
-            if (largestep) return
-
-            !> Fifth step
-            call s_RK_particle_dynamics(qtime + A5*RKh, 5, q_cons_ts(1)%vf, t_step, q_prim_vf)
-            call s_update_particle(RKh, 5, RKcoef5, largestep)
-            if (largestep) return
-
-            !> Sixth step
-            call s_RK_particle_dynamics(qtime + A6*RKh, 6, q_cons_ts(1)%vf, t_step, q_prim_vf)
-            call s_update_particle(RKh, 6, RKcoef6, largestep)
-            if (largestep) return
-
-            call s_calculate_RKerror(qtime + RKh, RKh, RKcoefE, errmax, t_step)
-
-        end if
-
-    end subroutine rkck
+    end subroutine s_4th_5th_order_rkck
 
     !> Module deallocation and/or disassociation procedures
     subroutine s_finalize_time_steppers_module
@@ -1394,7 +1255,7 @@ contains
         integer :: i, j !< Generic loop iterators
 
         ! Deallocating the cell-average conservative variables
-        do i = 1, min(num_ts,num_ts_hifu)
+        do i = 1, num_ts
 
             do j = 1, sys_size
                 @:DEALLOCATE(q_cons_ts(i)%vf(j)%sf)
@@ -1402,17 +1263,11 @@ contains
 
         end do
 
-        if (hifu_intensityFlag .or. hifu_heateqnFlag) then
-            do j = 1, max(sys_size,sys_size_hifu)
-                @:DEALLOCATE(q_cons_ts(num_ts_hifu)%vf(j)%sf)
-            end do
-        end if
-
-        do i = 1, max(num_ts,num_ts_hifu)
+        do i = 1, num_ts
             @:DEALLOCATE(q_cons_ts(i)%vf)
         end do
 
-        @:DEALLOCATE_GLOBAL(q_cons_ts)
+        @:DEALLOCATE(q_cons_ts)
 
         ! Deallocating the cell-average primitive ts variables
         if (probe_wrt) then
@@ -1422,7 +1277,7 @@ contains
                 end do
                 @:DEALLOCATE(q_prim_ts(i)%vf)
             end do
-            @:DEALLOCATE_GLOBAL(q_prim_ts)
+            @:DEALLOCATE(q_prim_ts)
         end if
 
         ! Deallocating the cell-average primitive variables
@@ -1436,7 +1291,7 @@ contains
             end do
         end if
 
-        if (bubbles) then
+        if (bubbles_euler) then
             do i = bub_idx%beg, bub_idx%end
                 @:DEALLOCATE(q_prim_vf(i)%sf)
             end do
@@ -1448,24 +1303,24 @@ contains
             end do
         end if
 
-        @:DEALLOCATE_GLOBAL(q_prim_vf)
-
-        ! Deallocating the cell-average RHS variables
-        do i = 1, sys_size
-            @:DEALLOCATE(rhs_vf(i)%sf)
-        end do
-
-        @:DEALLOCATE_GLOBAL(rhs_vf)
+        @:DEALLOCATE(q_prim_vf)
 
         ! Deallocating the cell-average RHS variable for adaptive method, Lagrangian solver
-        if (coupledflag .or. (solverapproach == 2)) then
-            do i = 1, 6
-                do j = 1, adv_idx%end
-                    deallocate (rhs_vp_adapt(i)%vf(j)%sf)
+        if (bubbles_lagrange .and. time_stepper == 4) then ! RKCK stepper
+            do i = 1, num_ts_rkck
+                do j = 1, sys_size
+                    @:DEALLOCATE(rhs_ts_rkck(i)%vf(j)%sf)
                 end do
-                deallocate (rhs_vp_adapt(i)%vf)
+                @:DEALLOCATE(rhs_ts_rkck(i)%vf)
             end do
-            deallocate (rhs_vp_adapt)
+            @:DEALLOCATE(rhs_ts_rkck)
+        else
+            ! Deallocating the cell-average RHS variables
+            do i = 1, sys_size
+                @:DEALLOCATE(rhs_vf(i)%sf)
+            end do
+
+            @:DEALLOCATE(rhs_vf)
         end if
 
         ! Writing the footer of and closing the run-time information file
@@ -1473,7 +1328,9 @@ contains
             call s_close_run_time_information_file()
         end if
 
-        if (hifu_intensityFlag) call s_close_run_time_information_samplingHIFU()
+        if (hifu_params%sampling .and. .not. hifu_params%automatic_stages) then
+            call s_close_run_time_information_samplingHIFU()
+        end if
 
     end subroutine s_finalize_time_steppers_module
 

@@ -58,6 +58,9 @@ module m_data_input
     type(scalar_field), allocatable, dimension(:), public :: q_cons_hifu !<
     !! HIFU variables
 
+    ! type(scalar_field), public :: ib_markers !<
+    type(integer_field), public :: ib_markers
+
     procedure(s_read_abstract_data_files), pointer :: s_read_data_files => null()
 
 contains
@@ -82,6 +85,11 @@ contains
                   int(floor(log10(real(sys_size, kind(0d0))))) + 1) :: file_num !<
             !! Used to store the variable position, in character form, of the
             !! currently manipulated conservative variable file
+
+        character(LEN=len_trim(case_dir) + 2*name_len) :: t_step_ib_dir !<
+        !! Location of the time-step directory associated with t_step
+
+        character(LEN=len_trim(case_dir) + 3*name_len) :: file_loc_ib !<
 
         logical :: dir_check !<
             !! Generic logical used to test the existence of a particular folder
@@ -215,7 +223,21 @@ contains
 
         end do
 
-        if (avgdensflag) then !Lagrangian solver
+        if (ib) then
+            write (file_loc_ib, '(A,I0,A)') &
+                trim(t_step_ib_dir)//'/ib.dat'
+            inquire (FILE=trim(file_loc_ib), EXIST=file_check)
+            if (file_check) then
+                open (2, FILE=trim(file_loc_ib), &
+                      FORM='unformatted', &
+                      ACTION='read', &
+                      STATUS='old')
+            else
+                call s_mpi_abort('File '//trim(file_loc_ib)//' is missing. Exiting ...')
+            end if
+        end if
+
+        if (bubbles_lagrange) then !Lagrangian solver
 
             ! Checking whether the data file associated with the variable
             ! position of currently manipulated conservative variable exists
@@ -276,7 +298,7 @@ contains
         if (present(hifu_id)) then
             alt_sys = sys_size_hifu
         else
-            if (avgdensflag) then
+            if (bubbles_lagrange) then
                 alt_sys = sys_size + 1
             else
                 alt_sys = sys_size
@@ -377,7 +399,7 @@ contains
                 NVARS_MOK = int(sys_size, MPI_OFFSET_KIND)
 
                 ! Read the data for each variable
-                if (bubbles .or. hypoelasticity) then
+                if (bubbles_euler .or. hypoelasticity) then
                     do i = 1, sys_size
                         var_MOK = int(i, MPI_OFFSET_KIND)
 
@@ -416,7 +438,9 @@ contains
                 if (present(hifu_id)) then !HIFU vars
                     call s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
                 else
-                    if (avgdensflag) then !Lagrangian solver
+                    if (ib) then
+                        call s_initialize_mpi_data(q_cons_vf, ib_markers)
+                    elseif (bubbles_lagrange) then
                         call s_initialize_mpi_data(q_cons_vf, beta=q_particle(1))
                     else
                         call s_initialize_mpi_data(q_cons_vf)
@@ -436,7 +460,7 @@ contains
                 NVARS_MOK = int(alt_sys, MPI_OFFSET_KIND)
 
                 ! Read the data for each variable
-                if (bubbles .or. hypoelasticity) then
+                if (bubbles_euler .or. hypoelasticity) then
                     do i = 1, sys_size
                         var_MOK = int(i, MPI_OFFSET_KIND)
 
@@ -474,14 +498,8 @@ contains
                     end do
                 end if
 
-                if (avgdensflag) then !Lagrangian solver
-                    ! Note that definition of sys_size is different from
-                    ! that used in simulation
-                    !IF(adv_alphan .NEQV. .TRUE.)  THEN
-                    !    var_MOK = INT(sys_size+2, MPI_OFFSET_KIND)
-                    !ELSE
+                if (bubbles_lagrange) then !Lagrangian solver
                     var_MOK = int(sys_size + 1, MPI_OFFSET_KIND)
-                    !END IF
 
                     ! Initial displacement to skip at beginning of file
                     disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
@@ -761,9 +779,9 @@ contains
         !!      the boundary conditions.
     subroutine s_populate_conservative_variables_buffer_regions(q_particle)
 
+        type(scalar_field), intent(inout), optional :: q_particle
+
         integer :: i, j, k !< Generic loop iterators
-        type(scalar_field), &
-            intent(inout), optional :: q_particle
 
         ! Populating Buffer Regions in the x-direction =====================
 
@@ -1273,8 +1291,7 @@ contains
         ! the simulation
         allocate (q_cons_vf(1:sys_size))
         allocate (q_prim_vf(1:sys_size))
-
-        if (avgdensflag) allocate (q_particle(1)) !Lagrangian solver
+        if (bubbles_lagrange) allocate (q_particle(1))
         if (hifu) allocate (q_cons_hifu(1:sys_size_hifu))
 
         ! Allocating the parts of the conservative and primitive variables
@@ -1295,9 +1312,21 @@ contains
                                               -buff_size:n + buff_size, &
                                               -buff_size:p + buff_size))
                 end do
-                if (avgdensflag) allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
-                                                            -buff_size:n + buff_size, &
-                                                            -buff_size:p + buff_size))
+
+                if (hifu) then
+                    do i = 1, sys_size_hifu
+                        allocate (q_cons_hifu(i)%sf(-buff_size:m + buff_size, &
+                                                    -buff_size:n + buff_size, &
+                                                    -buff_size:p + buff_size))
+                    end do
+                end if
+
+
+                if (bubbles_lagrange) then
+                    allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
+                                               -buff_size:n + buff_size, &
+                                               -buff_size:p + buff_size))
+                end if
 
                 ! Simulation is 2D
             else
@@ -1310,15 +1339,19 @@ contains
                                               -buff_size:n + buff_size, &
                                               0:0))
                 end do
-                if (avgdensflag) allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
-                                                            -buff_size:n + buff_size, &
-                                                            0:0))
+
                 if (hifu) then
                     do i = 1, sys_size_hifu
                         allocate (q_cons_hifu(i)%sf(-buff_size:m + buff_size, &
                                                 -buff_size:n + buff_size, &
                                                 0:0))
                     end do
+                end if
+
+                if (bubbles_lagrange) then
+                    allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
+                                               -buff_size:n + buff_size, &
+                                               0:0))
                 end if
 
             end if
@@ -1334,9 +1367,10 @@ contains
                                           0:0, &
                                           0:0))
             end do
-            if (avgdensflag) allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
-                                                        0:0, &
-                                                        0:0))
+
+            if (bubbles_lagrange) then
+                allocate (q_particle(1)%sf(-buff_size:m + buff_size, 0:0, 0:0))
+            end if
 
         end if
 
@@ -1362,9 +1396,8 @@ contains
         deallocate (q_cons_vf)
         deallocate (q_prim_vf)
 
-        if (avgdensflag) then !Lagrangian solver
-            deallocate (q_particle(1)%sf)
-            deallocate (q_particle)
+        if (ib) then
+            deallocate (ib_markers%sf)
         end if
 
         if (hifu) then
@@ -1372,6 +1405,11 @@ contains
                 deallocate (q_cons_hifu(i)%sf)
             end do
             deallocate (q_cons_hifu)
+        end if
+
+        if (bubbles_lagrange) then
+            deallocate (q_particle(1)%sf)
+            deallocate (q_particle)
         end if
 
         s_read_data_files => null()

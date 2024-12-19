@@ -18,7 +18,7 @@ module m_global_parameters
 
     use m_helper_basic          !< Functions to compare floating point numbers
 
-    use m_thermochem            !< Thermodynamic and chemical properties module
+    use m_thermochem, only: num_species, species_names
 
     ! ==========================================================================
 
@@ -112,6 +112,8 @@ module m_global_parameters
     logical, parameter :: chemistry = .${chemistry}$. !< Chemistry modeling
     !> @}
 
+    integer :: avg_state       !< Average state evaluation method
+
     !> @name Annotations of the structure, i.e. the organization, of the state vectors
     !> @{
     type(int_bounds_info) :: cont_idx              !< Indexes of first & last continuity eqns.
@@ -127,8 +129,17 @@ module m_global_parameters
     type(int_bounds_info) :: stress_idx            !< Indices of elastic stresses
     integer :: c_idx                               !< Index of color function
     type(int_bounds_info) :: species_idx           !< Indexes of first & last concentration eqns.
-    type(int_bounds_info) :: temperature_idx       !< Indexes of first & last temperature eqns.
+    integer :: T_idx                               !< Index of temperature eqn.
     !> @}
+
+    ! Cell Indices for the (local) interior points (O-m, O-n, 0-p).
+    ! Stands for "InDices With BUFFer".
+    type(int_bounds_info) :: idwint(1:3)
+
+    ! Cell Indices for the entire (local) domain. In simulation, this includes
+    ! the buffer region. idwbuff and idwint are the same otherwise.
+    ! Stands for "InDices With BUFFer".
+    type(int_bounds_info) :: idwbuff(1:3)
 
     !> @name Boundary conditions in the x-, y- and z-coordinate directions
     !> @{
@@ -144,11 +155,16 @@ module m_global_parameters
     integer, allocatable, dimension(:) :: start_idx !<
     !! Starting cell-center index of local processor in global grid
 
+    integer :: num_ibs  !< Number of immersed boundaries
+
 #ifdef MFC_MPI
 
     type(mpi_io_var), public :: MPI_IO_DATA
+    type(mpi_io_ib_var), public :: MPI_IO_IB_DATA
+    type(mpi_io_levelset_var), public :: MPI_IO_levelset_DATA
+    type(mpi_io_levelset_norm_var), public :: MPI_IO_levelsetnorm_DATA
+    real(kind(0.d0)), allocatable, dimension(:, :), public :: MPI_IO_DATA_lg_bubbles
     type(mpi_io_var), public :: MPI_IO_HIFU_DATA
-    real(kind(0.d0)), allocatable, dimension(:, :), public :: MPI_IO_DATA_particle
 
 #endif
 
@@ -246,7 +262,7 @@ module m_global_parameters
     real(kind(0d0)) :: R0ref
     real(kind(0d0)) :: Ca, Web, Re_inv
     real(kind(0d0)), dimension(:), allocatable :: weight, R0, V0
-    logical :: bubbles
+    logical :: bubbles_euler
     logical :: qbmm
     logical :: polytropic
     logical :: polydisperse
@@ -260,12 +276,12 @@ module m_global_parameters
     real(kind(0d0)) :: poly_sigma
     real(kind(0d0)) :: sigR
     integer :: nmom
-
     !> @}
 
     !> @name surface tension coefficient
     !> @{
     real(kind(0d0)) :: sigma
+    logical :: surface_tension
     !> #}
 
     !> @name Index variables used for m_variables_conversion
@@ -277,7 +293,11 @@ module m_global_parameters
     integer :: bubxb, bubxe
     integer :: strxb, strxe
     integer :: chemxb, chemxe
-    integer :: tempxb, tempxe
+    !> @}
+
+    !> @name Lagrangian bubbles
+    !> @{
+    logical :: bubbles_lagrange, rkck_adap_dt
     !> @}
 
     ! Lagrangian solver
@@ -385,13 +405,14 @@ contains
         schlieren_alpha = dflt_real
 
         fd_order = dflt_int
+        avg_state = dflt_int
 
         ! Tait EOS
         rhoref = dflt_real
         pref = dflt_real
 
         ! Bubble modeling
-        bubbles = .false.
+        bubbles_euler = .false.
         qbmm = .false.
         R0ref = dflt_real
         nb = dflt_int
@@ -399,15 +420,18 @@ contains
         poly_sigma = dflt_real
         sigR = dflt_real
         sigma = dflt_real
+        surface_tension = .false.
         adv_n = .false.
 
-        ! Lagrangian solver
-        particleflag = .false.
-        avgdensFlag = .false.
-        solverapproach = dflt_int
+        ! Lagrangian bubbles modeling
+        bubbles_lagrange = .false.
+        rkck_adap_dt = .false.
 
         !HIFU
         hifu = .false.
+
+        ! IBM
+        num_ibs = dflt_int
 
     end subroutine s_assign_default_values_to_user_inputs
 
@@ -458,7 +482,7 @@ contains
 
             sys_size = adv_idx%end
 
-            if (bubbles) then
+            if (bubbles_euler) then
                 alf_idx = adv_idx%end
             else
                 alf_idx = 1
@@ -468,7 +492,7 @@ contains
                 nmom = 6
             end if
 
-            if (bubbles) then
+            if (bubbles_euler) then
 
                 bub_idx%beg = sys_size + 1
                 if (qbmm) then
@@ -544,7 +568,7 @@ contains
                 sys_size = stress_idx%end
             end if
 
-            if (sigma /= dflt_real) then
+            if (surface_tension) then
                 c_idx = sys_size + 1
                 sys_size = c_idx
             end if
@@ -569,7 +593,7 @@ contains
             sys_size = internalEnergies_idx%end
             alf_idx = 1 ! dummy, cannot actually have a void fraction
 
-            if (sigma /= dflt_real) then
+            if (surface_tension) then
                 c_idx = sys_size + 1
                 sys_size = c_idx
             end if
@@ -585,7 +609,7 @@ contains
             alf_idx = adv_idx%end
             sys_size = alf_idx !adv_idx%end
 
-            if (bubbles) then
+            if (bubbles_euler) then
                 bub_idx%beg = sys_size + 1
                 bub_idx%end = sys_size + 2*nb
                 if (polytropic .neqv. .true.) then
@@ -635,14 +659,12 @@ contains
             species_idx%end = sys_size + num_species
             sys_size = species_idx%end
 
-            temperature_idx%beg = sys_size + 1
-            temperature_idx%end = sys_size + 1
-            sys_size = temperature_idx%end
+            T_idx = sys_size + 1
+            sys_size = T_idx
         else
             species_idx%beg = 1
             species_idx%end = 1
-            temperature_idx%beg = 1
-            temperature_idx%end = 1
+            T_idx = 1
         end if
 
         momxb = mom_idx%beg
@@ -659,10 +681,7 @@ contains
         intxe = internalEnergies_idx%end
         chemxb = species_idx%beg
         chemxe = species_idx%end
-        tempxb = temperature_idx%beg
-        tempxe = temperature_idx%end
 
-        ! ==================================================================
         if (hifu) then
             sys_size_hifu=max(sys_size,14)
             T_hifu_idx    = 1
@@ -679,18 +698,18 @@ contains
         end if
 
 #ifdef MFC_MPI
-        if (avgdensflag .neqv. .true.) then
-            allocate (MPI_IO_DATA%view(1:sys_size))
-            allocate (MPI_IO_DATA%var(1:sys_size))
-            do i = 1, sys_size
+
+        if (bubbles_lagrange) then
+            allocate (MPI_IO_DATA%view(1:sys_size + 1))
+            allocate (MPI_IO_DATA%var(1:sys_size + 1))
+            do i = 1, sys_size + 1
                 allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
                 MPI_IO_DATA%var(i)%sf => null()
             end do
         else
-            allocate (MPI_IO_DATA%view(1:sys_size + 1))
-            allocate (MPI_IO_DATA%var(1:sys_size + 1))
-
-            do i = 1, sys_size + 1
+            allocate (MPI_IO_DATA%view(1:sys_size))
+            allocate (MPI_IO_DATA%var(1:sys_size))
+            do i = 1, sys_size
                 allocate (MPI_IO_DATA%var(i)%sf(0:m, 0:n, 0:p))
                 MPI_IO_DATA%var(i)%sf => null()
             end do
@@ -741,6 +760,19 @@ contains
             fd_number = max(1, fd_order/2)
             buff_size = buff_size + fd_number
         end if
+
+        ! Configuring Coordinate Direction Indexes =========================
+        idwint(1)%beg = 0; idwint(2)%beg = 0; idwint(3)%beg = 0
+        idwint(1)%end = m; idwint(2)%end = n; idwint(3)%end = p
+
+        idwbuff(1)%beg = -buff_size
+        if (num_dims > 1) then; idwbuff(2)%beg = -buff_size; else; idwbuff(2)%beg = 0; end if
+        if (num_dims > 2) then; idwbuff(3)%beg = -buff_size; else; idwbuff(3)%beg = 0; end if
+
+        idwbuff(1)%end = idwint(1)%end - idwbuff(1)%beg
+        idwbuff(2)%end = idwint(2)%end - idwbuff(2)%beg
+        idwbuff(3)%end = idwint(3)%end - idwbuff(3)%beg
+        ! ==================================================================
 
         ! Allocating single precision grid variables if needed
         if (precision == 1) then
@@ -855,7 +887,7 @@ contains
                 MPI_IO_DATA%var(i)%sf => null()
             end do
 
-            if (avgdensflag) MPI_IO_DATA%var(sys_size + 1)%sf => null()
+            if (bubbles_lagrange) MPI_IO_DATA%var(sys_size + 1)%sf => null()
 
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)

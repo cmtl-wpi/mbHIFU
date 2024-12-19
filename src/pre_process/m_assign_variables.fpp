@@ -15,7 +15,7 @@ module m_assign_variables
 
     use m_helper_basic          !< Functions to compare floating point numbers
 
-    use m_thermochem            !< Thermodynamic and chemical properties
+    use m_thermochem, only: num_species, gas_constant, get_mixture_molecular_weight
 
     ! one form to another
     ! ==========================================================================
@@ -166,7 +166,7 @@ contains
             + (1d0 - eta)*patch_icpp(smooth_patch_id)%pi_inf
 
         ! Species Concentrations
-        #:if chemistry
+        if (chemistry) then
             block
                 real(kind(0d0)) :: sum, term
 
@@ -191,10 +191,10 @@ contains
             end block
 
             call get_mixture_molecular_weight(Ys, mean_molecular_weight)
-            q_prim_vf(tempxb)%sf(j, k, l) = &
+            q_prim_vf(T_idx)%sf(j, k, l) = &
                 q_prim_vf(E_idx)%sf(j, k, l)*mean_molecular_weight &
                 /(gas_constant*q_prim_vf(1)%sf(j, k, l))
-        #:endif
+        end if
 
         ! Updating the patch identities bookkeeping variable
         if (1d0 - eta < 1d-16) patch_id_fp(j, k, l) = patch_id
@@ -337,7 +337,7 @@ contains
             orig_prim_vf(i) = q_prim_vf(i)%sf(j, k, l)
         end do
 
-        if (mpp_lim .and. bubbles) then
+        if (mpp_lim .and. bubbles_euler) then
             !adjust volume fractions, according to modeled gas void fraction
             alf_sum%sf = 0d0
             do i = adv_idx%beg, adv_idx%end - 1
@@ -365,7 +365,7 @@ contains
             q_prim_vf(i)%sf(j, k, l) = patch_icpp(patch_id)%alpha(i - E_idx)
         end do
 
-        if (mpp_lim .and. bubbles) then
+        if (mpp_lim .and. bubbles_euler) then
             !adjust volume fractions, according to modeled gas void fraction
             alf_sum%sf = 0d0
             do i = adv_idx%beg, adv_idx%end - 1
@@ -410,7 +410,7 @@ contains
             q_prim_vf(i)%sf(j, k, l) = patch_icpp(smooth_patch_id)%alpha(i - E_idx)
         end do
 
-        if (mpp_lim .and. bubbles) then
+        if (mpp_lim .and. bubbles_euler) then
             !adjust volume fractions, according to modeled gas void fraction
             alf_sum%sf = 0d0
             do i = adv_idx%beg, adv_idx%end - 1
@@ -423,8 +423,8 @@ contains
             end do
         end if
 
-        ! Bubbles variables
-        if (bubbles) then
+        ! Bubbles euler variables
+        if (bubbles_euler) then
             do i = 1, nb
                 muR = R0(i)*patch_icpp(smooth_patch_id)%r0 ! = R0(i)
                 muV = V0(i)*patch_icpp(smooth_patch_id)%v0 ! = 0
@@ -497,7 +497,7 @@ contains
             end do
         end if
 
-        if (mpp_lim .and. bubbles) then
+        if (mpp_lim .and. bubbles_euler) then
             !adjust volume fractions, according to modeled gas void fraction
             alf_sum%sf = 0d0
             do i = adv_idx%beg, adv_idx%end - 1
@@ -543,7 +543,7 @@ contains
         end do
 
         ! Species Concentrations
-        #:if chemistry
+        if (chemistry) then
             block
                 real(kind(0d0)) :: sum, term
 
@@ -570,9 +570,9 @@ contains
             end block
 
             call get_mixture_molecular_weight(Ys, mean_molecular_weight)
-            q_prim_vf(tempxb)%sf(j, k, l) = &
+            q_prim_vf(T_idx)%sf(j, k, l) = &
                 q_prim_vf(E_idx)%sf(j, k, l)*mean_molecular_weight/(gas_constant*q_prim_vf(1)%sf(j, k, l))
-        #:endif
+        end if
 
         ! Set streamwise velocity to hyperbolic tangent function of y
         if (mixlayer_vel_profile) then
@@ -589,7 +589,7 @@ contains
         end if
 
         ! Smoothed bubble variables
-        if (bubbles) then
+        if (bubbles_euler) then
             do i = 1, nb
                 muR = R0(i)*patch_icpp(patch_id)%r0 ! = 1*R0(i)
                 muV = V0(i)*patch_icpp(patch_id)%v0 ! = 1*V0(i)
@@ -638,7 +638,7 @@ contains
             end if
         end if
 
-        if (mpp_lim .and. bubbles) then
+        if (mpp_lim .and. bubbles_euler) then
             !adjust volume fractions, according to modeled gas void fraction
             alf_sum%sf = 0d0
             do i = adv_idx%beg, adv_idx%end - 1
@@ -651,7 +651,7 @@ contains
             end do
         end if
 
-        if (bubbles .and. (.not. polytropic) .and. (.not. qbmm)) then
+        if (bubbles_euler .and. (.not. polytropic) .and. (.not. qbmm)) then
             do i = 1, nb
                 if (q_prim_vf(bub_idx%ps(i))%sf(j, k, l) == dflt_real) then
                     q_prim_vf(bub_idx%ps(i))%sf(j, k, l) = pb0(i)
@@ -663,7 +663,7 @@ contains
             end do
         end if
 
-        if (sigma /= dflt_real) then
+        if (surface_tension) then
             q_prim_vf(c_idx)%sf(j, k, l) = eta*patch_icpp(patch_id)%cf_val + &
                                            (1d0 - eta)*patch_icpp(smooth_patch_id)%cf_val
         end if

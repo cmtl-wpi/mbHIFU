@@ -50,51 +50,11 @@ module m_data_output
               s_close_probe_files, &
               s_finalize_data_output_module
 
-    abstract interface ! ===================================================
-
-        !> Write data files
-        !! @param q_cons_vf Conservative variables
-        !! @param q_prim_vf Primitive variables
-        !! @param t_step Current time step
-        !! @param beta Eulerian void fraction from lagrangian bubbles
-    subroutine s_write_abstract_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
-
-        import :: scalar_field, sys_size, pres_field, sys_size_hifu
-
-        type(scalar_field), &
-            dimension(sys_size), &
-            intent(in) :: q_cons_vf
-
-        type(scalar_field), &
-            dimension(sys_size), &
-            intent(inout) :: q_prim_vf
-
-        integer, intent(in) :: t_step
-
-        type(scalar_field), optional :: beta
-
-        ! HIFU
-        type(scalar_field), &
-            dimension(sys_size_hifu), &
-            intent(IN), optional :: q_cons_hifu
-
-        integer, intent(IN), optional :: hifu_id
-
-    end subroutine s_write_abstract_data_files
-    end interface ! ========================================================
-#ifdef CRAY_ACC_WAR
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:, :, :), icfl_sf)
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:, :, :), vcfl_sf)
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:, :, :), ccfl_sf)
-    @:CRAY_DECLARE_GLOBAL(real(kind(0d0)), dimension(:, :, :), Rc_sf)
-    !$acc declare link(icfl_sf, vcfl_sf, ccfl_sf, Rc_sf)
-#else
     real(kind(0d0)), allocatable, dimension(:, :, :) :: icfl_sf  !< ICFL stability criterion
     real(kind(0d0)), allocatable, dimension(:, :, :) :: vcfl_sf  !< VCFL stability criterion
     real(kind(0d0)), allocatable, dimension(:, :, :) :: ccfl_sf  !< CCFL stability criterion
     real(kind(0d0)), allocatable, dimension(:, :, :) :: Rc_sf  !< Rc stability criterion
     !$acc declare create(icfl_sf, vcfl_sf, ccfl_sf, Rc_sf)
-#endif
 
     real(kind(0d0)) :: icfl_max_loc, icfl_max_glb !< ICFL stability extrema on local and global grids
     real(kind(0d0)) :: vcfl_max_loc, vcfl_max_glb !< VCFL stability extrema on local and global grids
@@ -110,9 +70,41 @@ module m_data_output
     real(kind(0d0)) :: Rc_min !< Rc criterion maximum
     !> @}
 
-    procedure(s_write_abstract_data_files), pointer :: s_write_data_files => null()
-
 contains
+
+    !> Write data files. Dispatch subroutine that replaces procedure pointer.
+        !! @param q_cons_vf Conservative variables
+        !! @param q_prim_vf Primitive variables
+        !! @param t_step Current time step
+        !! @param beta Eulerian void fraction from lagrangian bubbles
+    subroutine s_write_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+
+        type(scalar_field), &
+            dimension(sys_size), &
+            intent(in) :: q_cons_vf
+
+        type(scalar_field), &
+            dimension(sys_size), &
+            intent(inout) :: q_prim_vf
+
+        integer, intent(in) :: t_step
+
+        type(scalar_field), &
+            intent(inout), optional :: beta
+
+        ! HIFU
+            type(scalar_field), &
+            dimension(sys_size_hifu), &
+            intent(IN), optional :: q_cons_hifu
+
+        integer, intent(IN), optional :: hifu_id
+
+        if (.not. parallel_io) then
+            call s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+        else
+            call s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+        end if
+    end subroutine s_write_data_files
 
     !>  The purpose of this subroutine is to open a new or pre-
         !!          existing run-time information file and append to it the
@@ -160,16 +152,16 @@ contains
 
         ! Generating table header for the stability criteria to be outputted
         if (cfl_dt) then
-            if (any(Re_size > 0)) then
-                write (3, '(A)') '==== Time-steps ====== dt ===== Time ======= ICFL '// &
+            if (viscous) then
+                write (1, '(A)') '==== Time-steps ====== dt ===== Time ======= ICFL '// &
                     'Max ==== VCFL Max ====== Rc Min ======='
             else
                 write (3, '(A)') '=========== Time-steps ============== dt ===== Time '// &
                     '============== ICFL Max ============='
             end if
         else
-            if (any(Re_size > 0)) then
-                write (3, '(A)') '==== Time-steps ====== Time ======= ICFL '// &
+            if (viscous) then
+                write (1, '(A)') '==== Time-steps ====== Time ======= ICFL '// &
                     'Max ==== VCFL Max ====== Rc Min ======='
             else
                 write (3, '(A)') '=========== Time-steps ============== Time '// &
@@ -187,6 +179,7 @@ contains
             !! Relative path to the probe data file in the case directory
 
         integer :: i !< Generic loop iterator
+        logical :: file_exist
 
         do i = 1, num_probes
             ! Generating the relative path to the data file
@@ -195,23 +188,18 @@ contains
 
             ! Creating the formatted data file and setting up its
             ! structure
-            open (i + 30, FILE=trim(file_path), &
-                  FORM='formatted', &
-                  STATUS='unknown')
-            ! POSITION = 'append', &
-            !WRITE(i+30,'(A,I0,A)') 'Probe ',i, ' located at:'
-            !WRITE(i+30,'(A,F10.6)') 'x = ',probe(i)%x
-            !WRITE(i+30,'(A,F10.6)') 'y = ',probe(i)%y
-            !WRITE(i+30,'(A,F10.6)') 'z = ',probe(i)%z
-            !WRITE(i+30, *)
-            !WRITE(i+30,'(A)') '=== Non-Dimensional Time ' // &
-            !                '=== Density ' // &
-            !                '=== Velocity ' // &
-            !                '=== Pressure ' // &
-            !                '=== Gamma ' // &
-            !                '=== Stiffness ' // &
-            !                '=== Sound Speed ' // &
-            !                '=== Acceleration ==='
+            inquire (file=trim(file_path), exist=file_exist)
+
+            if (file_exist) then
+                open (i + 30, FILE=trim(file_path), &
+                      FORM='formatted', &
+                      STATUS='old', &
+                      POSITION='append')
+            else
+                open (i + 30, FILE=trim(file_path), &
+                      FORM='formatted', &
+                      STATUS='unknown')
+            end if
         end do
 
         if (integral_wrt) then
@@ -240,7 +228,6 @@ contains
         type(scalar_field), dimension(sys_size), intent(IN) :: q_prim_vf
         integer, intent(IN) :: t_step
 
-        real(kind(0d0)), dimension(num_fluids) :: alpha_rho  !< Cell-avg. partial density
         real(kind(0d0)) :: rho        !< Cell-avg. density
         real(kind(0d0)), dimension(num_dims) :: vel        !< Cell-avg. velocity
         real(kind(0d0)) :: vel_sum    !< Cell-avg. velocity sum
@@ -248,37 +235,20 @@ contains
         real(kind(0d0)), dimension(num_fluids) :: alpha      !< Cell-avg. volume fraction
         real(kind(0d0)) :: gamma      !< Cell-avg. sp. heat ratio
         real(kind(0d0)) :: pi_inf     !< Cell-avg. liquid stiffness function
-        real(kind(0d0)) :: qv         !< Cell-avg. fluid reference energy
         real(kind(0d0)) :: c          !< Cell-avg. sound speed
-        real(kind(0d0)) :: E          !< Cell-avg. energy
         real(kind(0d0)) :: H          !< Cell-avg. enthalpy
         real(kind(0d0)), dimension(2) :: Re         !< Cell-avg. Reynolds numbers
-
-        ! ICFL, VCFL, CCFL and Rc stability criteria extrema for the current
-        ! time-step and located on both the local (loc) and the global (glb)
-        ! computational domains
-
-        real(kind(0d0)) :: blkmod1, blkmod2 !<
-            !! Fluid bulk modulus for Woods mixture sound speed
-
-        integer :: i, j, k, l, q !< Generic loop iterators
-
-        integer :: Nfq
-        real(kind(0d0)) :: fltr_dtheta   !<
-            !! Modified dtheta accounting for Fourier filtering in azimuthal direction.
+        integer :: j, k, l
 
         ! Computing Stability Criteria at Current Time-step ================
-        !$acc parallel loop collapse(3) gang vector default(present) private(alpha_rho, vel, alpha, Re, fltr_dtheta, Nfq)
+        !$acc parallel loop collapse(3) gang vector default(present) private(vel, alpha, Re)
         do l = 0, p
             do k = 0, n
                 do j = 0, m
-
                     call s_compute_enthalpy(q_prim_vf, pres, rho, gamma, pi_inf, Re, H, alpha, vel, vel_sum, j, k, l)
+                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, 0d0, c)
 
-                    ! Compute mixture sound speed
-                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, c)
-
-                    if (any(Re_size > 0)) then
+                    if (viscous) then
                         call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf, vcfl_sf, Rc_sf)
                     else
                         call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf)
@@ -291,16 +261,16 @@ contains
 
         ! Determining local stability criteria extrema at current time-step
 
-#ifdef CRAY_ACC_WAR
+#ifdef _CRAYFTN
         !$acc update host(icfl_sf)
 
-        if (any(Re_size > 0)) then
+        if (viscous) then
             !$acc update host(vcfl_sf, Rc_sf)
         end if
 
         icfl_max_loc = maxval(icfl_sf)
 
-        if (any(Re_size > 0)) then
+        if (viscous) then
             vcfl_max_loc = maxval(vcfl_sf)
             Rc_min_loc = minval(Rc_sf)
         end if
@@ -309,7 +279,7 @@ contains
         icfl_max_loc = maxval(icfl_sf)
         !$acc end kernels
 
-        if (any(Re_size > 0)) then
+        if (viscous) then
             !$acc kernels
             vcfl_max_loc = maxval(vcfl_sf)
             Rc_min_loc = minval(Rc_sf)
@@ -329,22 +299,22 @@ contains
                                                          Rc_min_glb)
         else
             icfl_max_glb = icfl_max_loc
-            if (any(Re_size > 0)) vcfl_max_glb = vcfl_max_loc
-            if (any(Re_size > 0)) Rc_min_glb = Rc_min_loc
+            if (viscous) vcfl_max_glb = vcfl_max_loc
+            if (viscous) Rc_min_glb = Rc_min_loc
         end if
 
         ! Determining the stability criteria extrema over all the time-steps
         if (icfl_max_glb > icfl_max) icfl_max = icfl_max_glb
 
-        if (any(Re_size > 0)) then
+        if (viscous) then
             if (vcfl_max_glb > vcfl_max) vcfl_max = vcfl_max_glb
             if (Rc_min_glb < Rc_min) Rc_min = Rc_min_glb
         end if
 
         ! Outputting global stability criteria extrema at current time-step
         if (proc_rank == 0) then
-            if (any(Re_size > 0)) then
-                write (3, '(6X,I8,F10.6,6X,6X,F10.6,6X,F9.6,6X,F9.6,6X,F10.6)') &
+            if (viscous) then
+                write (1, '(6X,I8,F10.6,6X,6X,F10.6,6X,F9.6,6X,F9.6,6X,F10.6)') &
                     t_step, dt, t_step*dt, icfl_max_glb, &
                     vcfl_max_glb, &
                     Rc_min_glb
@@ -360,16 +330,13 @@ contains
                 call s_mpi_abort('ICFL is greater than 1.0. Exiting ...')
             end if
 
-            do i = chemxb, chemxe
-                !@:ASSERT(all(q_prim_vf(i)%sf(:,:,:) >= -1d0), "bad conc")
-                !@:ASSERT(all(q_prim_vf(i)%sf(:,:,:) <=  2d0), "bad conc")
-            end do
-
-            if (vcfl_max_glb /= vcfl_max_glb) then
-                call s_mpi_abort('VCFL is NaN. Exiting ...')
-            elseif (vcfl_max_glb > 1d0) then
-                print *, 'vcfl', vcfl_max_glb
-                call s_mpi_abort('VCFL is greater than 1.0. Exiting ...')
+            if (viscous) then
+                if (vcfl_max_glb /= vcfl_max_glb) then
+                    call s_mpi_abort('VCFL is NaN. Exiting ...')
+                elseif (vcfl_max_glb > 1d0) then
+                    print *, 'vcfl', vcfl_max_glb
+                    call s_mpi_abort('VCFL is greater than 1.0. Exiting ...')
+                end if
             end if
         end if
 
@@ -383,7 +350,7 @@ contains
         !!  @param q_prim_vf Cell-average primitive variables
         !!  @param t_step Current time-step
         !!  @param beta Eulerian void fraction from lagrangian bubbles
-    subroutine s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id) ! -------------
+    subroutine s_write_serial_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
@@ -405,14 +372,9 @@ contains
 
         character(LEN=15) :: FMT
 
-        integer :: i, j, k, l, ii, r!< Generic loop iterators
+        integer :: i, j, k, l, r
 
-        real(kind(0d0)), dimension(nb) :: nRtmp         !< Temporary bubble concentration
-        real(kind(0d0)) :: nbub, nR3, vftmp                         !< Temporary bubble number density
         real(kind(0d0)) :: gamma, lit_gamma, pi_inf, qv !< Temporary EOS params
-        real(kind(0d0)) :: rho                          !< Temporary density
-        real(kind(0d0)), dimension(2) :: Re !< Temporary Reynolds number
-        real(kind(0d0)) :: E_e                          !< Temp. elastic energy contribution
 
         ! Creating or overwriting the time-step root directory
         write (t_step_dir, '(A,I0,A,I0)') trim(case_dir)//'/p_all'
@@ -528,7 +490,7 @@ contains
         if (.not. file_exist) call s_create_directory(trim(t_step_dir))
 
         if (prim_vars_wrt .or. (n == 0 .and. p == 0)) then
-            call s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf)
+            call s_convert_conservative_to_primitive_variables(q_cons_vf, q_prim_vf, idwint)
             do i = 1, sys_size
                 !$acc update host(q_prim_vf(i)%sf(:,:,:))
             end do
@@ -614,6 +576,18 @@ contains
                 close (2)
             end do
 
+            if (present(beta)) then
+                write (file_path, '(A,I0,A,I2.2,A,I6.6,A)') trim(t_step_dir)//'/beta.', i, '.', proc_rank, '.', t_step, '.dat'
+                open (2, FILE=trim(file_path))
+                do j = 0, m
+                    do k = 0, n
+                        write (2, FMT) x_cb(j), y_cb(k), beta%sf(0:m, 0:n, 0)
+                    end do
+                    write (2, *)
+                end do
+                close (2)
+            end if
+
             if (qbmm .and. .not. polytropic) then
                 do i = 1, nb
                     do r = 1, nnode
@@ -692,6 +666,21 @@ contains
                 close (2)
             end do
 
+            if (present(beta)) then
+                write (file_path, '(A,I0,A,I2.2,A,I6.6,A)') trim(t_step_dir)//'/beta.', i, '.', proc_rank, '.', t_step, '.dat'
+                open (2, FILE=trim(file_path))
+                do j = 0, m
+                    do k = 0, n
+                        do l = 0, p
+                            write (2, FMT) x_cb(j), y_cb(k), z_cb(l), beta%sf(j, k, l)
+                        end do
+                        write (2, *)
+                    end do
+                    write (2, *)
+                end do
+                close (2)
+            end if
+
             if (qbmm .and. .not. polytropic) then
                 do i = 1, nb
                     do r = 1, nnode
@@ -754,13 +743,6 @@ contains
             end if
         end if
 
-        if (present(beta)) then
-            write (file_path, '(A,I0,A)') trim(t_step_dir)//'/q_cons_vf', adv_idx%end + 1, '.dat'
-            open (2, FILE=trim(file_path), FORM='unformatted', STATUS='new')
-            write (2) beta%sf(0:m, 0:n, 0:p)
-            close (2)
-        end if
-
     end subroutine s_write_serial_data_files
 
     !>  The goal of this subroutine is to output the grid and
@@ -774,9 +756,9 @@ contains
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         integer, intent(in) :: t_step
-        type(scalar_field), optional :: beta
-        type(scalar_field), dimension(sys_size_hifu), intent(IN), optional :: q_cons_hifu
-        integer, intent(IN), optional :: hifu_id
+        type(scalar_field), intent(inout), optional :: beta
+        type(scalar_field), dimension(sys_size_hifu), intent(in), optional :: q_cons_hifu
+        integer, intent(in), optional :: hifu_id
 
 #ifdef MFC_MPI
 
@@ -813,7 +795,7 @@ contains
             ! Initialize MPI data I/O
 
             if (ib) then
-                call s_initialize_mpi_data(q_cons_vf, ib_markers)
+                call s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm)
             else
                 call s_initialize_mpi_data(q_cons_vf)
             end if
@@ -855,7 +837,7 @@ contains
             str_MOK = int(name_len, MPI_OFFSET_KIND)
             NVARS_MOK = int(sys_size, MPI_OFFSET_KIND)
 
-            if (bubbles) then
+            if (bubbles_euler) then
                 ! Write the data for each variable
                 do i = 1, sys_size
                     var_MOK = int(i, MPI_OFFSET_KIND)
@@ -888,7 +870,9 @@ contains
             if (present(hifu_id)) then
                 call s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
             else
-                if (present(beta)) then
+                if (ib) then
+                    call s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm)
+                elseif (present(beta)) then
                     call s_initialize_mpi_data(q_cons_vf, beta=beta)
                 else
                     call s_initialize_mpi_data(q_cons_vf)
@@ -920,7 +904,7 @@ contains
             str_MOK = int(name_len, MPI_OFFSET_KIND)
             NVARS_MOK = int(alt_sys, MPI_OFFSET_KIND)
 
-            if (bubbles) then
+            if (bubbles_euler) then
                 ! Write the data for each variable
                 do i = 1, sys_size
                     var_MOK = int(i, MPI_OFFSET_KIND)
@@ -1033,20 +1017,16 @@ contains
         real(kind(0d0)) :: int_pres
         real(kind(0d0)) :: max_pres
         real(kind(0d0)), dimension(2) :: Re
-        real(kind(0d0)) :: E_e
         real(kind(0d0)), dimension(6) :: tau_e
         real(kind(0d0)) :: G
-        real(kind(0d0)) :: dyn_p
+        real(kind(0d0)) :: dyn_p, Temp
 
-        integer :: i, j, k, l, s, q, d !< Generic loop iterator
+        integer :: i, j, k, l, s, d !< Generic loop iterator
 
         real(kind(0d0)) :: nondim_time !< Non-dimensional time
 
         real(kind(0d0)) :: tmp !<
             !! Temporary variable to store quantity for mpi_allreduce
-
-        real(kind(0d0)) :: blkmod1, blkmod2 !<
-            !! Fluid bulk modulus for Woods mixture sound speed
 
         integer :: npts !< Number of included integral points
         real(kind(0d0)) :: rad, thickness !< For integral quantities
@@ -1054,7 +1034,7 @@ contains
 
         real(kind(0d0)) :: rhoYks(1:num_species)
 
-        real(kind(0d0)) :: Temp, x_loc0, x_loc1, x_loc2
+        real(kind(0d0)) :: Temp_hifu, x_loc0, x_loc1, x_loc2
 
         ! Non-dimensional time calculation
         if (time_stepper == 23) then
@@ -1063,7 +1043,7 @@ contains
             if (t_step_old /= dflt_int) then
                 nondim_time = real(t_step + t_step_old, kind(0d0))*dt
             else
-                nondim_time = real(t_step, kind(0d0))*dt !*1.d-5/10.0761131451d0
+                nondim_time = real(t_step, kind(0d0))*dt
             end if
         end if
 
@@ -1094,8 +1074,8 @@ contains
                 tau_e(s) = 0d0
             end do
 
-            if (hifu_heateqnFlag) then
-                Temp=0d0
+            if (hifu_params%heatSolver) then
+                Temp_hifu=0d0
                 x_loc0=0d0
                 x_loc1=0d0
                 x_loc2=0d0
@@ -1139,14 +1119,14 @@ contains
                         call s_compute_pressure( &
                             q_cons_vf(1)%sf(j - 2, k, l), &
                             q_cons_vf(alf_idx)%sf(j - 2, k, l), &
-                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, &
+                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, Temp, &
                             q_cons_vf(stress_idx%beg)%sf(j - 2, k, l), &
                             q_cons_vf(mom_idx%beg)%sf(j - 2, k, l), G)
                     else
                         call s_compute_pressure( &
                             q_cons_vf(1)%sf(j - 2, k, l), &
                             q_cons_vf(alf_idx)%sf(j - 2, k, l), &
-                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres)
+                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, Temp)
                     end if
 
                     if (model_eqns == 4) then
@@ -1155,7 +1135,7 @@ contains
                         tau_e(1) = q_cons_vf(stress_idx%end)%sf(j - 2, k, l)/rho
                     end if
 
-                    if (bubbles) then
+                    if (bubbles_euler) then
                         alf = q_cons_vf(alf_idx)%sf(j - 2, k, l)
                         if (num_fluids == 3) then
                             alfgr = q_cons_vf(alf_idx - 1)%sf(j - 2, k, l)
@@ -1204,7 +1184,7 @@ contains
 
                     ! Compute mixture sound Speed
                     call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                  ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, c)
+                                                  ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, 0d0, c)
 
                     accel = accel_mag(j - 2, k, l)
                 end if
@@ -1232,9 +1212,9 @@ contains
                         l = 0
 
                         ! Temperature hifu
-                        if (hifu_heateqnFlag) then
+                        if (hifu_params%heatSolver) then
                             !print*, 'Tracking point'
-                            Temp = Temp + q_cons_vf(T_hifu_idx)%sf(j-2,k-2,l)
+                            Temp_hifu = Temp_hifu + q_cons_vf(T_hifu_idx)%sf(j-2,k-2,l)
                             x_loc0 = x_loc0 + x_cc(j)
                             x_loc1 = x_loc1 + x_cc(j-1)
                             x_loc2 = x_loc2 + x_cc(j-2)
@@ -1260,13 +1240,14 @@ contains
                                 dyn_p, pi_inf, gamma, rho, qv, &
                                 rhoYks, &
                                 pres, &
+                                Temp, &
                                 q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
                                 q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
                         else
                             call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
                                                     q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
                                                     dyn_p, pi_inf, gamma, rho, qv, &
-                                                    rhoYks, pres)
+                                                    rhoYks, pres, Temp)
                         end if
 
                         if (model_eqns == 4) then
@@ -1277,7 +1258,7 @@ contains
                             end do
                         end if
 
-                        if (bubbles) then
+                        if (bubbles_euler) then
                             alf = q_cons_vf(alf_idx)%sf(j - 2, k - 2, l)
                             do s = 1, nb
                                 nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k - 2, l)
@@ -1301,7 +1282,7 @@ contains
 
                         ! Compute mixture sound speed
                         call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                      ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, c)
+                                                      ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, 0d0, c)
 
                         accel = accel_mag(j - 2, k - 2, l)
                         end if
@@ -1351,19 +1332,19 @@ contains
                                     q_cons_vf(1)%sf(j - 2, k - 2, l - 2), &
                                     q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
                                     dyn_p, pi_inf, gamma, rho, qv, &
-                                    rhoYks, pres, &
+                                    rhoYks, pres, Temp, &
                                     q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l - 2), &
                                     q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l - 2), G)
                             else
                                 call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l - 2), &
                                                         q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
                                                         dyn_p, pi_inf, gamma, rho, qv, &
-                                                        rhoYks, pres)
+                                                        rhoYks, pres, Temp)
                             end if
 
                             ! Compute mixture sound speed
                             call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                          ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, c)
+                                                          ((gamma + 1d0)*pres + pi_inf)/rho, alpha, 0d0, 0d0, c)
 
                             accel = accel_mag(j - 2, k - 2, l - 2)
                         end if
@@ -1382,14 +1363,14 @@ contains
                     call s_mpi_allreduce_sum(tmp, vel(s))
                 end do
 
-                if (hifu_heateqnFlag) then
-                    #:for VAR in ['Temp','x_loc0','x_loc1','x_loc2']
+                if (hifu_params%heatSolver) then
+                    #:for VAR in ['Temp_hifu','x_loc0','x_loc1','x_loc2']
                         tmp = ${VAR}$
                         call s_mpi_allreduce_sum(tmp, ${VAR}$)
                     #:endfor
                 end if
 
-                if (bubbles) then
+                if (bubbles_euler) then
                     #:for VAR in ['alf','alfgr','nbub','nR(1)','nRdot(1)','M00','R(1)','Rdot(1)','ptilde','ptot']
                         tmp = ${VAR}$
                         call s_mpi_allreduce_sum(tmp, ${VAR}$)
@@ -1413,7 +1394,7 @@ contains
 
             if (proc_rank == 0) then
                 if (n == 0) then
-                    if (bubbles .and. (num_fluids <= 2)) then
+                    if (bubbles_euler .and. (num_fluids <= 2)) then
                         if (qbmm) then
                             write (i + 30, '(6x,f12.6,14f28.16)') &
                                 nondim_time, &
@@ -1445,7 +1426,7 @@ contains
                             ! ptilde, &
                             ! ptot
                         end if
-                    else if (bubbles .and. (num_fluids == 3)) then
+                    else if (bubbles_euler .and. (num_fluids == 3)) then
                         write (i + 30, '(6x,f12.6,f24.8,f24.8,f24.8,f24.8,f24.8,'// &
                                'f24.8,f24.8,f24.8,f24.8,f24.8, f24.8)') &
                             nondim_time, &
@@ -1460,7 +1441,7 @@ contains
                             Rdot(1), &
                             ptilde, &
                             ptot
-                    else if (bubbles .and. num_fluids == 4) then
+                    else if (bubbles_euler .and. num_fluids == 4) then
                         write (i + 30, '(6x,f12.6,f24.8,f24.8,f24.8,f24.8,'// &
                                'f24.8,f24.8,f24.8,f24.8,f24.8,f24.8,f24.8,f24.8,f24.8)') &
                             nondim_time, &
@@ -1485,14 +1466,14 @@ contains
                             pres
                     end if
                 elseif (p == 0) then
-                    if (hifu_heateqnFlag) then
+                    if (hifu_params%heatSolver) then
                         write (i + 30, '(6X,5E24.8)') &
                             nondim_time, &
-                            Temp - hifu_Tref,&
+                            Temp_hifu - hifu_params%Tref,&
                             x_loc0,&
                             x_loc1,&
                             x_loc2
-                    else if (bubbles) then
+                    else if (bubbles_euler) then
                         write (i + 30, '(6X,10F24.8)') &
                             nondim_time, &
                             rho, &
@@ -1517,7 +1498,7 @@ contains
                             tau_e(3)
                     else
 
-                        write (i + 30, '(6X,F12.8,F24.8,F24.8,F24.8,E24.16)') &
+                        write (i + 30, '(6X,F12.8,4E24.8)') &
                             nondim_time, &
                             rho, &
                             vel(1), &
@@ -1543,7 +1524,7 @@ contains
             end if
         end do
 
-        if (integral_wrt .and. bubbles) then
+        if (integral_wrt .and. bubbles_euler) then
             if (n == 0) then ! 1D simulation
                 do i = 1, num_integrals
                     int_pres = 0d0
@@ -1586,7 +1567,7 @@ contains
                     end if
 
                     if (proc_rank == 0) then
-                        if (bubbles .and. (num_fluids <= 2)) then
+                        if (bubbles_euler .and. (num_fluids <= 2)) then
                             write (i + 70, '(6x,f12.6,f24.8)') &
                                 nondim_time, int_pres
                         end if
@@ -1669,7 +1650,7 @@ contains
                     end if
 
                     if (proc_rank == 0) then
-                        if (bubbles .and. (num_fluids <= 2)) then
+                        if (bubbles_euler .and. (num_fluids <= 2)) then
                             write (i + 70, '(6x,f12.6,f24.8,f24.8)') &
                                 nondim_time, int_pres, max_pres
                         end if
@@ -1694,8 +1675,8 @@ contains
         write (3, '(A)') ''
 
         write (3, '(A,F9.6)') 'ICFL Max: ', icfl_max
-        if (any(Re_size > 0)) write (3, '(A,F9.6)') 'VCFL Max: ', vcfl_max
-        if (any(Re_size > 0)) write (3, '(A,F10.6)') 'Rc Min: ', Rc_min
+        if (viscous) write (3, '(A,F9.6)') 'VCFL Max: ', vcfl_max
+        if (viscous) write (3, '(A,F10.6)') 'Rc Min: ', Rc_min
 
         call cpu_time(run_time)
 
@@ -1723,40 +1704,16 @@ contains
         !!      other procedures that are necessary to setup the module.
     subroutine s_initialize_data_output_module
 
-        type(int_bounds_info) :: ix, iy, iz
-
-        integer :: i !< Generic loop iterator
-
         ! Allocating/initializing ICFL, VCFL, CCFL and Rc stability criteria
-        @:ALLOCATE_GLOBAL(icfl_sf(0:m, 0:n, 0:p))
+        @:ALLOCATE(icfl_sf(0:m, 0:n, 0:p))
         icfl_max = 0d0
 
-        if (any(Re_size > 0)) then
-            @:ALLOCATE_GLOBAL(vcfl_sf(0:m, 0:n, 0:p))
-            @:ALLOCATE_GLOBAL(Rc_sf  (0:m, 0:n, 0:p))
+        if (viscous) then
+            @:ALLOCATE(vcfl_sf(0:m, 0:n, 0:p))
+            @:ALLOCATE(Rc_sf  (0:m, 0:n, 0:p))
 
             vcfl_max = 0d0
             Rc_min = 1d3
-        end if
-
-        ! Associating the procedural pointer to the appropriate subroutine
-        ! that will be utilized in the conversion to the mixture variables
-
-        if (model_eqns == 1) then        ! Gamma/pi_inf model
-            s_convert_to_mixture_variables => &
-                s_convert_mixture_to_mixture_variables
-        elseif (bubbles) then           ! Volume fraction for bubbles
-            s_convert_to_mixture_variables => &
-                s_convert_species_to_mixture_variables_bubbles
-        else                            ! Volume fraction model
-            s_convert_to_mixture_variables => &
-                s_convert_species_to_mixture_variables
-        end if
-
-        if (parallel_io .neqv. .true.) then
-            s_write_data_files => s_write_serial_data_files
-        else
-            s_write_data_files => s_write_parallel_data_files
         end if
 
     end subroutine s_initialize_data_output_module
@@ -1764,18 +1721,11 @@ contains
     !> Module deallocation and/or disassociation procedures
     subroutine s_finalize_data_output_module
 
-        integer :: i !< Generic loop iterator
-
         ! Deallocating the ICFL, VCFL, CCFL, and Rc stability criteria
-        @:DEALLOCATE_GLOBAL(icfl_sf)
-        if (any(Re_size > 0)) then
-            @:DEALLOCATE_GLOBAL(vcfl_sf, Rc_sf)
+        @:DEALLOCATE(icfl_sf)
+        if (viscous) then
+            @:DEALLOCATE(vcfl_sf, Rc_sf)
         end if
-
-        ! Disassociating the pointer to the procedure that was utilized to
-        ! to convert mixture or species variables to the mixture variables
-        s_convert_to_mixture_variables => null()
-        s_write_data_files => null()
 
     end subroutine s_finalize_data_output_module
 

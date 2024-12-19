@@ -36,7 +36,7 @@ contains
 #endif
 
 #ifndef MFC_POST_PROCESS
-        call s_check_inputs_bubbles
+        call s_check_inputs_bubbles_euler
         call s_check_inputs_qbmm_and_polydisperse
         call s_check_inputs_adv_n
         call s_check_inputs_hypoelasticity
@@ -61,7 +61,7 @@ contains
         !! Called by s_check_inputs_common for simulation and post-processing
     subroutine s_check_inputs_time_stepping
         if (cfl_dt) then
-            @:PROHIBIT(cfl_target < 0 .or. cfl_target > 1d0)
+            @:PROHIBIT((cfl_target < 0 .or. cfl_target > 1d0) .and. .not. rkck_adap_dt)
             @:PROHIBIT(t_stop <= 0)
             @:PROHIBIT(t_save <= 0)
             @:PROHIBIT(t_save > t_stop)
@@ -99,35 +99,35 @@ contains
 
     !> Checks constraints on the bubble parameters.
         !! Called by s_check_inputs_common for pre-processing and simulation
-    subroutine s_check_inputs_bubbles
-        @:PROHIBIT(bubbles .and. nb < 1, "The Ensemble-Averaged Bubble Model requires nb >= 1")
-        @:PROHIBIT(bubbles .and. polydisperse .and. (nb == 1), "Polydisperse bubble dynamics requires nb > 1")
-        @:PROHIBIT(bubbles .and. polydisperse .and. (mod(nb, 2) == 0), "nb must be odd")
-        @:PROHIBIT(bubbles .and. (.not. polytropic) .and. f_is_default(R0ref), "R0ref must be set if using bubbles with polytropic = .false.")
-        @:PROHIBIT(bubbles .and. nb == dflt_int, "nb must be set if using bubbles")
-        @:PROHIBIT(bubbles .and. thermal > 3)
-        @:PROHIBIT(bubbles .and. model_eqns == 3, "Bubble models untested with 6-equation model (model_eqns = 3)")
-        @:PROHIBIT(bubbles .and. model_eqns == 1, "Bubble models untested with pi-gamma model (model_eqns = 1)")
-        @:PROHIBIT(bubbles .and. model_eqns == 4 .and. f_is_default(rhoref), "rhoref must be set if using bubbles with model_eqns = 4")
-        @:PROHIBIT(bubbles .and. model_eqns == 4 .and. f_is_default(pref), "pref must be set if using bubbles with model_eqns = 4")
-        @:PROHIBIT(bubbles .and. model_eqns == 4 .and. num_fluids /= 1, "4-equation model (model_eqns = 4) is single-component and requires num_fluids = 1")
-        @:PROHIBIT(bubbles .and. cyl_coord, "Bubble models untested in cylindrical coordinates")
-    end subroutine s_check_inputs_bubbles
+    subroutine s_check_inputs_bubbles_euler
+        @:PROHIBIT(bubbles_euler .and. nb < 1, "The Ensemble-Averaged Bubble Model requires nb >= 1")
+        @:PROHIBIT(bubbles_euler .and. polydisperse .and. (nb == 1), "Polydisperse bubble dynamics requires nb > 1")
+        @:PROHIBIT(bubbles_euler .and. polydisperse .and. (mod(nb, 2) == 0), "nb must be odd")
+        @:PROHIBIT(bubbles_euler .and. (.not. polytropic) .and. f_is_default(R0ref), "R0ref must be set if using bubbles_euler with polytropic = .false.")
+        @:PROHIBIT(bubbles_euler .and. nb == dflt_int, "nb must be set if using bubbles_euler")
+        @:PROHIBIT(bubbles_euler .and. thermal > 3)
+        @:PROHIBIT(bubbles_euler .and. model_eqns == 3, "Bubble models untested with 6-equation model (model_eqns = 3)")
+        @:PROHIBIT(bubbles_euler .and. model_eqns == 1, "Bubble models untested with pi-gamma model (model_eqns = 1)")
+        @:PROHIBIT(bubbles_euler .and. model_eqns == 4 .and. f_is_default(rhoref), "rhoref must be set if using bubbles_euler with model_eqns = 4")
+        @:PROHIBIT(bubbles_euler .and. model_eqns == 4 .and. f_is_default(pref), "pref must be set if using bubbles_euler with model_eqns = 4")
+        @:PROHIBIT(bubbles_euler .and. model_eqns == 4 .and. num_fluids /= 1, "4-equation model (model_eqns = 4) is single-component and requires num_fluids = 1")
+        @:PROHIBIT(bubbles_euler .and. cyl_coord, "Bubble models untested in cylindrical coordinates")
+    end subroutine s_check_inputs_bubbles_euler
 
     !> Checks constraints on the QBMM and polydisperse bubble parameters.
         !! Called by s_check_inputs_common for pre-processing and simulation
     subroutine s_check_inputs_qbmm_and_polydisperse
-        @:PROHIBIT(polydisperse .and. (.not. bubbles), "Polydisperse bubble modeling requires the bubbles flag to be set")
+        @:PROHIBIT(polydisperse .and. (.not. bubbles_euler), "Polydisperse bubble modeling requires the bubbles_euler flag to be set")
         @:PROHIBIT(polydisperse .and. f_is_default(poly_sigma), "Polydisperse bubble modeling requires poly_sigma to be set")
         @:PROHIBIT(polydisperse .and. poly_sigma <= 0)
-        @:PROHIBIT(qbmm .and. (.not. bubbles), "QBMM requires the bubbles flag to be set")
+        @:PROHIBIT(qbmm .and. (.not. bubbles_euler), "QBMM requires the bubbles_euler flag to be set")
         @:PROHIBIT(qbmm .and. nnode /= 4)
     end subroutine s_check_inputs_qbmm_and_polydisperse
 
     !> Checks constraints on the adv_n flag.
         !! Called by s_check_inputs_common for pre-processing and simulation
     subroutine s_check_inputs_adv_n
-        @:PROHIBIT(adv_n .and. (.not. bubbles))
+        @:PROHIBIT(adv_n .and. (.not. bubbles_euler))
         @:PROHIBIT(adv_n .and. num_fluids /= 1)
         @:PROHIBIT(adv_n .and. qbmm)
     end subroutine
@@ -194,7 +194,7 @@ contains
     !> Checks constraints regarding WENO order.
         !! Called by s_check_inputs_common for all three stages
     subroutine s_check_inputs_weno
-        @:PROHIBIT(all(weno_order /= (/1, 3, 5/)), "weno_order must be 1, 3, or 5")
+        @:PROHIBIT(all(weno_order /= (/1, 3, 5, 7/)), "weno_order must be 1, 3, 5, or 7")
         @:PROHIBIT(m + 1 < weno_order, "m must be at least weno_order - 1")
         @:PROHIBIT(n > 0 .and. n + 1 < weno_order, "n must be at least weno_order - 1")
         @:PROHIBIT(p > 0 .and. p + 1 < weno_order, "p must be at least weno_order - 1")
@@ -254,11 +254,11 @@ contains
         !! Called by s_check_inputs_common for all three stages
     subroutine s_check_inputs_stiffened_eos
         character(len=5) :: iStr !< for int to string conversion
-        integer :: bub_fac !< For allowing an extra fluid_pp if there are subgrid bubbles
+        integer :: bub_fac !< For allowing an extra fluid_pp if there are subgrid bubbles_euler
         integer :: i
 
         bub_fac = 0
-        if (bubbles .and. (num_fluids == 1)) bub_fac = 1
+        if (bubbles_euler .and. (num_fluids == 1)) bub_fac = 1
 
         do i = 1, num_fluids
             call s_int_to_str(i, iStr)
@@ -290,11 +290,31 @@ contains
     !> Checks constraints on the surface tension parameters.
         !! Called by s_check_inputs_common for all three stages
     subroutine s_check_inputs_surface_tension
-        @:PROHIBIT(.not. f_is_default(sigma) .and. sigma < 0d0, &
+
+        integer :: i
+
+        @:PROHIBIT(surface_tension .and. sigma < 0d0, &
             "sigma must be greater than or equal to zero")
 
-        @:PROHIBIT(.not. f_is_default(sigma) .and. model_eqns /= 3, &
+        @:PROHIBIT(surface_tension .and. sigma == dflt_real, &
+            "sigma must be set if surface_tension is enabled")
+
+        @:PROHIBIT(.not. f_is_default(sigma) .and. .not. surface_tension, &
+            "sigma is set but surface_tension is not enabled")
+
+        @:PROHIBIT(surface_tension .and. model_eqns /= 3, &
             "The surface tension model requires model_eqns=3")
+
+        @:PROHIBIT(surface_tension .and. num_fluids /= 2, &
+            "The surface tension model requires num_fluids=2")
+
+#ifdef MFC_PRE_PROCESS
+        do i = 1, num_patches
+            @:PROHIBIT(surface_tension .and. f_is_default(patch_icpp(i)%cf_val), &
+                "patch_icpp(i)%cf_val must be set if surface_tension is enabled")
+        end do
+#endif MFC_PRE_PROCESS
+
     end subroutine s_check_inputs_surface_tension
 
     !> Checks constraints on the inputs for moving boundaries.

@@ -74,7 +74,7 @@ print(json.dumps({
     'acoustic(1)%loc(2)'           : 0.,
     'acoustic(1)%pulse'            : 2,
     'acoustic(1)%npulse'           : 1,
-    'acoustic(1)%mag'              : 1.e+5,
+    'acoustic(1)%mag'              : 1.,
     'acoustic(1)%gauss_sigma_time' : 2E-8,
     'acoustic(1)%foc_length'       : 0.00054,
     'acoustic(1)%aperture'         : 0.0008,

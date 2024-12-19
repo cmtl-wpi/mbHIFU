@@ -94,7 +94,7 @@ print(json.dumps({
     'alt_soundspeed'               : 'F',
     'num_fluids'                   : 1,
     # Advect both volume fractions
-    'adv_alphan'                   : 'T',
+    # 'adv_alphan'                   : 'T',
     # No need to ensure the volume fractions sum to unity at the end of each
     # time step
     'mpp_lim'                      : 'F',
@@ -131,7 +131,7 @@ print(json.dumps({
     'format'                       : 1,
     'precision'                    : 2,
     'prim_vars_wrt'                :'T',
-    'ib_wrt'                       :'T',
+    # 'ib_wrt'                       :'T',
     'fd_order'                     : 1,
     'omega_wrt(3)'                 :'T',
     'parallel_io'                  :'T',
@@ -192,7 +192,6 @@ print(json.dumps({
     'fluid_pp(1)%M_v'               : M_v,
     'fluid_pp(1)%mu_v'              : mu_v,
     'fluid_pp(1)%k_v'               : k_v,
-    #'fluid_pp(1)%Re(1)' 	    : 80000,
 
     # Last fluid_pp is always reserved for bubble gas state ===
     # if applicable  ==========================================
@@ -205,7 +204,7 @@ print(json.dumps({
     # ==========================================================
 
     # Bubbles ==================================================
-    'bubbles'               : 'T',
+    'bubbles_euler'         : 'T',
     'bubble_model'          : 2,
     'polytropic'            : 'T',
     'polydisperse'          : 'F',
