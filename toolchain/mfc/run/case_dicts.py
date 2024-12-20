@@ -255,13 +255,16 @@ for var in [ 'epsilonb', 'valmaxvoid', 'charwidth', 'diffcoefvap',
              'srfElast_ctdBub' ]:
     SIMULATION[f'lag_params%{var}'] = ParamType.REAL
 
-for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming' ]:
+for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages', 
+             'stg1', 'stg2', 'stg3' ]:
     SIMULATION[f'hifu_params%{var}'] = ParamType.LOG
 
-for var in [ 'stepStopSource']:
+for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3', 
+             't_step_save_stg3']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
 
-for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef']:
+for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
+             'dt_stg3']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
 
 for var in [ 'iwave', 'ncycles']:

@@ -65,7 +65,7 @@ contains
     end subroutine s_initialize_HIFU_module
 
 
-    !> Initiallize HIFU vars to start taking samples
+    !> Populate HIFU vars with user inputs and zeroing the time-averaged vars.
     subroutine s_start_HIFU_vars()
 
         integer :: i
@@ -73,7 +73,7 @@ contains
         !Zeroing all the hifu variables
         do i = 1, sys_size_hifu
             q_hifu(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, idwbuff(2)%beg:idwbuff(2)%end, &
-                                                       idwbuff(3)%beg:idwbuff(3)%end) = 0d0
+                                                       idwbuff(3)%beg:idwbuff(3)%end) = 0._wp
         end do
 
         !Initial Temperature
@@ -91,6 +91,60 @@ contains
         call s_open_run_time_information_samplingHIFU()
 
     end subroutine s_start_HIFU_vars
+
+    subroutine s_restart_hifu_stages()
+
+        ! Starting fresh
+        if (cfl_dt) then
+            if (n_start == 0) then
+                if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 1: developing hydrodynamic field'
+                return
+            end if
+        else
+            if (t_step_start == 0) then
+                if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 1: developing hydrodynamic field'
+                return
+            end if
+        end if
+
+        ! Restart during stg1
+        if (hifu_params%stg1) then
+            if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 1 -> restarting'
+            return
+        end if
+
+        ! Restart during stg2
+        if (hifu_params%stg2) then
+            
+            if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 2 -> restarting'
+            hifu_params%sampling = .true.
+            hifu_params%heatSolver = .false.
+
+            if (cfl_dt) then
+                t_stop = hifu_params%t_stop_stg2
+            else
+                t_step_stop = hifu_params%t_step_stop_stg2
+            end if
+            
+            return
+        end if
+
+        ! Restart during stg3
+        if (hifu_params%stg3) then
+
+            if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 3 -> restarting'
+            hifu_params%sampling = .false.
+            hifu_params%heatSolver = .true.
+            cfl_dt = .false.
+            dt = hifu_params%dt_stg3
+            t_step_save = hifu_params%t_step_save_stg3
+            t_step_stop = hifu_params%t_step_stop_stg3
+            if (bc_x%beg == -20) bc_x%beg = -6 !In case acoustic BC is active
+
+            return
+        end if
+
+    end subroutine
 
     !> The idea is to jump form one stage into the other with this procedure
     subroutine s_HIFU_stages(t_step, hifu_write_output)
@@ -114,11 +168,8 @@ contains
                 t_stop = hifu_params%t_stop_stg2
 
                 call s_start_HIFU_vars()
-                if (proc_rank==0) print*, 'Warning!!! Starting to sample HIFU heat sources. STAGE 2!'
+                if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 2: sampling heat sources'
                 hifu_write_output = .true.
-                ! save_count = int(mytime/t_save)
-                ! call s_write_data_files(q_cons_vf, q_cons_vf, save_count, q_cons_hifu=q_hifu, hifu_id=1)
-
             end if
         else
             if (t_step == hifu_params%t_step_stop_stg1) then
@@ -131,10 +182,8 @@ contains
                 t_step_stop = hifu_params%t_step_stop_stg2
 
                 call s_start_HIFU_vars()
-                if (proc_rank==0) print*, 'Warning!!! Starting to sample HIFU heat sources. STAGE 2!'
-                save_count = t_step
-                call s_write_data_files(q_cons_vf, q_cons_vf, save_count, q_cons_hifu=q_hifu, hifu_id=1)
-
+                if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 2: sampling heat sources'
+                hifu_write_output = .true.
             end if
         end if
 
@@ -148,10 +197,12 @@ contains
                 hifu_params%sampling = .false.
                 hifu_params%heatSolver = .true.
                 cfl_dt = .false.
-                mytime = 0d0
+                mytime = 0._wp
                 dt = hifu_params%dt_stg3
+                t_step_save = hifu_params%t_step_save_stg3
                 t_step_stop = hifu_params%t_step_stop_stg3
                 if (bc_x%beg == -20) bc_x%beg = -6 !In case acoustic BC is active
+                if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 3: solving heat equation'
                 
             end if
         else
@@ -162,10 +213,12 @@ contains
 
                 hifu_params%sampling = .false.
                 hifu_params%heatSolver = .true.
-                mytime = 0d0
+                mytime = 0._wp
                 dt = hifu_params%dt_stg3
+                t_step_save = hifu_params%t_step_save_stg3
                 t_step_stop = hifu_params%t_step_stop_stg3
                 if (bc_x%beg == -20) bc_x%beg = -6 !In case acoustic BC is active
+                if (proc_rank==0) print*, 'WARNING :: HIFU -> Stage 3: solving heat equation'
                 
             end if
         end if
@@ -215,38 +268,38 @@ contains
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
         integer, intent(in) :: t_step
-        real(kind(0d0)), intent(in) :: hdid
+        real(wp), intent(in) :: hdid
 
-        real(kind(0d0)) :: rho_h, pres_h, gamma_h, pi_inf_h, G_h, T_h, c_c_h
-        real(kind(0d0)), dimension(num_dims) :: vel_h
-        real(kind(0d0)) :: qv_h, cson_h
-        real(kind(0d0)), dimension(2) :: Re_h
-        real(kind(0d0)), dimension(num_fluids) :: alpha_h
-        real(kind(0d0)) :: rhoYks_h(1:num_species)
+        real(wp) :: rho_h, pres_h, gamma_h, pi_inf_h, G_h, T_h, c_c_h
+        real(wp), dimension(num_dims) :: vel_h
+        real(wp) :: qv_h, cson_h
+        real(wp), dimension(2) :: Re_h
+        real(wp), dimension(num_fluids) :: alpha_h
+        real(wp) :: rhoYks_h(1:num_species)
 
         logical :: axialCondition, radialCondition, condition
-        real(kind(0d0)) :: shearVisc, bulkVisc, absCoef
-        real(kind(0d0)) :: varA, varB
-        real(kind(0d0)) :: duxdx, duxdr, durdx, durdr, ep11, ep22, ep33, ep13
-        real(kind(0d0)) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac, intensity_ac_prms
-        real(kind(0d0)) :: focalIntensity_th, sumIntensity_th
-        real(kind(0d0)) :: sumIntensity_vis, focalIntensity_vis, focalIntensity_ac_prms
-        real(kind(0d0)) :: focal_u, focal_v
+        real(wp) :: shearVisc, bulkVisc, absCoef
+        real(wp) :: varA, varB
+        real(wp) :: duxdx, duxdr, durdx, durdr, ep11, ep22, ep33, ep13
+        real(wp) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac, intensity_ac_prms
+        real(wp) :: focalIntensity_th, sumIntensity_th
+        real(wp) :: sumIntensity_vis, focalIntensity_vis, focalIntensity_ac_prms
+        real(wp) :: focal_u, focal_v
 
         integer :: i, j, k, l, s
         
         ! Zeroing out flow variables for all processors      
-        rho_h = 0d0
+        rho_h = 0._wp
         do s = 1, num_dims
-           vel_h(s) = 0d0
+           vel_h(s) = 0._wp
         end do
-        pres_h = 0d0
-        cson_h = 0d0
-        gamma_h = 0d0
-        pi_inf_h = 0d0
-        sumIntensity_ac = 0d0
-        sumIntensity_vis = 0d0
-        sumIntensity_th = 0d0
+        pres_h = 0._wp
+        cson_h = 0._wp
+        gamma_h = 0._wp
+        pi_inf_h = 0._wp
+        sumIntensity_ac = 0._wp
+        sumIntensity_vis = 0._wp
+        sumIntensity_th = 0._wp
 
         if (cyl_coord .and. p==0) then  !Axysimetric		
             l = 0
@@ -254,9 +307,9 @@ contains
                 do k = 0, n
 
                     !Get viscosities (and absorption coeff.) which are user inputs
-                    shearVisc = 0d0
-                    bulkVisc  = 0d0
-                    absCoef   = 0d0
+                    shearVisc = 0._wp
+                    bulkVisc  = 0._wp
+                    absCoef   = 0._wp
                     do i = 1, num_fluids
                         shearVisc = shearVisc + q_prim_vf(E_idx+i)%sf(j,k,l)*fluid_pp(i)%Re(1)
                         bulkVisc  = bulkVisc  + q_prim_vf(E_idx+i)%sf(j,k,l)*fluid_pp(i)%Re(2)
@@ -266,11 +319,11 @@ contains
                     shearVisc = 1/shearVisc
                     bulkVisc  = 1/bulkVisc
 
-                    if (absCoef==0d0) call s_mpi_abort('Check absCoef values!')
+                    if (f_is_default(absCoef)) call s_mpi_abort('Check absCoef values!')
 
                     !>> Get the strain rate tensor (using central finite difference)
-                    varA = 0d0
-                    varB = 0d0
+                    varA = 0._wp
+                    varB = 0._wp
 
                     ! Only for axysimmetric assumption
                     duxdx = (q_prim_vf(mom_idx%beg)%sf(j+1, k, 0) - q_prim_vf(mom_idx%beg)%sf(j-1, k, 0)) / (x_cc(j+1) - x_cc(j-1))
@@ -287,25 +340,25 @@ contains
                     end do
 
                     call s_compute_pressure(q_cons_vf(E_idx)%sf(j, k, l), &
-                                0d0, 0.5d0*rho_h*dot_product(vel_h, vel_h), pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
+                                0._wp, 0.5_wp*rho_h*dot_product(vel_h, vel_h), pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
 
                     call s_compute_speed_of_sound(pres_h, rho_h, gamma_h, pi_inf_h, &
-                                                      ((gamma_h + 1d0)*pres_h + pi_inf_h)/rho_h, alpha_h, 0d0, c_c_h, cson_h)
+                                                      ((gamma_h +  1._wp)*pres_h + pi_inf_h)/rho_h, alpha_h, 0._wp, c_c_h, cson_h)
 
                     !>> Compute intensity form acoustic damping
                     
-                    intensity_ac_prms = 0d0
+                    intensity_ac_prms = 0._wp
                     intensity_ac_prms = intensity_ac_prms + absCoef*(q_hifu(P_hifu_idx)%sf(j,k,l) - &
                                                                                         hifu_params%atmPres)**2/(rho_h*cson_h)
 
-                    intensity_ac = 0d0
+                    intensity_ac = 0._wp
                     ep11 = durdr
                     ep22 = vel_h(2) / y_cc(k)
                     ep33 = duxdx
-                    ep13 = 0.5d0*(durdx + duxdr)
+                    ep13 = 0.5_wp*(durdx + duxdr)
                     varA = ep11**2.0 + ep22**2.0 + ep33**2.0
-                    varB = (8d0/3d0)*varA - (4d0/3d0)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6d0*(ep13**2.0)
-                    intensity_ac = intensity_ac + bulkVisc*varA + 2d0*shearVisc*varB !intensity is "q_us_ac"
+                    varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
+                    intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB !intensity is "q_us_ac"
 
                     q_hifu(tt_hifu_idx)%sf(j,k,l) = q_hifu(tt_hifu_idx)%sf(j,k,l) + hdid             ! Update total sampling time
                     q_hifu(qus_hifu_idx)%sf(j,k,l) = q_hifu(qus_hifu_idx)%sf(j,k,l) + &
@@ -376,10 +429,10 @@ contains
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         integer, intent(in) :: t_step
 
-        real(kind(0d0)) :: dTdx_L, dTdx_R, dTdr_L, dTdr_R
-        real(kind(0d0)) :: Tx_L, Tx_R, Tr_L, Tr_R
-        real(kind(0d0)) :: Ux_L, Ux_R, Ur_L, Ur_R
-        real(kind(0d0)) :: rho_cp, tdiff, alpha
+        real(wp) :: dTdx_L, dTdx_R, dTdr_L, dTdr_R
+        real(wp) :: Tx_L, Tx_R, Tr_L, Tr_R
+        real(wp) :: Ux_L, Ux_R, Ur_L, Ur_R
+        real(wp) :: rho_cp, tdiff, alpha
         integer :: i, j, k, l, qus_hifu_idx_ht
 
         if (hifu_params%intPrms) then
@@ -395,7 +448,7 @@ contains
                 do k = 0, n
 
                     !<  Zeroing RHS_heat
-                    q_hifu(T_hifu_idx+1)%sf(j,k,l) = 0d0  
+                    q_hifu(T_hifu_idx+1)%sf(j,k,l) = 0._wp  
 
                     !> Find temperature derivatives at the faces of the cell
                     dTdx_L = (q_hifu(T_hifu_idx)%sf(j,k,l) - q_hifu(T_hifu_idx)%sf(j-1,k,l)) / (x_cc(j)-x_cc(j-1))
@@ -404,47 +457,48 @@ contains
                     dTdr_R = (q_hifu(T_hifu_idx)%sf(j,k+1,l) - q_hifu(T_hifu_idx)%sf(j,k,l)) / (y_cc(k+1)-y_cc(k))
 
                     !> Find temperature and streaming velocities at the faces of the cell
-                    Tx_L = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j-1,k,l)) / 2d0
-                    Ux_L = (q_hifu(u_hifu_idx)%sf(j,k,l) + q_hifu(u_hifu_idx)%sf(j-1,k,l)) / 2d0
-                    Tx_R = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j+1,k,l)) / 2d0
-                    Ux_R = (q_hifu(u_hifu_idx)%sf(j,k,l) + q_hifu(u_hifu_idx)%sf(j+1,k,l)) / 2d0
-                    Tr_L = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j,k-1,l)) / 2d0
-                    Ur_L = (q_hifu(v_hifu_idx)%sf(j,k,l) + q_hifu(v_hifu_idx)%sf(j,k-1,l)) / 2d0
-                    Tr_R = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j,k+1,l)) / 2d0
-                    Ur_R = (q_hifu(v_hifu_idx)%sf(j,k,l) + q_hifu(v_hifu_idx)%sf(j,k+1,l)) / 2d0
+                    Tx_L = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j-1,k,l)) / 2._wp
+                    Ux_L = (q_hifu(u_hifu_idx)%sf(j,k,l) + q_hifu(u_hifu_idx)%sf(j-1,k,l)) / 2._wp
+                    Tx_R = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j+1,k,l)) / 2._wp
+                    Ux_R = (q_hifu(u_hifu_idx)%sf(j,k,l) + q_hifu(u_hifu_idx)%sf(j+1,k,l)) / 2._wp
+                    Tr_L = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j,k-1,l)) / 2._wp
+                    Ur_L = (q_hifu(v_hifu_idx)%sf(j,k,l) + q_hifu(v_hifu_idx)%sf(j,k-1,l)) / 2._wp
+                    Tr_R = (q_hifu(T_hifu_idx)%sf(j,k,l) + q_hifu(T_hifu_idx)%sf(j,k+1,l)) / 2._wp
+                    Ur_R = (q_hifu(v_hifu_idx)%sf(j,k,l) + q_hifu(v_hifu_idx)%sf(j,k+1,l)) / 2._wp
 
                     !> Get thermal properties
-                    alpha  = 0d0
-                    rho_cp = 0d0
-                    tdiff  = 0d0
+                    alpha  = 0._wp
+                    rho_cp = 0._wp
+                    tdiff  = 0._wp
                     do i = 1, num_fluids
                         alpha  = q_cons_vf(advxb+i-1)%sf(j,k,l)
                         rho_cp = rho_cp + alpha*fluid_pp(i)%rho_cp
                         tdiff  = tdiff  + alpha*fluid_pp(i)%tdiff
                     end do
-                    if ((rho_cp<=0d0) .or. (tdiff<=0d0)) then
+
+                    if (f_is_default(rho_cp) .or. f_is_default(tdiff)) then
                         print*, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
                         call s_mpi_abort('Check thermal properties HIFU!')
                     end if
 
                     !> Obtain rhs (see notes)
                     q_hifu(T_hifu_idx+1)%sf(j,k,l) = q_hifu(T_hifu_idx+1)%sf(j,k,l) + &
-                                        tdiff * (1d0 / dx(j)) * (dTdx_R - dTdx_L) + &
-                        tdiff * (1d0 / (2d0*y_cc(k)*dy(k))) * ( (2d0*y_cc(k)+dy(k))*dTdr_R - (2d0*y_cc(k)-dy(k))*dTdr_L)
+                                        tdiff * ( 1._wp / dx(j)) * (dTdx_R - dTdx_L) + &
+                        tdiff * ( 1._wp / (2._wp*y_cc(k)*dy(k))) * ( (2._wp*y_cc(k)+dy(k))*dTdr_R - (2._wp*y_cc(k)-dy(k))*dTdr_L)
 
-                    if ( (q_hifu(tt_hifu_idx)%sf(j,k,l) > 0d0) .and. (t_step< hifu_params%stepStopSource)) then 
+                    if ( (q_hifu(tt_hifu_idx)%sf(j,k,l) > 0._wp) .and. (t_step< hifu_params%stepStopSource)) then 
                         !> Adding the heat source terms
                         q_hifu(T_hifu_idx+1)%sf(j,k,l) = q_hifu(T_hifu_idx+1)%sf(j,k,l) + &
-                            (1d0/(rho_cp)) * (1d0 / q_hifu(tt_hifu_idx)%sf(j,k,l)) * q_hifu(qus_hifu_idx_ht)%sf(j,k,l) + &  !Acoustic intensity
-                            (1d0/(rho_cp)) * (1d0 / q_hifu(tt_hifu_idx)%sf(j,k,l)) * q_hifu(qvis_hifu_idx)%sf(j,k,l) + &    !Viscous intensity
-                            (1d0/(rho_cp)) * (1d0 / q_hifu(tt_hifu_idx)%sf(j,k,l)) * q_hifu(qth_hifu_idx)%sf(j,k,l)         !Thermal intensity
+                            ( 1._wp/(rho_cp)) * ( 1._wp / q_hifu(tt_hifu_idx)%sf(j,k,l)) * q_hifu(qus_hifu_idx_ht)%sf(j,k,l) + &  !Acoustic intensity
+                            ( 1._wp/(rho_cp)) * ( 1._wp / q_hifu(tt_hifu_idx)%sf(j,k,l)) * q_hifu(qvis_hifu_idx)%sf(j,k,l) + &    !Viscous intensity
+                            ( 1._wp/(rho_cp)) * ( 1._wp / q_hifu(tt_hifu_idx)%sf(j,k,l)) * q_hifu(qth_hifu_idx)%sf(j,k,l)         !Thermal intensity
 
                         if (hifu_params%streaming) then 
                             !> Convected heat flux
                             q_hifu(T_hifu_idx+1)%sf(j,k,l) = q_hifu(T_hifu_idx+1)%sf(j,k,l) - &
-                                        (1d0 / q_hifu(tt_hifu_idx)%sf(j,k,l)) * ( & !Double check this
-                                            (1d0 / dx(j)) * (Ux_R*Tx_R - Ux_L*Tx_L) + &
-                                            (1d0 / (2d0*y_cc(k)*dy(k))) * ( (2d0*y_cc(k)+dy(k))*Ur_R*Tr_R - (2d0*y_cc(k)-dy(k))*Ur_L*Tr_L) )
+                                        ( 1._wp / q_hifu(tt_hifu_idx)%sf(j,k,l)) * ( & !Double check this
+                                            ( 1._wp / dx(j)) * (Ux_R*Tx_R - Ux_L*Tx_L) + &
+                                            ( 1._wp / (2._wp*y_cc(k)*dy(k))) * ( (2._wp*y_cc(k)+dy(k))*Ur_R*Tr_R - (2._wp*y_cc(k)-dy(k))*Ur_L*Tr_L) )
                         end if
                     end if
                 end do
@@ -791,7 +845,7 @@ contains
 
         if (proc_rank==0) then
 
-            print*, 'HIFU simulation >>>> Stage 2: Obtaining time-averaged heat source terms, Pmax and Pmin'
+            ! print*, 'HIFU simulation >>>> Stage 2: Obtaining time-averaged heat source terms, Pmax and Pmin'
 
             !Open files to save intensity sampling information at focus
             write (file_path, '(A)') '/D/sumIntensity-HIFU.dat'

@@ -30,7 +30,7 @@ contains
     subroutine s_populate_variables_buffers(q_prim_vf, pb, mv)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
 
         integer :: bc_loc, bc_dir
 
@@ -223,10 +223,10 @@ contains
     subroutine s_acoustic_bc(q_prim_vf, pb, mv, bc_dir, bc_loc)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
         integer :: j, k, l, q, i
-        real(kind(0d0)) :: tau, gFun, rc, rbeta
+        real(wp) :: tau, gFun, rc, rbeta
 
 
         !< x-direction =========================================================
@@ -238,7 +238,7 @@ contains
                 do l = 0, p
                     do k = 0, n
                         do j = 1, buff_size
-                            tau = 0.0d0
+                            tau = 0._wp
                             
                             ! Velocities (# dim), and fluids' volume fraction
                             !$acc loop seq
@@ -256,7 +256,7 @@ contains
                                 if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                                     q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
                                                                         acoustic_bc_params%Pamp *  &
-                                                    sin( 2d0 * pi * acoustic_bc_params%freq * tau )
+                                                    sin( 2._wp * pi * acoustic_bc_params%freq * tau )
                                     q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
                                 else
                                     q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase 
@@ -264,20 +264,20 @@ contains
 
                             elseif (acoustic_bc_params%iwave .eq. 2) then
                                 ! Single hemispherical transdurer
-                                rc = (0.5d0*acoustic_bc_params%apert)/sqrt(1d0 - ((0.5d0*acoustic_bc_params%apert)/ &
-                                                         (acoustic_bc_params%focLen + acoustic_bc_params%focCal) )**2d0)
-                                rbeta = sqrt(1d0 + ((0.5d0*acoustic_bc_params%apert)/ &
-                                                         (acoustic_bc_params%focLen + acoustic_bc_params%focCal) )**2d0)
+                                rc = (0.5_wp*acoustic_bc_params%apert)/sqrt(1._wp - ((0.5_wp*acoustic_bc_params%apert)/ &
+                                                         (acoustic_bc_params%focLen + acoustic_bc_params%focCal) )**2._wp)
+                                rbeta = sqrt(1._wp + ((0.5_wp*acoustic_bc_params%apert)/ &
+                                                         (acoustic_bc_params%focLen + acoustic_bc_params%focCal) )**2._wp)
 
                                 if (y_cc(k) .lt. rc) then
-                                    tau = mytime + y_cc(k)**2d0 / (2d0 * acoustic_bc_params%cson * & 
+                                    tau = mytime + y_cc(k)**2._wp / (2._wp * acoustic_bc_params%cson * & 
                                                                 (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
-                                    gFun = (1d0/rbeta)
+                                    gFun = (1._wp/rbeta)
 
                                     if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                                         q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
                                                                            acoustic_bc_params%Pamp *  &
-                                                        sin( 2d0 * pi * acoustic_bc_params%freq * tau ) 
+                                                        sin( 2._wp * pi * acoustic_bc_params%freq * tau ) 
                                         q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
                                     else
                                         q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase 
@@ -309,7 +309,7 @@ contains
                 do k = 0, p
                     do j = 1, buff_size
                         do l = -buff_size, m + buff_size
-                            tau = 0.0d0
+                            tau = 0._wp
                             
                             ! Velocities (# dim), and fluids' volume fraction
                             !$acc loop seq
@@ -325,7 +325,7 @@ contains
                                 if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                                     q_prim_vf(momxe+1)%sf(l, -j, k) = acoustic_bc_params%Pbase + &
                                                                         acoustic_bc_params%Pamp *  &
-                                                    sin( 2d0 * pi * acoustic_bc_params%freq * tau )
+                                                    sin( 2._wp * pi * acoustic_bc_params%freq * tau )
                                     q_prim_vf(1)%sf(l, -j, k) = acoustic_bc_params%rho
                                 else
                                     q_prim_vf(momxe+1)%sf(l, -j, k) = acoustic_bc_params%Pbase 
@@ -358,7 +358,7 @@ contains
                 do j = 1, buff_size
                     do l = -buff_size, n + buff_size
                         do k = -buff_size, m + buff_size
-                            tau = 0.0d0
+                            tau = 0._wp
                             
                             ! Velocities (# dim), and fluids' volume fraction
                             !$acc loop seq
@@ -374,7 +374,7 @@ contains
                                 if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                                     q_prim_vf(momxe+1)%sf(k, l, -j) = acoustic_bc_params%Pbase + &
                                                                     acoustic_bc_params%Pamp *  &
-                                                    sin( 2d0 * pi * acoustic_bc_params%freq * tau )
+                                                    sin( 2._wp * pi * acoustic_bc_params%freq * tau )
                                     q_prim_vf(1)%sf(k, l, -j) = acoustic_bc_params%rho
                                 else
                                     q_prim_vf(momxe+1)%sf(k, l, -j) = acoustic_bc_params%Pbase 
@@ -406,7 +406,7 @@ contains
     subroutine s_ghost_cell_extrapolation(q_prim_vf, pb, mv, bc_dir, bc_loc)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
         integer :: j, k, l, q, i
 
@@ -517,7 +517,7 @@ contains
     subroutine s_symmetry(q_prim_vf, pb, mv, bc_dir, bc_loc)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
 
         integer :: j, k, l, q, i
@@ -799,7 +799,7 @@ contains
     subroutine s_periodic(q_prim_vf, pb, mv, bc_dir, bc_loc)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
 
         integer :: j, k, l, q, i
@@ -1019,7 +1019,7 @@ contains
     subroutine s_axis(q_prim_vf, pb, mv, bc_dir, bc_loc)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
 
         integer :: j, k, l, q, i
@@ -1092,7 +1092,7 @@ contains
     subroutine s_slip_wall(q_prim_vf, pb, mv, bc_dir, bc_loc)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
 
         integer :: j, k, l, q, i
@@ -1109,7 +1109,7 @@ contains
                             do j = 1, buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(-j, k, l) = &
-                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2d0*bc_x%vb1
+                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2._wp*bc_x%vb1
                                 else
                                     q_prim_vf(i)%sf(-j, k, l) = &
                                         q_prim_vf(i)%sf(0, k, l)
@@ -1128,7 +1128,7 @@ contains
                             do j = 1, buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(m + j, k, l) = &
-                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2d0*bc_x%ve1
+                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2._wp*bc_x%ve1
                                 else
                                     q_prim_vf(i)%sf(m + j, k, l) = &
                                         q_prim_vf(i)%sf(m, k, l)
@@ -1152,7 +1152,7 @@ contains
                             do l = -buff_size, m + buff_size
                                 if (i == momxb + 1) then
                                     q_prim_vf(i)%sf(l, -j, k) = &
-                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2d0*bc_y%vb2
+                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2._wp*bc_y%vb2
                                 else
                                     q_prim_vf(i)%sf(l, -j, k) = &
                                         q_prim_vf(i)%sf(l, 0, k)
@@ -1171,7 +1171,7 @@ contains
                             do l = -buff_size, m + buff_size
                                 if (i == momxb + 1) then
                                     q_prim_vf(i)%sf(l, n + j, k) = &
-                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2d0*bc_y%ve2
+                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2._wp*bc_y%ve2
                                 else
                                     q_prim_vf(i)%sf(l, n + j, k) = &
                                         q_prim_vf(i)%sf(l, n, k)
@@ -1195,7 +1195,7 @@ contains
                             do k = -buff_size, m + buff_size
                                 if (i == momxe) then
                                     q_prim_vf(i)%sf(k, l, -j) = &
-                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2d0*bc_z%vb3
+                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2._wp*bc_z%vb3
                                 else
                                     q_prim_vf(i)%sf(k, l, -j) = &
                                         q_prim_vf(i)%sf(k, l, 0)
@@ -1214,7 +1214,7 @@ contains
                             do k = -buff_size, m + buff_size
                                 if (i == momxe) then
                                     q_prim_vf(i)%sf(k, l, p + j) = &
-                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2d0*bc_z%ve3
+                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2._wp*bc_z%ve3
                                 else
                                     q_prim_vf(i)%sf(k, l, p + j) = &
                                         q_prim_vf(i)%sf(k, l, p)
@@ -1234,7 +1234,7 @@ contains
     subroutine s_no_slip_wall(q_prim_vf, pb, mv, bc_dir, bc_loc)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
 
         integer :: j, k, l, q, i
@@ -1251,13 +1251,13 @@ contains
                             do j = 1, buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(-j, k, l) = &
-                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2d0*bc_x%vb1
+                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2._wp*bc_x%vb1
                                 elseif (i == momxb + 1 .and. num_dims > 1) then
                                     q_prim_vf(i)%sf(-j, k, l) = &
-                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2d0*bc_x%vb2
+                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2._wp*bc_x%vb2
                                 elseif (i == momxb + 2 .and. num_dims > 2) then
                                     q_prim_vf(i)%sf(-j, k, l) = &
-                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2d0*bc_x%vb3
+                                        -q_prim_vf(i)%sf(j - 1, k, l) + 2._wp*bc_x%vb3
                                 else
                                     q_prim_vf(i)%sf(-j, k, l) = &
                                         q_prim_vf(i)%sf(0, k, l)
@@ -1276,13 +1276,13 @@ contains
                             do j = 1, buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(m + j, k, l) = &
-                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2d0*bc_x%ve1
+                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2._wp*bc_x%ve1
                                 elseif (i == momxb + 1 .and. num_dims > 1) then
                                     q_prim_vf(i)%sf(m + j, k, l) = &
-                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2d0*bc_x%ve2
+                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2._wp*bc_x%ve2
                                 elseif (i == momxb + 2 .and. num_dims > 2) then
                                     q_prim_vf(i)%sf(m + j, k, l) = &
-                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2d0*bc_x%ve3
+                                        -q_prim_vf(i)%sf(m - (j - 1), k, l) + 2._wp*bc_x%ve3
                                 else
                                     q_prim_vf(i)%sf(m + j, k, l) = &
                                         q_prim_vf(i)%sf(m, k, l)
@@ -1306,13 +1306,13 @@ contains
                             do l = -buff_size, m + buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(l, -j, k) = &
-                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2d0*bc_y%vb1
+                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2._wp*bc_y%vb1
                                 elseif (i == momxb + 1 .and. num_dims > 1) then
                                     q_prim_vf(i)%sf(l, -j, k) = &
-                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2d0*bc_y%vb2
+                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2._wp*bc_y%vb2
                                 elseif (i == momxb + 2 .and. num_dims > 2) then
                                     q_prim_vf(i)%sf(l, -j, k) = &
-                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2d0*bc_y%vb3
+                                        -q_prim_vf(i)%sf(l, j - 1, k) + 2._wp*bc_y%vb3
                                 else
                                     q_prim_vf(i)%sf(l, -j, k) = &
                                         q_prim_vf(i)%sf(l, 0, k)
@@ -1331,13 +1331,13 @@ contains
                             do l = -buff_size, m + buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(l, n + j, k) = &
-                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2d0*bc_y%ve1
+                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2._wp*bc_y%ve1
                                 elseif (i == momxb + 1 .and. num_dims > 1) then
                                     q_prim_vf(i)%sf(l, n + j, k) = &
-                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2d0*bc_y%ve2
+                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2._wp*bc_y%ve2
                                 elseif (i == momxb + 2 .and. num_dims > 2) then
                                     q_prim_vf(i)%sf(l, n + j, k) = &
-                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2d0*bc_y%ve3
+                                        -q_prim_vf(i)%sf(l, n - (j - 1), k) + 2._wp*bc_y%ve3
                                 else
                                     q_prim_vf(i)%sf(l, n + j, k) = &
                                         q_prim_vf(i)%sf(l, n, k)
@@ -1361,13 +1361,13 @@ contains
                             do k = -buff_size, m + buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(k, l, -j) = &
-                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2d0*bc_z%vb1
+                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2._wp*bc_z%vb1
                                 elseif (i == momxb + 1 .and. num_dims > 1) then
                                     q_prim_vf(i)%sf(k, l, -j) = &
-                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2d0*bc_z%vb2
+                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2._wp*bc_z%vb2
                                 elseif (i == momxb + 2 .and. num_dims > 2) then
                                     q_prim_vf(i)%sf(k, l, -j) = &
-                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2d0*bc_z%vb3
+                                        -q_prim_vf(i)%sf(k, l, j - 1) + 2._wp*bc_z%vb3
                                 else
                                     q_prim_vf(i)%sf(k, l, -j) = &
                                         q_prim_vf(i)%sf(k, l, 0)
@@ -1386,13 +1386,13 @@ contains
                             do k = -buff_size, m + buff_size
                                 if (i == momxb) then
                                     q_prim_vf(i)%sf(k, l, p + j) = &
-                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2d0*bc_z%ve1
+                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2._wp*bc_z%ve1
                                 elseif (i == momxb + 1 .and. num_dims > 1) then
                                     q_prim_vf(i)%sf(k, l, p + j) = &
-                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2d0*bc_z%ve2
+                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2._wp*bc_z%ve2
                                 elseif (i == momxb + 2 .and. num_dims > 2) then
                                     q_prim_vf(i)%sf(k, l, p + j) = &
-                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2d0*bc_z%ve3
+                                        -q_prim_vf(i)%sf(k, l, p - (j - 1)) + 2._wp*bc_z%ve3
                                 else
                                     q_prim_vf(i)%sf(k, l, p + j) = &
                                         q_prim_vf(i)%sf(k, l, p)
@@ -1411,7 +1411,7 @@ contains
 
     subroutine s_qbmm_extrapolation(pb, mv, bc_dir, bc_loc)
 
-        real(kind(0d0)), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
 
         integer :: j, k, l, q, i
