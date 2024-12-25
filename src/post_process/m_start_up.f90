@@ -68,6 +68,7 @@ contains
             num_fluids, mpp_lim, &
             weno_order, bc_x, &
             bc_y, bc_z, fluid_pp, format, precision, &
+            output_partial_domain, x_output, y_output, z_output, &
             hypoelasticity, G, &
             chem_wrt_Y, chem_wrt_T, avg_state, &
             alpha_rho_wrt, rho_wrt, mom_wrt, vel_wrt, &
@@ -207,6 +208,25 @@ contains
 
         integer :: i, j, k, l
 
+        integer :: x_beg, x_end, y_beg, y_end, z_beg, z_end
+
+        if (output_partial_domain) then
+            call s_define_output_region
+            x_beg = -offset_x%beg + x_output_idx%beg
+            x_end = offset_x%end + x_output_idx%end
+            y_beg = -offset_y%beg + y_output_idx%beg
+            y_end = offset_y%end + y_output_idx%end
+            z_beg = -offset_z%beg + z_output_idx%beg
+            z_end = offset_z%end + z_output_idx%end
+        else
+            x_beg = -offset_x%beg
+            x_end = offset_x%end + m
+            y_beg = -offset_y%beg
+            y_end = offset_y%end + n
+            z_beg = -offset_z%beg
+            z_end = offset_z%end + p
+        end if
+
         ! Opening a new formatted database file
         call s_open_formatted_database_file(t_step)
 
@@ -248,11 +268,7 @@ contains
         if ((model_eqns == 2) .or. (model_eqns == 3) .or. (model_eqns == 4)) then
             do i = 1, num_fluids
                 if (alpha_rho_wrt(i) .or. (cons_vars_wrt .or. prim_vars_wrt)) then
-
-                    q_sf = q_cons_vf(i)%sf(-offset_x%beg:m + offset_x%end, &
-                                           -offset_y%beg:n + offset_y%end, &
-                                           -offset_z%beg:p + offset_z%end)
-
+                    q_sf = q_cons_vf(i)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                     if (model_eqns /= 4) then
                         write (varname, '(A,I0)') 'alpha_rho', i
                     else
@@ -271,11 +287,7 @@ contains
         if (rho_wrt &
             .or. &
             (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) then
-
-            q_sf = rho_sf(-offset_x%beg:m + offset_x%end, &
-                          -offset_y%beg:n + offset_y%end, &
-                          -offset_z%beg:p + offset_z%end)
-
+            q_sf = rho_sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
             write (varname, '(A)') 'rho'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -287,12 +299,7 @@ contains
         ! Adding the momentum to the formatted database file -------------------
         do i = 1, E_idx - mom_idx%beg
             if (mom_wrt(i) .or. cons_vars_wrt) then
-
-                q_sf = q_cons_vf(i + cont_idx%end)%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
-
+                q_sf = q_cons_vf(i + cont_idx%end)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A,I0)') 'mom', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -305,12 +312,7 @@ contains
         ! Adding the velocity to the formatted database file -------------------
         do i = 1, E_idx - mom_idx%beg
             if (vel_wrt(i) .or. prim_vars_wrt) then
-
-                q_sf = q_prim_vf(i + cont_idx%end)%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
-
+                q_sf = q_prim_vf(i + cont_idx%end)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A,I0)') 'vel', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -324,10 +326,7 @@ contains
         if (chemistry) then
             do i = 1, num_species
                 if (chem_wrt_Y(i) .or. prim_vars_wrt) then
-                    q_sf = q_prim_vf(chemxb + i - 1)%sf(-offset_x%beg:m + offset_x%end, &
-                                                        -offset_y%beg:n + offset_y%end, &
-                                                        -offset_z%beg:p + offset_z%end)
-
+                    q_sf = q_prim_vf(chemxb + i - 1)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                     write (varname, '(A,A)') 'Y_', trim(species_names(i))
                     call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -337,10 +336,7 @@ contains
             end do
 
             if (chem_wrt_T) then
-                q_sf = q_T_sf%sf(-offset_x%beg:m + offset_x%end, &
-                                 -offset_y%beg:n + offset_y%end, &
-                                 -offset_z%beg:p + offset_z%end)
-
+                q_sf = q_T_sf%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A)') 'T'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -364,11 +360,7 @@ contains
 
         ! Adding the energy to the formatted database file ---------------------
         if (E_wrt .or. cons_vars_wrt) then
-
-            q_sf = q_cons_vf(E_idx)%sf(-offset_x%beg:m + offset_x%end, &
-                                       -offset_y%beg:n + offset_y%end, &
-                                       -offset_z%beg:p + offset_z%end)
-
+            q_sf = q_cons_vf(E_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
             write (varname, '(A)') 'E'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -380,10 +372,7 @@ contains
         if (elasticity) then
             do i = 1, stress_idx%end - stress_idx%beg + 1
                 if (prim_vars_wrt) then
-                    q_sf = q_prim_vf(i - 1 + stress_idx%beg)%sf( &
-                           -offset_x%beg:m + offset_x%end, &
-                           -offset_y%beg:n + offset_y%end, &
-                           -offset_z%beg:p + offset_z%end)
+                    q_sf = q_prim_vf(i - 1 + stress_idx%beg)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                     write (varname, '(A,I0)') 'tau', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                 end if
@@ -393,10 +382,7 @@ contains
         if (hyperelasticity) then
             do i = 1, xiend - xibeg + 1
                 if (prim_vars_wrt) then
-                    q_sf = q_prim_vf(i - 1 + xibeg)%sf( &
-                           -offset_x%beg:m + offset_x%end, &
-                           -offset_y%beg:n + offset_y%end, &
-                           -offset_z%beg:p + offset_z%end)
+                    q_sf = q_prim_vf(i - 1 + xibeg)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                     write (varname, '(A,I0)') 'xi', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                 end if
@@ -408,11 +394,7 @@ contains
 
         ! Adding the pressure to the formatted database file -------------------
         if (pres_wrt .or. prim_vars_wrt) then
-
-            q_sf = q_prim_vf(E_idx)%sf(-offset_x%beg:m + offset_x%end, &
-                                       -offset_y%beg:n + offset_y%end, &
-                                       -offset_z%beg:p + offset_z%end)
-
+            q_sf = q_prim_vf(E_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
             write (varname, '(A)') 'pres'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -428,12 +410,7 @@ contains
 
             do i = 1, num_fluids - 1
                 if (alpha_wrt(i) .or. (cons_vars_wrt .or. prim_vars_wrt)) then
-
-                    q_sf = q_cons_vf(i + E_idx)%sf( &
-                           -offset_x%beg:m + offset_x%end, &
-                           -offset_y%beg:n + offset_y%end, &
-                           -offset_z%beg:p + offset_z%end)
-
+                    q_sf = q_cons_vf(i + E_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                     write (varname, '(A,I0)') 'alpha', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -445,12 +422,7 @@ contains
             if (alpha_wrt(num_fluids) &
                 .or. &
                 (cons_vars_wrt .or. prim_vars_wrt)) then
-
-                q_sf = q_cons_vf(adv_idx%end)%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
-
+                q_sf = q_cons_vf(adv_idx%end)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A,I0)') 'alpha', num_fluids
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -465,11 +437,7 @@ contains
         if (gamma_wrt &
             .or. &
             (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) then
-
-            q_sf = gamma_sf(-offset_x%beg:m + offset_x%end, &
-                            -offset_y%beg:n + offset_y%end, &
-                            -offset_z%beg:p + offset_z%end)
-
+            q_sf = gamma_sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
             write (varname, '(A)') 'gamma'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -495,11 +463,7 @@ contains
         if (pi_inf_wrt &
             .or. &
             (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) then
-
-            q_sf = pi_inf_sf(-offset_x%beg:m + offset_x%end, &
-                             -offset_y%beg:n + offset_y%end, &
-                             -offset_z%beg:p + offset_z%end)
-
+            q_sf = pi_inf_sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
             write (varname, '(A)') 'pi_inf'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -607,23 +571,7 @@ contains
 
         ! Adding the color function to formatted database file
         if (cf_wrt) then
-            q_sf = q_cons_vf(c_idx)%sf( &
-                   -offset_x%beg:m + offset_x%end, &
-                   -offset_y%beg:n + offset_y%end, &
-                   -offset_z%beg:p + offset_z%end)
-
-            !do k = -offset_z%beg, p + offset_z%end
-            !    do j = -offset_y%beg, n + offset_y%end
-            !        do i = -offset_x%beg, m + offset_x%end
-            !            if (q_sf(i,j,k) > 0.5) then
-            !                q_sf(i,j,k) = 100000 + 8/0.15
-            !            else
-            !                q_sf(i,j,k) = 100000
-            !            end if
-            !        end do
-            !    end do
-            !end do
-
+            q_sf = q_cons_vf(c_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
             write (varname, '(A,I0)') 'color_function'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
@@ -634,11 +582,7 @@ contains
         ! Adding the volume fraction(s) to the formatted database file ---------
         if (bubbles_euler) then
             do i = adv_idx%beg, adv_idx%end
-                q_sf = q_cons_vf(i)%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
-
+                q_sf = q_cons_vf(i)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A,I0)') 'alpha', i - E_idx
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -649,10 +593,7 @@ contains
         if (bubbles_euler) then
             !nR
             do i = 1, nb
-                q_sf = q_cons_vf(bub_idx%rs(i))%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
+                q_sf = q_cons_vf(bub_idx%rs(i))%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A,I3.3)') 'nR', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -660,10 +601,7 @@ contains
 
             !nRdot
             do i = 1, nb
-                q_sf = q_cons_vf(bub_idx%vs(i))%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
+                q_sf = q_cons_vf(bub_idx%vs(i))%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A,I3.3)') 'nV', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -671,10 +609,7 @@ contains
             if ((polytropic .neqv. .true.) .and. (.not. qbmm)) then
                 !nP
                 do i = 1, nb
-                    q_sf = q_cons_vf(bub_idx%ps(i))%sf( &
-                           -offset_x%beg:m + offset_x%end, &
-                           -offset_y%beg:n + offset_y%end, &
-                           -offset_z%beg:p + offset_z%end)
+                    q_sf = q_cons_vf(bub_idx%ps(i))%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                     write (varname, '(A,I3.3)') 'nP', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                     varname(:) = ' '
@@ -682,10 +617,7 @@ contains
 
                 !nM
                 do i = 1, nb
-                    q_sf = q_cons_vf(bub_idx%ms(i))%sf( &
-                           -offset_x%beg:m + offset_x%end, &
-                           -offset_y%beg:n + offset_y%end, &
-                           -offset_z%beg:p + offset_z%end)
+                    q_sf = q_cons_vf(bub_idx%ms(i))%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                     write (varname, '(A,I3.3)') 'nM', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                     varname(:) = ' '
@@ -694,10 +626,7 @@ contains
 
             ! number density
             if (adv_n) then
-                q_sf = q_cons_vf(n_idx)%sf( &
-                       -offset_x%beg:m + offset_x%end, &
-                       -offset_y%beg:n + offset_y%end, &
-                       -offset_z%beg:p + offset_z%end)
+                q_sf = q_cons_vf(n_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
                 write (varname, '(A)') 'n'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '

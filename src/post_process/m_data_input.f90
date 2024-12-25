@@ -516,6 +516,29 @@ contains
                 call s_mpi_barrier()
 
                 call MPI_FILE_CLOSE(ifile, ierr)
+
+                if (ib) then
+
+                    write (file_loc, '(A)') 'ib.dat'
+                    file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+                    inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+                    if (file_exist) then
+
+                        call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
+
+                        disp = 0
+
+                        call MPI_FILE_SET_VIEW(ifile, disp, MPI_INTEGER, MPI_IO_IB_DATA%view, &
+                                               'native', mpi_info_int, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_IB_DATA%var%sf, data_size, &
+                                           MPI_INTEGER, status, ierr)
+
+                    else
+                        call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
+                    end if
+                end if
+
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
             end if
@@ -1331,6 +1354,12 @@ contains
                                                -buff_size:p + buff_size))
                 end if
 
+                if (bubbles_lagrange) then
+                    allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
+                                               -buff_size:n + buff_size, &
+                                               -buff_size:p + buff_size))
+                end if
+
                 if (chemistry) then
                     allocate (q_T_sf%sf(-buff_size:m + buff_size, &
                                         -buff_size:n + buff_size, &
@@ -1363,6 +1392,12 @@ contains
                                                0:0))
                 end if
 
+                if (bubbles_lagrange) then
+                    allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
+                                               -buff_size:n + buff_size, &
+                                               0:0))
+                end if
+
                 if (chemistry) then
                     allocate (q_T_sf%sf(-buff_size:m + buff_size, &
                                         -buff_size:n + buff_size, &
@@ -1381,6 +1416,10 @@ contains
                                           0:0, &
                                           0:0))
             end do
+
+            if (bubbles_lagrange) then
+                allocate (q_particle(1)%sf(-buff_size:m + buff_size, 0:0, 0:0))
+            end if
 
             if (bubbles_lagrange) then
                 allocate (q_particle(1)%sf(-buff_size:m + buff_size, 0:0, 0:0))

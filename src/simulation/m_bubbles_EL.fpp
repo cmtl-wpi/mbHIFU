@@ -1351,7 +1351,7 @@ contains
         integer :: i, j, k
 
         rkck_errmax = 0._wp
-        !$acc parallel loop gang vector default(present) reduction(MAX: rkck_errmax) private(k)
+        !$acc parallel loop gang vector default(present) reduction(MAX: rkck_errmax) copy(rkck_errmax)
         do k = 1, nBubs
             errb = 0._wp
 
@@ -1787,15 +1787,12 @@ contains
         lag_void_avg = 0._wp
         lag_vol = 0._wp
         !$acc parallel loop collapse(3) gang vector default(present) reduction(+:lag_vol,lag_void_avg) &
-        !$acc reduction(MAX:lag_void_max) private(cell)
-        do i = 0, m
+        !$acc reduction(MAX:lag_void_max) copy(lag_vol, lag_void_avg, lag_void_max)
+        do k = 0, p
             do j = 0, n
-                do k = 0, p
+                do i = 0, m
                     lag_void_max = max(lag_void_max, 1._wp - q_beta%vf(1)%sf(i, j, k))
-                    cell(1) = i
-                    cell(2) = j
-                    cell(3) = k
-                    call s_get_char_vol(cell(1), cell(2), cell(3), volcell)
+                    call s_get_char_vol(i, j, k, volcell)
                     if ((1._wp - q_beta%vf(1)%sf(i, j, k)) > 5.0d-11) then
                         lag_void_avg = lag_void_avg + (1._wp - q_beta%vf(1)%sf(i, j, k))*volcell
                         lag_vol = lag_vol + volcell
@@ -1981,7 +1978,8 @@ contains
 
         integer :: k
 
-        !$acc parallel loop gang vector default(present) reduction(MAX: Rmax_glb) reduction(MIN: Rmin_glb) private(k)
+        !$acc parallel loop gang vector default(present) reduction(MAX:Rmax_glb) &
+        !$acc reduction(MIN: Rmin_glb) copy(Rmax_glb, Rmin_glb)
         do k = 1, nBubs
             Rmax_glb = max(Rmax_glb, intfc_rad(k, 1)/bub_R0(k))
             Rmin_glb = min(Rmin_glb, intfc_rad(k, 1)/bub_R0(k))
