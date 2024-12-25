@@ -1,4 +1,4 @@
-!>
+
 !! @file m_data_output.f90
 !! @brief Contains module m_data_output
 
@@ -40,13 +40,16 @@ module m_data_output
     private; 
     public :: s_initialize_data_output_module, &
               s_open_run_time_information_file, &
+              s_open_com_files, &
               s_open_probe_files, &
               s_write_run_time_information, &
               s_write_data_files, &
               s_write_serial_data_files, &
               s_write_parallel_data_files, &
+              s_write_com_files, &
               s_write_probe_files, &
               s_close_run_time_information_file, &
+              s_close_com_files, &
               s_close_probe_files, &
               s_finalize_data_output_module
 
@@ -54,6 +57,7 @@ module m_data_output
     real(wp), allocatable, dimension(:, :, :) :: vcfl_sf  !< VCFL stability criterion
     real(wp), allocatable, dimension(:, :, :) :: ccfl_sf  !< CCFL stability criterion
     real(wp), allocatable, dimension(:, :, :) :: Rc_sf  !< Rc stability criterion
+    real(wp), public, allocatable, dimension(:, :) :: c_mass
     !$acc declare create(icfl_sf, vcfl_sf, ccfl_sf, Rc_sf)
 
     real(wp) :: icfl_max_loc, icfl_max_glb !< ICFL stability extrema on local and global grids
@@ -175,6 +179,44 @@ contains
     end subroutine s_open_run_time_information_file
 
     !>  This opens a formatted data file where the root processor
+        !!      can write out the CoM information
+    subroutine s_open_com_files() ! ----------------------------------------
+        character(len=path_len + 3*name_len) :: file_path !<
+            !! Relative path to the CoM file in the case directory
+        integer :: i !< Generic loop iterator
+        do i = 1, num_fluids
+            ! Generating the relative path to the CoM data file
+            write (file_path, '(A,I0,A)') '/fluid', i, '_com.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            ! Creating the formatted data file and setting up its
+            ! structure
+            open (i + 120, file=trim(file_path), &
+                  form='formatted', &
+                  position='append', &
+                  status='unknown')
+            if (n == 0) then
+                write (i + 120, '(A)') '=== Non-Dimensional Time '// &
+                    '=== Total Mass '// &
+                    '=== x-loc '// &
+                    '=== Total Volume ==='
+            elseif (p == 0) then
+                write (i + 120, '(A)') '=== Non-Dimensional Time '// &
+                    '=== Total Mass '// &
+                    '=== x-loc '// &
+                    '=== y-loc '// &
+                    '=== Total Volume ==='
+            else
+                write (i + 120, '(A)') '=== Non-Dimensional Time '// &
+                    '=== Total Mass '// &
+                    '=== x-loc '// &
+                    '=== y-loc '// &
+                    '=== z-loc '// &
+                    '=== Total Volume ==='
+            end if
+        end do
+    end subroutine s_open_com_files ! --------------------------------------
+
+    !>  This opens a formatted data file where the root processor
         !!      can write out flow probe information
     subroutine s_open_probe_files
 
@@ -228,8 +270,8 @@ contains
         !!  @param t_step Current time step
     subroutine s_write_run_time_information(q_prim_vf, t_step)
 
-        type(scalar_field), dimension(sys_size), intent(IN) :: q_prim_vf
-        integer, intent(IN) :: t_step
+        type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
+        integer, intent(in) :: t_step
 
         real(wp) :: rho        !< Cell-avg. density
         real(wp), dimension(num_dims) :: vel        !< Cell-avg. velocity
@@ -261,7 +303,9 @@ contains
                 end do
             end do
         end do
-        ! END: Computing Stability Criteria at Current Time-step ===========
+        !$acc end parallel loop
+
+        ! end: Computing Stability Criteria at Current Time-step ===========
 
         ! Determining local stability criteria extrema at current time-step
 
@@ -768,11 +812,11 @@ contains
 
         integer :: ifile, ierr, data_size
         integer, dimension(MPI_STATUS_SIZE) :: status
-        integer(KIND=MPI_OFFSET_KIND) :: disp
-        integer(KIND=MPI_OFFSET_KIND) :: m_MOK, n_MOK, p_MOK
-        integer(KIND=MPI_OFFSET_KIND) :: WP_MOK, var_MOK, str_MOK
-        integer(KIND=MPI_OFFSET_KIND) :: NVARS_MOK
-        integer(KIND=MPI_OFFSET_KIND) :: MOK
+        integer(kind=MPI_OFFSET_kind) :: disp
+        integer(kind=MPI_OFFSET_kind) :: m_MOK, n_MOK, p_MOK
+        integer(kind=MPI_OFFSET_kind) :: WP_MOK, var_MOK, str_MOK
+        integer(kind=MPI_OFFSET_kind) :: NVARS_MOK
+        integer(kind=MPI_OFFSET_kind) :: MOK
 
         character(LEN=path_len + 2*name_len) :: file_loc
         logical :: file_exist, dir_check
@@ -816,7 +860,6 @@ contains
             call DelayFileAccess(proc_rank)
 
             ! Initialize MPI data I/O
-
             call s_initialize_mpi_data(q_cons_vf)
 
             ! Open the file to write all flow variables
@@ -970,10 +1013,10 @@ contains
                 ! Initial displacement to skip at beginning of file
                 disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
-                call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_DATA%view(sys_size + 1), &
+                call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(sys_size + 1), &
                                        'native', mpi_info_int, ierr)
                 call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(sys_size + 1)%sf, data_size, &
-                                        MPI_DOUBLE_PRECISION, status, ierr)
+                                        mpi_p, status, ierr)
             end if
 
             call MPI_FILE_CLOSE(ifile, ierr)
@@ -982,6 +1025,58 @@ contains
 #endif
 
     end subroutine s_write_parallel_data_files
+
+    !>  This writes a formatted data file where the root processor
+    !!      can write out the CoM information
+    !!  @param t_step Current time-step
+    !!  @param q_com Center of mass information
+    !!  @param moments Higher moment information
+    subroutine s_write_com_files(t_step, c_mass) ! -------------------
+
+        integer, intent(in) :: t_step
+        real(wp), dimension(num_fluids, 5), intent(in) :: c_mass
+        integer :: i, j !< Generic loop iterator
+        real(wp) :: nondim_time !< Non-dimensional time
+
+        ! Non-dimensional time calculation
+        if (t_step_old /= dflt_int) then
+            nondim_time = real(t_step + t_step_old, wp)*dt
+        else
+            nondim_time = real(t_step, wp)*dt
+        end if
+
+        if (proc_rank == 0) then
+            if (n == 0) then ! 1D simulation
+                do i = 1, num_fluids ! Loop through fluids
+                    write (i + 120, '(6X,4F24.12)') &
+                        nondim_time, &
+                        c_mass(i, 1), &
+                        c_mass(i, 2), &
+                        c_mass(i, 5)
+                end do
+            elseif (p == 0) then ! 2D simulation
+                do i = 1, num_fluids ! Loop through fluids
+                    write (i + 120, '(6X,5F24.12)') &
+                        nondim_time, &
+                        c_mass(i, 1), &
+                        c_mass(i, 2), &
+                        c_mass(i, 3), &
+                        c_mass(i, 5)
+                end do
+            else ! 3D simulation
+                do i = 1, num_fluids ! Loop through fluids
+                    write (i + 120, '(6X,6F24.12)') &
+                        nondim_time, &
+                        c_mass(i, 1), &
+                        c_mass(i, 2), &
+                        c_mass(i, 3), &
+                        c_mass(i, 4), &
+                        c_mass(i, 5)
+                end do
+            end if
+        end if
+
+    end subroutine s_write_com_files ! -------------------------------------
 
     !>  This writes a formatted data file for the flow probe information
         !!  @param t_step Current time-step
@@ -1107,7 +1202,7 @@ contains
                     end if
 
                     ! Computing/Sharing necessary state variables
-                    if (hypoelasticity) then
+                    if (elasticity) then
                         call s_convert_to_mixture_variables(q_cons_vf, j - 2, k, l, &
                                                             rho, gamma, pi_inf, qv, &
                                                             Re, G, fluid_pp(:)%G)
@@ -1121,7 +1216,8 @@ contains
 
                     dyn_p = 0.5_wp*rho*dot_product(vel, vel)
 
-                    if (hypoelasticity) then
+                    if (elasticity) then
+
                         call s_compute_pressure( &
                             q_cons_vf(1)%sf(j - 2, k, l), &
                             q_cons_vf(alf_idx)%sf(j - 2, k, l), &
@@ -1137,7 +1233,7 @@ contains
 
                     if (model_eqns == 4) then
                         lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
-                    else if (hypoelasticity) then
+                    else if (elasticity) then
                         tau_e(1) = q_cons_vf(stress_idx%end)%sf(j - 2, k, l)/rho
                     end if
 
@@ -1228,73 +1324,70 @@ contains
 
                         else
 
-                        ! Computing/Sharing necessary state variables
-                        call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l, &
-                                                            rho, gamma, pi_inf, qv, &
-                                                            Re, G, fluid_pp(:)%G)
+                            ! Computing/Sharing necessary state variables
+                            call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l, &
+                                                                rho, gamma, pi_inf, qv, &
+                                                                Re, G, fluid_pp(:)%G)
 
-                        do s = 1, num_dims
-                            vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l)/rho
-                        end do
-
-                        dyn_p = 0.5_wp*rho*dot_product(vel, vel)
-
-                        if (hypoelasticity) then
-                            call s_compute_pressure( &
-                                q_cons_vf(1)%sf(j - 2, k - 2, l), &
-                                q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                dyn_p, pi_inf, gamma, rho, qv, &
-                                rhoYks, &
-                                pres, &
-                                T, &
-                                q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
-                                q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
-                        else
-                            call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
-                                                    q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                                    dyn_p, pi_inf, gamma, rho, qv, &
-                                                    rhoYks, pres, T)
-                        end if
-
-                        if (model_eqns == 4) then
-                            lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
-                        else if (hypoelasticity) then
-                            do s = 1, 3
-                                tau_e(s) = q_cons_vf(s)%sf(j - 2, k - 2, l)/rho
-                            end do
-                        end if
-
-                        if (bubbles_euler) then
-                            alf = q_cons_vf(alf_idx)%sf(j - 2, k - 2, l)
-                            do s = 1, nb
-                                nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k - 2, l)
-                                nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k - 2, l)
+                            do s = 1, num_dims
+                                vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l)/rho
                             end do
 
-                            if (adv_n) then
-                                nbub = q_cons_vf(n_idx)%sf(j - 2, k - 2, l)
+                            dyn_p = 0.5_wp*rho*dot_product(vel, vel)
+
+                            if (elasticity) then
+                                call s_compute_pressure( &
+                                    q_cons_vf(1)%sf(j - 2, k - 2, l), &
+                                    q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
+                                    dyn_p, pi_inf, gamma, rho, qv, &
+                                    rhoYks, &
+                                    pres, &
+                                    T, &
+                                    q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
+                                    q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
                             else
-                                nR3 = 0._wp
-                                do s = 1, nb
-                                    nR3 = nR3 + weight(s)*(nR(s)**3._wp)
-                                end do
-
-                                nbub = sqrt((4._wp*pi/3._wp)*nR3/alf)
+                                call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
+                                                        q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
+                                                        dyn_p, pi_inf, gamma, rho, qv, &
+                                                        rhoYks, pres, T)
                             end if
 
-                            R(:) = nR(:)/nbub
-                            Rdot(:) = nRdot(:)/nbub
-                        end if
+                            if (model_eqns == 4) then
+                                lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
+                            else if (elasticity) then
+                                do s = 1, 3
+                                    tau_e(s) = q_cons_vf(s)%sf(j - 2, k - 2, l)/rho
+                                end do
+                            end if
 
-                        ! Compute mixture sound speed
-                        call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                      ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                            if (bubbles_euler) then
+                                alf = q_cons_vf(alf_idx)%sf(j - 2, k - 2, l)
+                                do s = 1, nb
+                                    nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k - 2, l)
+                                    nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k - 2, l)
+                                end do
 
-                        accel = accel_mag(j - 2, k - 2, l)
+                                if (adv_n) then
+                                    nbub = q_cons_vf(n_idx)%sf(j - 2, k - 2, l)
+                                else
+                                    nR3 = 0._wp
+                                    do s = 1, nb
+                                        nR3 = nR3 + weight(s)*(nR(s)**3._wp)
+                                    end do
+
+                                    nbub = sqrt((4._wp*pi/3._wp)*nR3/alf)
+                                end if
+
+                                R(:) = nR(:)/nbub
+                                Rdot(:) = nRdot(:)/nbub
+                            end if
+                            ! Compute mixture sound speed
+                            call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
+                                                        ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
                         end if
                     end if
                 end if
-            else ! 3D simulation
+            else ! 3D
                 if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
                     if ((probe(i)%y >= y_cb(-1)) .and. (probe(i)%y <= y_cb(n))) then
                         if ((probe(i)%z >= z_cb(-1)) .and. (probe(i)%z <= z_cb(p))) then
@@ -1333,7 +1426,7 @@ contains
                                 end do
                             end if
 
-                            if (hypoelasticity) then
+                            if (elasticity) then
                                 call s_compute_pressure( &
                                     q_cons_vf(1)%sf(j - 2, k - 2, l - 2), &
                                     q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
@@ -1357,7 +1450,6 @@ contains
                     end if
                 end if
             end if
-
             if (num_procs > 1) then
                 #:for VAR in ['rho','pres','gamma','pi_inf','qv','c','accel']
                     tmp = ${VAR}$
@@ -1390,14 +1482,13 @@ contains
                     end if
                 end if
 
-                if (hypoelasticity) then
+                if (elasticity) then
                     do s = 1, (num_dims*(num_dims + 1))/2
                         tmp = tau_e(s)
                         call s_mpi_allreduce_sum(tmp, tau_e(s))
                     end do
                 end if
             end if
-
             if (proc_rank == 0) then
                 if (n == 0) then
                     if (bubbles_euler .and. (num_fluids <= 2)) then
@@ -1491,7 +1582,7 @@ contains
                             nRdot(1), &
                             R(1), &
                             Rdot(1)
-                    else if (hypoelasticity) then
+                    else if (elasticity) then
                         write (i + 30, '(6X,F12.6,F24.8,F24.8,F24.8,F24.8,'// &
                                'F24.8,F24.8,F24.8)') &
                             nondim_time, &
@@ -1510,6 +1601,7 @@ contains
                             vel(1), &
                             vel(2), &
                             pres
+                        print *, 'time =', nondim_time, 'rho =', rho, 'pres =', pres
                     end if
                 else
                     write (i + 30, '(6X,F12.6,F24.8,F24.8,F24.8,F24.8,'// &
@@ -1694,6 +1786,16 @@ contains
 
     end subroutine s_close_run_time_information_file
 
+    !> Closes communication files
+    subroutine s_close_com_files() ! ---------------------------------------
+
+        integer :: i !< Generic loop iterator
+        do i = 1, num_fluids
+            close (i + 120)
+        end do
+
+    end subroutine s_close_com_files ! -------------------------------------
+
     !> Closes probe files
     subroutine s_close_probe_files
 
@@ -1714,6 +1816,10 @@ contains
         @:ALLOCATE(icfl_sf(0:m, 0:n, 0:p))
         icfl_max = 0._wp
 
+        if (probe_wrt) then
+            @:ALLOCATE(c_mass(num_fluids,5))
+        end if
+
         if (viscous) then
             @:ALLOCATE(vcfl_sf(0:m, 0:n, 0:p))
             @:ALLOCATE(Rc_sf  (0:m, 0:n, 0:p))
@@ -1726,6 +1832,10 @@ contains
 
     !> Module deallocation and/or disassociation procedures
     subroutine s_finalize_data_output_module
+
+        if (probe_wrt) then
+            @:DEALLOCATE(c_mass)
+        end if
 
         ! Deallocating the ICFL, VCFL, CCFL, and Rc stability criteria
         @:DEALLOCATE(icfl_sf)

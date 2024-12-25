@@ -163,7 +163,7 @@ print(json.dumps({
      'lag_params%massTransfer_model'    : 'F',
      'lag_params%epsilonb'              : 1.0,
      'lag_params%valmaxvoid'            : 0.9,
-     'lag_params%write_bubbles'         : 'T',
+     'lag_params%write_bubbles'         : 'F',
      'lag_params%write_bubbles_stats'   : 'F',
      'lag_params%c0'                    : c0,
      'lag_params%rho0'                  : rho0,
