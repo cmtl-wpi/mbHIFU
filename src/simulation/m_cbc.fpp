@@ -1571,7 +1571,7 @@ contains
 
         ! Deallocating CBC Coefficients in x-direction =====================
         if (any((/bc_x%beg, bc_x%end/) <= -5) .and. any((/bc_x%beg, bc_x%end/) >= -13)) then
-            if(bc_x%beg /= -20) then
+            if (bc_x%beg /= -20) then
                 @:DEALLOCATE(fd_coef_x)
                 if (weno_order > 1) then
                     @:DEALLOCATE(pi_coef_x)
@@ -1583,7 +1583,7 @@ contains
         ! Deallocating CBC Coefficients in y-direction =====================
         if (n > 0 .and. any((/bc_y%beg, bc_y%end/) <= -5) .and. &
             any((/bc_y%beg, bc_y%end/) >= -13 .and. bc_y%beg /= -14)) then
-            if(bc_y%beg /= -20) then
+            if (bc_y%beg /= -20) then
                 @:DEALLOCATE(fd_coef_y)
                 if (weno_order > 1) then
                     @:DEALLOCATE(pi_coef_y)
@@ -1594,7 +1594,7 @@ contains
 
         ! Deallocating CBC Coefficients in z-direction =====================
         if (p > 0 .and. any((/bc_z%beg, bc_z%end/) <= -5) .and. any((/bc_z%beg, bc_z%end/) >= -13)) then
-            if(bc_z%beg /= -20) then
+            if (bc_z%beg /= -20) then
                 @:DEALLOCATE(fd_coef_z)
                 if (weno_order > 1) then
                     @:DEALLOCATE(pi_coef_z)

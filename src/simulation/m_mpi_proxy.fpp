@@ -230,7 +230,7 @@ contains
 
         if (hifu) then
             #:for VAR in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages', &
-                & 'stg1', 'stg2', 'stg3']
+                & 'stg1', 'stg2', 'stg3', 'stg3_3d']
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
@@ -239,7 +239,7 @@ contains
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
-            #:for VAR in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 'dt_stg3', 't_stop_stg1', &
+            #:for VAR in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 'dt_stg3', 'dt_stg2', 't_stop_stg1', &
                 & 't_stop_stg2']
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
@@ -897,7 +897,6 @@ contains
 #endif
 
     end subroutine s_mpi_sendrecv_grid_variables_buffers
-
 
     !>  The goal of this procedure is to populate the buffers of
         !!      the cell-average conservative variables by communicating

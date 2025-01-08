@@ -107,7 +107,7 @@ contains
 
    !> Read data files. Dispatch subroutine that replaces procedure pointer.
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+    subroutine s_read_data_files(q_cons_vf, q_hifu_vf)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -115,16 +115,12 @@ contains
         
         type(scalar_field), &
             dimension(sys_size_hifu), &
-            intent(inout), optional :: q_cons_hifu
-    
-        integer, intent(in), optional :: hifu_id
-        ! HIFU vars (in parallel)
-
+            intent(inout), optional :: q_hifu_vf
 
         if (.not. parallel_io) then
-            call s_read_serial_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+            call s_read_serial_data_files(q_cons_vf, q_hifu_vf)
         else
-            call s_read_parallel_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+            call s_read_parallel_data_files(q_cons_vf, q_hifu_vf)
         end if
 
     end subroutine s_read_data_files
@@ -255,13 +251,12 @@ contains
         !!              up the latter. This procedure also calculates the cell-
         !!              width distributions from the cell-boundary locations.
         !! @param q_cons_vf Cell-averaged conservative variables
-    subroutine s_read_serial_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+    subroutine s_read_serial_data_files(q_cons_vf, q_hifu_vf)
 
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
 
         ! HIFU vars (ONLY IMPLEMENTED IN PARALLEL)
-        type(scalar_field), dimension(sys_size_hifu), intent(INOUT), optional :: q_cons_hifu
-        integer, intent(IN), optional :: hifu_id
+        type(scalar_field), dimension(sys_size_hifu), intent(INOUT), optional :: q_hifu_vf
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the starting time-step directory
@@ -502,7 +497,7 @@ contains
     end subroutine s_read_serial_data_files
 
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_parallel_data_files(q_cons_vf, q_cons_hifu, hifu_id)
+    subroutine s_read_parallel_data_files(q_cons_vf, q_hifu_vf)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -510,9 +505,7 @@ contains
 
         type(scalar_field), &
             dimension(sys_size_hifu), &
-            intent(INOUT), optional :: q_cons_hifu
-
-        integer, intent(IN), optional :: hifu_id !HIFU
+            intent(INOUT), optional :: q_hifu_vf
 
 #ifdef MFC_MPI
 
@@ -750,7 +743,7 @@ contains
 
             ! Open the file to read conservative variables
             if (cfl_dt) then
-                if (present(hifu_id)) then
+                if (present(q_hifu_vf)) then
                     write (file_loc, '(I0,A)') n_start, 'hifu.dat'
                     alt_sys = sys_size_hifu
                 else
@@ -758,7 +751,7 @@ contains
                     alt_sys = sys_size
                 end if
             else
-                if (present(hifu_id)) then
+                if (present(q_hifu_vf)) then
                     write (file_loc, '(I0,A)') t_step_start, 'hifu.dat'
                     alt_sys = sys_size_hifu
                 else
@@ -776,8 +769,8 @@ contains
 
                 if (ib) then
                     call s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm)
-                else if (present(hifu_id)) then
-                    call s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
+                else if (present(q_hifu_vf)) then
+                    call s_initialize_mpi_data(q_cons_vf, q_hifu_vf=q_hifu_vf)
                 else
                     call s_initialize_mpi_data(q_cons_vf)
                 end if
@@ -819,7 +812,7 @@ contains
                                                mpi_p, status, ierr)
                         end do
                     end if
-                else if (present(hifu_id)) then
+                else if (present(q_hifu_vf)) then
                     do i = 1, sys_size_hifu
                         var_MOK = int(i, MPI_OFFSET_KIND)
 
@@ -914,22 +907,22 @@ contains
 
                 end if
 
-            else if (present(hifu_id)) then
+            ! else if (present(q_hifu_vf)) then
 
-                if (hifu_params%sampling .and. .not. hifu_params%heatSolver) then
-                    call s_start_HIFU_vars()
-                    if (proc_rank==0) print*, 'Initialize: Start calculating intensity avg'
-                else
-                    call s_mpi_abort('Heat transfer eqn! Something when wrong. Exiting...')
-                end if
+            !     if (hifu_params%sampling .and. .not. hifu_params%heatSolver) then
+            !         call s_start_HIFU_vars()
+            !         if (proc_rank==0) print*, 'Initialize: Start calculating intensity avg'
+            !     else
+            !         call s_mpi_abort('Heat transfer eqn! Something when wrong. Exiting...')
+            !     end if
 
-                if (cfl_dt) then
-                    call s_write_data_files(q_cons_vf, q_T_sf, q_cons_vf, t_step=n_start, &
-                                            q_cons_hifu=q_hifu, hifu_id=1)
-                else
-                    call s_write_data_files(q_cons_vf, q_T_sf, q_cons_vf, t_step=t_step_start, &
-                                            q_cons_hifu=q_hifu, hifu_id=1)
-                end if
+            !     if (cfl_dt) then
+            !         call s_write_data_files(q_cons_vf, q_T_sf, q_cons_vf, t_step=n_start, &
+            !                                 q_hifu_vf=q_hifu)
+            !     else
+            !         call s_write_data_files(q_cons_vf, q_T_sf, q_cons_vf, t_step=t_step_start, &
+            !                                 q_hifu_vf=q_hifu)
+            !     end if
     
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting...')
@@ -1332,6 +1325,14 @@ contains
             end do
         end if
 
+        if (t_step == t_step_start .and. hifu_params%heatSolver .and. hifu_params%stg3_3d) then
+            ! Transforming from 2d axisymmetric to 3d cylindrical coords
+            call s_finalize_derived_variables_module()
+            call s_initialize_from_2d_to_3d()
+            call s_initialize_derived_variables_module()
+            call s_initialize_derived_variables()
+        end if
+
         call s_compute_derived_variables(t_step)
 
 
@@ -1432,7 +1433,7 @@ contains
         real(wp), intent(inout) :: start, finish, io_time_avg
         integer, intent(inout) :: nt
 
-        integer :: i, j, k, l
+        integer :: i, j, k, l, l_mod
         integer :: save_count
         logical :: hifu_write_output
 
@@ -1443,8 +1444,14 @@ contains
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
-                        if (ieee_is_nan(q_cons_ts(1)%vf(i)%sf(j, k, l))) then
-                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
+                        if (hifu_params%stg3_3d .and. hifu_params%heatSolver) then
+                            l_mod = 0
+                        else
+                            l_mod = l
+                        end if
+
+                        if (ieee_is_nan(q_cons_ts(1)%vf(i)%sf(j, k, l_mod))) then
+                            print *, "NaN(s) in timestep output.", j, k, l_mod, i, proc_rank, t_step, m, n, p
                             error stop "NaN(s) in timestep output."
                         end if
                     end do
@@ -1464,19 +1471,27 @@ contains
         end if
 
         !HIFU
-        if (hifu_params%sampling .or. hifu_params%heatSolver) then
-            if (hifu_params%sampling) call s_write_Pmax(save_count)
-            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_cons_hifu=q_hifu, hifu_id=1)
+        if (hifu_params%heatSolver) then
+            if (hifu_params%stg3_3d) then
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu_3d%vf)
+            else
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu)
+            end if
+        elseif (hifu_params%sampling) then
+            call s_write_Pmax(save_count)
+            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu)
         end if
 
-        if (bubbles_lagrange) then
-            !$acc update host(q_beta%vf(1)%sf)
-            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_beta%vf(1))
-            !$acc update host(Rmax_stats, Rmin_stats, gas_p, gas_mv, intfc_rad, intfc_vel)
-            call s_write_restart_lag_bubbles(save_count) !parallel 
-            if (lag_params%write_bubbles_stats) call s_write_lag_bubble_stats()
-        else
-            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count)
+        if (.not. hifu_params%heatSolver) then
+            if (bubbles_lagrange) then
+                !$acc update host(q_beta%vf(1)%sf)
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_beta%vf(1))
+                !$acc update host(Rmax_stats, Rmin_stats, gas_p, gas_mv, intfc_rad, intfc_vel)
+                call s_write_restart_lag_bubbles(save_count) !parallel 
+                if (lag_params%write_bubbles_stats) call s_write_lag_bubble_stats()
+            else
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count)
+            end if
         end if
 
         call nvtxEndRange
@@ -1496,7 +1511,7 @@ contains
         if (hifu .and. hifu_params%automatic_stages) then ! stg1 -> stg2 -> stg3
             call s_HIFU_stages(t_step, hifu_write_output) 
             if (hifu_write_output) call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, &
-                                                        save_count, q_cons_hifu=q_hifu, hifu_id=1)
+                                                        save_count, q_hifu_vf=q_hifu)
         end if
 
     end subroutine s_save_data
@@ -1567,8 +1582,8 @@ contains
         call s_read_data_files(q_cons_ts(1)%vf)
 
         if (hifu_params%sampling .or. hifu_params%heatSolver) then
-            call s_read_data_files(q_cons_ts(1)%vf, q_cons_hifu=q_hifu, hifu_id=1)
-            call s_populate_HIFU_variables_buffers(q_hifu)
+            call s_read_data_files(q_cons_ts(1)%vf, q_hifu_vf=q_hifu)
+            ! call s_populate_HIFU_variables_buffers(q_hifu)
         end if
 
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
@@ -1694,6 +1709,7 @@ contains
 
         !$acc update device(acoustic_source, num_source)
         !$acc update device(sigma, surface_tension)
+        !$acc update device(acoustic_bc_params)
 
         !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
    
@@ -1714,6 +1730,7 @@ contains
 
     subroutine s_finalize_modules
 
+        if(hifu_params%heatSolver .and. hifu_params%stg3_3d) call s_finalize_from_2d_to_3d()
         call s_finalize_time_steppers_module()
         if (hypoelasticity) call s_finalize_hypoelastic_module() 
         if (hyperelasticity) call s_finalize_hyperelastic_module() 

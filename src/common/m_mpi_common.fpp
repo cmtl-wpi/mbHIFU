@@ -65,7 +65,7 @@ contains
     !! @param levelset closest distance from every cell to the IB
     !! @param levelset_norm normalized vector from every cell to the closest point to the IB
     !! @param beta Eulerian void fraction from lagrangian bubbles
-    subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm, beta, q_cons_hifu, hifu_id)
+    subroutine s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm, beta, q_hifu_vf)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -74,7 +74,7 @@ contains
         type(integer_field), &
             optional, &
             intent(in) :: ib_markers
-        
+
         type(levelset_field), &
             optional, &
             intent(IN) :: levelset
@@ -88,9 +88,7 @@ contains
 
         type(scalar_field), &
             dimension(sys_size_hifu), &
-            intent(in), optional :: q_cons_hifu
-
-        integer, optional :: hifu_id
+            intent(in), optional :: q_hifu_vf
 
         integer, dimension(num_dims) :: sizes_glb, sizes_loc
         integer, dimension(1) :: airfoil_glb, airfoil_loc, airfoil_start
@@ -103,7 +101,7 @@ contains
         !Altered system size for the lagrangian subgrid bubble model
         integer :: alt_sys
 
-        if (present(hifu_id)) then
+        if (present(q_hifu_vf)) then
             alt_sys = sys_size_hifu
         else
             if (present(beta)) then
@@ -113,10 +111,10 @@ contains
             end if
         end if
 
-        if (present(hifu_id)) then
+        if (present(q_hifu_vf)) then
             do i = 1, sys_size_hifu
-                !if (proc_rank==0) print*, size(MPI_IO_HIFU_DATA%var), size(q_cons_hifu)
-                MPI_IO_HIFU_DATA%var(i)%sf => q_cons_hifu(i)%sf(0:m, 0:n, 0:p)
+                !if (proc_rank==0) print*, size(MPI_IO_HIFU_DATA%var), size(q_hifu_vf)
+                MPI_IO_HIFU_DATA%var(i)%sf => q_hifu_vf(i)%sf(0:m, 0:n, 0:p)
             end do
         else
             do i = 1, sys_size
@@ -160,16 +158,16 @@ contains
         end if
 
         ! Define the view for each variable
-        if (present(hifu_id)) then
+        if (present(q_hifu_vf)) then
             do i = 1, sys_size_hifu
                 call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
-                                          MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
+                                              MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
                 call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
             end do
         else
             do i = 1, alt_sys
                 call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
-                                            MPI_ORDER_FORTRAN, mpi_p, MPI_IO_DATA%view(i), ierr)
+                                              MPI_ORDER_FORTRAN, mpi_p, MPI_IO_DATA%view(i), ierr)
                 call MPI_TYPE_COMMIT(MPI_IO_DATA%view(i), ierr)
             end do
         end if

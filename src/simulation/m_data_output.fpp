@@ -32,7 +32,7 @@ module m_data_output
 
     use m_ibm
 
-    use m_hifu 
+    use m_hifu
     ! ==========================================================================
 
     implicit none
@@ -80,7 +80,7 @@ contains
         !! @param q_cons_vf Conservative variables
         !! @param q_prim_vf Primitive variables
         !! @param t_step Current time step
-    subroutine s_write_data_files(q_cons_vf, q_T_sf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+    subroutine s_write_data_files(q_cons_vf, q_T_sf, q_prim_vf, t_step, beta, q_hifu_vf)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -98,17 +98,14 @@ contains
         type(scalar_field), &
             intent(inout), optional :: beta
 
-        ! HIFU
-            type(scalar_field), &
+        type(scalar_field), &
             dimension(sys_size_hifu), &
-            intent(IN), optional :: q_cons_hifu
-
-        integer, intent(IN), optional :: hifu_id
+            intent(IN), optional :: q_hifu_vf
 
         if (.not. parallel_io) then
-            call s_write_serial_data_files(q_cons_vf, q_T_sf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+            call s_write_serial_data_files(q_cons_vf, q_T_sf, q_prim_vf, t_step, beta, q_hifu_vf)
         else
-            call s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+            call s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_hifu_vf)
         end if
 
     end subroutine s_write_data_files
@@ -397,7 +394,7 @@ contains
         !!  @param q_cons_vf Cell-average conservative variables
         !!  @param q_prim_vf Cell-average primitive variables
         !!  @param t_step Current time-step
-    subroutine s_write_serial_data_files(q_cons_vf, q_T_sf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+    subroutine s_write_serial_data_files(q_cons_vf, q_T_sf, q_prim_vf, t_step, beta, q_hifu_vf)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), intent(inout) :: q_T_sf
@@ -406,8 +403,7 @@ contains
         type(scalar_field), optional :: beta
 
         ! HIFU vars (only in parallel)
-        type(scalar_field), dimension(sys_size_hifu), intent(IN), optional :: q_cons_hifu
-        integer, intent(IN), optional :: hifu_id
+        type(scalar_field), dimension(sys_size_hifu), intent(IN), optional :: q_hifu_vf
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the current time-step directory
@@ -799,14 +795,13 @@ contains
         !!  @param q_prim_vf Cell-average primitive variables
         !!  @param t_step Current time-step
         !!  @param beta Eulerian void fraction from lagrangian bubbles
-    subroutine s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_cons_hifu, hifu_id)
+    subroutine s_write_parallel_data_files(q_cons_vf, q_prim_vf, t_step, beta, q_hifu_vf)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         integer, intent(in) :: t_step
         type(scalar_field), intent(inout), optional :: beta
-        type(scalar_field), dimension(sys_size_hifu), intent(in), optional :: q_cons_hifu
-        integer, intent(in), optional :: hifu_id
+        type(scalar_field), dimension(sys_size_hifu), intent(in), optional :: q_hifu_vf
 
 #ifdef MFC_MPI
 
@@ -826,7 +821,7 @@ contains
 
         integer :: alt_sys !< Altered system size for the lagrangian subgrid bubble model
 
-        if (present(hifu_id)) then
+        if (present(q_hifu_vf)) then
             alt_sys = sys_size_hifu
         else
             if (present(beta)) then
@@ -914,8 +909,8 @@ contains
         else
             ! Initialize MPI data I/O
 
-            if (present(hifu_id)) then
-                call s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
+            if (present(q_hifu_vf)) then
+                call s_initialize_mpi_data(q_cons_vf, q_hifu_vf=q_hifu_vf)
             else
                 if (ib) then
                     call s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm)
@@ -926,7 +921,7 @@ contains
                 end if
             end if
 
-            if (present(hifu_id)) then
+            if (present(q_hifu_vf)) then
                 write (file_loc, '(I0,A)') t_step, 'hifu.dat'
             else
                 write (file_loc, '(I0,A)') t_step, '.dat'
@@ -978,8 +973,8 @@ contains
                                                 mpi_p, status, ierr)
                     end do
                 end if
-            
-            else if (present(hifu_id)) then
+
+            else if (present(q_hifu_vf)) then
                 do i = 1, sys_size_hifu
                     var_MOK = int(i, MPI_OFFSET_KIND)
 
@@ -1082,11 +1077,12 @@ contains
         !!  @param t_step Current time-step
         !!  @param q_cons_vf Conservative variables
         !!  @param accel_mag Acceleration magnitude information
-    subroutine s_write_probe_files(t_step, q_cons_vf, accel_mag)
+    subroutine s_write_probe_files(t_step, q_cons_vf, accel_mag, q_hifu_vf)
 
         integer, intent(in) :: t_step
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         real(wp), dimension(0:m, 0:n, 0:p), intent(in) :: accel_mag
+        type(scalar_field), dimension(sys_size_hifu), intent(in), optional :: q_hifu_vf
 
         real(wp), dimension(-1:m) :: distx
         real(wp), dimension(-1:n) :: disty
@@ -1133,7 +1129,7 @@ contains
 
         real(wp) :: rhoYks(1:num_species)
 
-        real(wp) :: Temp_hifu, x_loc0, x_loc1, x_loc2
+        real(wp) :: Temp_hifu
 
         T = dflt_T_guess
 
@@ -1175,11 +1171,8 @@ contains
                 tau_e(s) = 0._wp
             end do
 
-            if (hifu_params%heatSolver) then
-                Temp_hifu=0._wp
-                x_loc0=0._wp
-                x_loc1=0._wp
-                x_loc2=0._wp
+            if (hifu) then
+                Temp_hifu = 0._wp
             end if
 
             ! Find probe location in terms of indices on a
@@ -1291,6 +1284,7 @@ contains
                     accel = accel_mag(j - 2, k, l)
                 end if
             elseif (p == 0) then ! 2D simulation
+
                 if (chemistry) then
                     do d = 1, num_species
                         rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k - 2, l)
@@ -1315,76 +1309,70 @@ contains
 
                         ! Temperature hifu
                         if (hifu_params%heatSolver) then
-                            !print*, 'Tracking point'
-                            Temp_hifu = Temp_hifu + q_cons_vf(T_hifu_idx)%sf(j-2,k-2,l)
-                            x_loc0 = x_loc0 + x_cc(j)
-                            x_loc1 = x_loc1 + x_cc(j-1)
-                            x_loc2 = x_loc2 + x_cc(j-2)
-                            !Add any other properties to retieve
+                            Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l)
+                            Temp_hifu = Temp_hifu - hifu_params%Tref ! Delta T
+                        end if
 
+                        ! Computing/Sharing necessary state variables
+                        call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l, &
+                                                            rho, gamma, pi_inf, qv, &
+                                                            Re, G, fluid_pp(:)%G)
+
+                        do s = 1, num_dims
+                            vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l)/rho
+                        end do
+
+                        dyn_p = 0.5_wp*rho*dot_product(vel, vel)
+
+                        if (elasticity) then
+                            call s_compute_pressure( &
+                                q_cons_vf(1)%sf(j - 2, k - 2, l), &
+                                q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
+                                dyn_p, pi_inf, gamma, rho, qv, &
+                                rhoYks, &
+                                pres, &
+                                T, &
+                                q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
+                                q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
                         else
+                            call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
+                                                    q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
+                                                    dyn_p, pi_inf, gamma, rho, qv, &
+                                                    rhoYks, pres, T)
+                        end if
 
-                            ! Computing/Sharing necessary state variables
-                            call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l, &
-                                                                rho, gamma, pi_inf, qv, &
-                                                                Re, G, fluid_pp(:)%G)
+                        if (model_eqns == 4) then
+                            lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
+                        else if (elasticity) then
+                            do s = 1, 3
+                                tau_e(s) = q_cons_vf(s)%sf(j - 2, k - 2, l)/rho
+                            end do
+                        end if
 
-                            do s = 1, num_dims
-                                vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l)/rho
+                        if (bubbles_euler) then
+                            alf = q_cons_vf(alf_idx)%sf(j - 2, k - 2, l)
+                            do s = 1, nb
+                                nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k - 2, l)
+                                nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k - 2, l)
                             end do
 
-                            dyn_p = 0.5_wp*rho*dot_product(vel, vel)
-
-                            if (elasticity) then
-                                call s_compute_pressure( &
-                                    q_cons_vf(1)%sf(j - 2, k - 2, l), &
-                                    q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                    dyn_p, pi_inf, gamma, rho, qv, &
-                                    rhoYks, &
-                                    pres, &
-                                    T, &
-                                    q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
-                                    q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
+                            if (adv_n) then
+                                nbub = q_cons_vf(n_idx)%sf(j - 2, k - 2, l)
                             else
-                                call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
-                                                        q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                                        dyn_p, pi_inf, gamma, rho, qv, &
-                                                        rhoYks, pres, T)
-                            end if
-
-                            if (model_eqns == 4) then
-                                lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
-                            else if (elasticity) then
-                                do s = 1, 3
-                                    tau_e(s) = q_cons_vf(s)%sf(j - 2, k - 2, l)/rho
-                                end do
-                            end if
-
-                            if (bubbles_euler) then
-                                alf = q_cons_vf(alf_idx)%sf(j - 2, k - 2, l)
+                                nR3 = 0._wp
                                 do s = 1, nb
-                                    nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k - 2, l)
-                                    nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k - 2, l)
+                                    nR3 = nR3 + weight(s)*(nR(s)**3._wp)
                                 end do
 
-                                if (adv_n) then
-                                    nbub = q_cons_vf(n_idx)%sf(j - 2, k - 2, l)
-                                else
-                                    nR3 = 0._wp
-                                    do s = 1, nb
-                                        nR3 = nR3 + weight(s)*(nR(s)**3._wp)
-                                    end do
-
-                                    nbub = sqrt((4._wp*pi/3._wp)*nR3/alf)
-                                end if
-
-                                R(:) = nR(:)/nbub
-                                Rdot(:) = nRdot(:)/nbub
+                                nbub = sqrt((4._wp*pi/3._wp)*nR3/alf)
                             end if
-                            ! Compute mixture sound speed
-                            call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                        ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+
+                            R(:) = nR(:)/nbub
+                            Rdot(:) = nRdot(:)/nbub
                         end if
+                        ! Compute mixture sound speed
+                        call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
+                                                      ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
                     end if
                 end if
             else ! 3D
@@ -1410,6 +1398,12 @@ contains
                             if (k == 1) k = 2 ! Pick first point if probe is at edge
                             if (l == 1) l = 2 ! Pick first point if probe is at edge
 
+                            ! Temperature hifu
+                            if (hifu_params%heatSolver .and. hifu_params%stg3_3d) then
+                                Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l - 2)
+                                Temp_hifu = Temp_hifu - hifu_params%Tref ! Delta T
+                            end if
+
                             ! Computing/Sharing necessary state variables
                             call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l - 2, &
                                                                 rho, gamma, pi_inf, qv, &
@@ -1417,6 +1411,8 @@ contains
                             do s = 1, num_dims
                                 vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l - 2)/rho
                             end do
+
+                            if (hifu_params%stg3_3d) vel(3) = 0._wp
 
                             dyn_p = 0.5_wp*rho*dot_product(vel, vel)
 
@@ -1461,8 +1457,8 @@ contains
                     call s_mpi_allreduce_sum(tmp, vel(s))
                 end do
 
-                if (hifu_params%heatSolver) then
-                    #:for VAR in ['Temp_hifu','x_loc0','x_loc1','x_loc2']
+                if (hifu) then
+                    #:for VAR in ['Temp_hifu']
                         tmp = ${VAR}$
                         call s_mpi_allreduce_sum(tmp, ${VAR}$)
                     #:endfor
@@ -1563,13 +1559,16 @@ contains
                             pres
                     end if
                 elseif (p == 0) then
-                    if (hifu_params%heatSolver) then
-                        write (i + 30, '(6X,5E24.8)') &
+                    if (hifu) then
+                        write (i + 30, '(6X,6E24.8)') &
                             nondim_time, &
-                            Temp_hifu - hifu_params%Tref,&
-                            x_loc0,&
-                            x_loc1,&
-                            x_loc2
+                            rho, &
+                            vel(1), &
+                            vel(2), &
+                            pres, &
+                            Temp_hifu
+                        !print *, 'time =', nondim_time, 'focal temperature =', Temp_hifu, '2D axisymmetric sim'
+
                     else if (bubbles_euler) then
                         write (i + 30, '(6X,10F24.8)') &
                             nondim_time, &
@@ -1601,23 +1600,34 @@ contains
                             vel(1), &
                             vel(2), &
                             pres
-                        print *, 'time =', nondim_time, 'rho =', rho, 'pres =', pres
+                        !print *, 'time =', nondim_time, 'rho =', rho, 'pres =', pres
                     end if
                 else
-                    write (i + 30, '(6X,F12.6,F24.8,F24.8,F24.8,F24.8,'// &
-                           'F24.8,F24.8,F24.8,F24.8,F24.8,'// &
-                           'F24.8)') &
-                        nondim_time, &
-                        rho, &
-                        vel(1), &
-                        vel(2), &
-                        vel(3), &
-                        pres, &
-                        gamma, &
-                        pi_inf, &
-                        qv, &
-                        c, &
-                        accel
+                    if (hifu) then
+                        write (i + 30, '(6X,6E24.8)') &
+                            nondim_time, &
+                            rho, &
+                            vel(1), &
+                            vel(2), &
+                            pres, &
+                            Temp_hifu
+                        !print *, 'time =', nondim_time, 'focal temperature =', Temp_hifu, '3D cylindrical sim'
+                    else
+                        write (i + 30, '(6X,F12.6,F24.8,F24.8,F24.8,F24.8,'// &
+                               'F24.8,F24.8,F24.8,F24.8,F24.8,'// &
+                               'F24.8)') &
+                            nondim_time, &
+                            rho, &
+                            vel(1), &
+                            vel(2), &
+                            vel(3), &
+                            pres, &
+                            gamma, &
+                            pi_inf, &
+                            qv, &
+                            c, &
+                            accel
+                    end if
                 end if
             end if
         end do

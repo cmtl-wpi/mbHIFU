@@ -39,6 +39,8 @@ module m_start_up
 
     use m_chemistry
 
+    use m_hifu
+
     ! ==========================================================================
 
     implicit none
@@ -84,7 +86,7 @@ contains
             relax_model, cf_wrt, sigma, adv_n, ib, num_ibs, &
             cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, &
             cfl_target, surface_tension, bubbles_lagrange, rkck_adap_dt, &
-            sim_data, hyperelasticity, hifu
+            sim_data, hyperelasticity, hifu, hifu_params
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -150,21 +152,10 @@ contains
 
     end subroutine s_check_input_file
 
-    subroutine s_perform_time_step(t_step, hifu_id)
+    subroutine s_perform_time_step(t_step)
 
         integer, intent(inout) :: t_step
-        integer, intent(in), optional :: hifu_id
 
-        if (present(hifu_id)) then
-            ! Populating the grid and HIFU variables
-            call s_read_data_files(t_step, hifu_id=1)
-            ! Populating the buffer regions of the grid variables
-            if (buff_size > 0) call s_populate_grid_variables_buffer_regions()
-            ! Populating the buffer regions of the HIFU variables
-            if (buff_size > 0) call s_populate_conservative_variables_buffer_regions()
-            return
-        end if
-        
         if (proc_rank == 0) then
             if (cfl_dt) then
                 print '(" ["I3"%]  Saving "I8" of "I0"")', &
@@ -178,25 +169,40 @@ contains
                     t_step
             end if
         end if
-        ! Populating the grid and conservative variables
-        call s_read_data_files(t_step)
 
-        ! Populating the buffer regions of the grid variables
-        if (buff_size > 0) then
-            call s_populate_grid_variables_buffer_regions()
+        if (hifu_params%stg3) then
+
+            ! Populating the grid and conservative variables
+            call s_read_data_files(t_step, hifu_id=1)
+
+            ! Populating the buffer regions of the grid variables
+            if (buff_size > 0) call s_populate_grid_variables_buffer_regions()
+
+        else
+
+            ! Populating the grid and conservative variables
+            call s_read_data_files(t_step)
+            if (hifu_params%stg2) then
+                call s_read_data_files(t_step, hifu_id=1)
+            end if
+
+            ! Populating the buffer regions of the grid variables
+            if (buff_size > 0) then
+                call s_populate_grid_variables_buffer_regions()
+            end if
+
+            ! Populating the buffer regions of the conservative variables
+            if (buff_size > 0) then
+                call s_populate_conservative_variables_buffer_regions()
+                if (bubbles_lagrange) call s_populate_conservative_variables_buffer_regions(q_particle(1))
+            end if
+
+            ! Initialize the Temperature cache.
+            if (chemistry) call s_compute_q_T_sf(q_T_sf, q_cons_vf, idwbuff)
+
+            ! Converting the conservative variables to the primitive ones
+            call s_convert_conservative_to_primitive_variables(q_cons_vf, q_T_sf, q_prim_vf, idwbuff)
         end if
-
-        ! Populating the buffer regions of the conservative variables
-        if (buff_size > 0) then
-            call s_populate_conservative_variables_buffer_regions()
-            if (bubbles_lagrange) call s_populate_conservative_variables_buffer_regions(q_particle(1))
-        end if
-
-        ! Initialize the Temperature cache.
-        if (chemistry) call s_compute_q_T_sf(q_T_sf, q_cons_vf, idwbuff)
-
-        ! Converting the conservative variables to the primitive ones
-        call s_convert_conservative_to_primitive_variables(q_cons_vf, q_T_sf, q_prim_vf, idwbuff)
 
     end subroutine s_perform_time_step
 
@@ -242,6 +248,132 @@ contains
 
         ! Adding the grid to the formatted database file
         call s_write_grid_to_formatted_database_file(t_step)
+
+        ! HIFU
+        ! Adding the Temperature to the previously formatted database file -------------------
+        if (hifu) then
+            ! call s_perform_time_step(t_step, hifu_id=1)
+
+            !------- Temperature --------------------
+            q_sf = q_cons_hifu(hifu_params%T_idx)%sf( &
+                   -offset_x%beg:m + offset_x%end, &
+                   -offset_y%beg:n + offset_y%end, &
+                   -offset_z%beg:p + offset_z%end)
+
+            write (varname, '(A)') 'Temperature'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg heat intensity from acoustic damping q_us ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%qus_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                    end do
+                end do
+            end do
+
+            if (proc_rank == 0) print *, 'The current sampled period is', q_cons_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0)
+
+            write (varname, '(A)') 'avgAcousticIntensity'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg heat intensity from acoustic damping q_us PRMS ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%qus_prms_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgAcousticIntensity'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg heat intensity from viscous damping q_vis ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%qvis_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgViscousIntensity'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg heat intensity from thermal damping q_vis ---------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%qth_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgThermalIntensity'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg streming velocity x-dir---------------------------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%u_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgStreaming_x'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Avg streming velocity y-dir---------------------------
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%v_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'avgStreaming_y'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Max Pressure --------------------
+
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%P_idx)%sf(i, j, k)
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'Pmax'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            !------- Min Pressure --------------------
+
+            do i = -offset_x%beg, m + offset_x%end
+                do j = -offset_y%beg, n + offset_y%end
+                    do k = -offset_z%beg, p + offset_z%end
+                        q_sf(i, j, k) = q_cons_hifu(hifu_params%P_idx + 1)%sf(i, j, k)
+                    end do
+                end do
+            end do
+
+            write (varname, '(A)') 'Pmin'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+            varname(:) = ' '
+
+            if (hifu_params%stg3) return
+        end if
 
         ! Computing centered finite-difference coefficients in x-direction
         if (omega_wrt(2) .or. omega_wrt(3) .or. qm_wrt .or. schlieren_wrt) then
@@ -647,129 +779,6 @@ contains
             call s_write_lag_bubbles_results(t_step) !! Individual bubble evolution
         end if
 
-        ! HIFU
-        ! Adding the Termperature to the previously formatted database file -------------------
-        if (hifu) then
-            call s_perform_time_step(t_step, hifu_id=1)
-
-            !------- Temperature --------------------
-            q_sf = q_cons_hifu(T_hifu_idx)%sf( &
-                   -offset_x%beg:m + offset_x%end, &
-                   -offset_y%beg:n + offset_y%end, &
-                   -offset_z%beg:p + offset_z%end)
-
-            write (varname, '(A)') 'Temperature'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Avg heat intensity from acoustic damping q_us ---------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(qus_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
-                    end do
-                end do
-            end do
-
-            if (proc_rank==0) print*, 'The current sampled period is', q_cons_hifu(tt_hifu_idx)%sf(0,0,0)
-
-            write (varname, '(A)') 'avgAcousticIntensity'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Avg heat intensity from acoustic damping q_us PRMS ---------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(qus_prms_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
-                    end do
-                end do
-            end do
-
-            write (varname, '(A)') 'avgAcousticIntensity'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Avg heat intensity from viscous damping q_vis ---------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(qvis_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
-                    end do
-                end do
-            end do
-
-            write (varname, '(A)') 'avgViscousIntensity'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Avg heat intensity from thermal damping q_vis ---------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(qth_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
-                    end do
-                end do
-            end do
-
-            write (varname, '(A)') 'avgThermalIntensity'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Avg streming velocity x-dir---------------------------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(u_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
-                    end do
-                end do
-            end do
-
-            write (varname, '(A)') 'avgStreaming_x'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Avg streming velocity y-dir---------------------------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(v_hifu_idx)%sf(i,j,k)*(1/q_cons_hifu(tt_hifu_idx)%sf(i,j,k))
-                    end do
-                end do
-            end do
-
-            write (varname, '(A)') 'avgStreaming_y'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Max Pressure --------------------
-
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(P_hifu_idx)%sf(i,j,k)
-                    end do
-                end do
-            end do
-
-            write (varname, '(A)') 'Pmax'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            !------- Min Pressure --------------------
-
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i,j,k) = q_cons_hifu(P_hifu_idx+1)%sf(i,j,k)
-                    end do
-                end do
-            end do
-
-            write (varname, '(A)') 'Pmin'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-        end if
         if (sim_data .and. proc_rank == 0) then
             call s_close_intf_data_file()
             call s_close_energy_data_file()
@@ -816,6 +825,7 @@ contains
             call s_assign_default_values_to_user_inputs()
             call s_read_input_file()
             call s_check_input_file()
+            if (hifu) call s_HIFU_start_stages()
 
             print '(" Post-processing a "I0"x"I0"x"I0" case on "I0" rank(s)")', m, n, p, num_procs
 
@@ -827,6 +837,7 @@ contains
         call s_mpi_bcast_user_inputs()
         call s_initialize_parallel_io()
         call s_mpi_decompose_computational_domain()
+        if (hifu) call s_HIFU_indexes()
 
     end subroutine s_initialize_mpi_domain
 

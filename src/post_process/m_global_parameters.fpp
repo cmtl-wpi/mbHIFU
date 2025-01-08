@@ -315,11 +315,8 @@ module m_global_parameters
 
     ! HIFU
     logical :: hifu
+    type(hifu_parameters) :: hifu_params    !< HIFU parameters
     integer :: sys_size_hifu
-    integer :: T_hifu_idx, tt_hifu_idx 
-    integer :: qus_hifu_idx, qvis_hifu_idx, qth_hifu_idx !indexes
-    integer :: u_hifu_idx, v_hifu_idx, P_hifu_idx, qus_prms_hifu_idx
-!    integer :: umin_hifu_idx, vmin_hifu_idx
 
 contains
 
@@ -442,8 +439,30 @@ contains
         bubbles_lagrange = .false.
         rkck_adap_dt = .false.
 
-        !HIFU
+        !HIFU variables
         hifu = .false.
+        hifu_params%sampling = .false.
+        hifu_params%heatSolver = .false.
+        hifu_params%intPrms = .false.
+        hifu_params%streaming = .false.
+        hifu_params%Tref = dflt_real
+        hifu_params%K = dflt_real
+        hifu_params%alpha = dflt_real
+        hifu_params%stepStopSource = dflt_int
+        hifu_params%atmPres = dflt_real
+        hifu_params%absCoef = dflt_real
+        hifu_params%automatic_stages = .false.
+        hifu_params%stg1 = .false.
+        hifu_params%stg2 = .false.
+        hifu_params%stg3 = .false.
+        hifu_params%stg3_3d = .false.
+        hifu_params%t_step_stop_stg1 = dflt_int
+        hifu_params%t_step_stop_stg2 = dflt_int
+        hifu_params%t_step_stop_stg3 = dflt_int
+        hifu_params%t_stop_stg1 = dflt_real
+        hifu_params%t_stop_stg2 = dflt_real
+        hifu_params%dt_stg3 = dflt_real
+        hifu_params%t_step_save_stg3 = dflt_int
 
         ! IBM
         num_ibs = dflt_int
@@ -743,20 +762,7 @@ contains
         chemxb = species_idx%beg
         chemxe = species_idx%end
 
-        if (hifu) then
-            sys_size_hifu=max(sys_size,14)
-            T_hifu_idx    = 1
-            tt_hifu_idx   = 3
-            qus_hifu_idx  = 4
-            qvis_hifu_idx = 5 !need extra space
-            qth_hifu_idx  = 7 !need extra space
-            qus_prms_hifu_idx    = 9
-            P_hifu_idx    = 10 !Pmax and Pmin
-            u_hifu_idx    = 12
-            v_hifu_idx    = 14
-        else
-            sys_size_hifu = 0
-        end if
+        if (hifu) sys_size_hifu = max(sys_size, 14)
 
 #ifdef MFC_MPI
 
@@ -780,7 +786,7 @@ contains
             allocate (MPI_IO_HIFU_DATA%view(1:sys_size_hifu))
             allocate (MPI_IO_HIFU_DATA%var(1:sys_size_hifu))
             do i = 1, sys_size_hifu
-                allocate (MPI_IO_HIFU_DATA%var(i)%sf(0:m,0:n,0:p))
+                allocate (MPI_IO_HIFU_DATA%var(i)%sf(0:m, 0:n, 0:p))
                 MPI_IO_HIFU_DATA%var(i)%sf => null()
             end do
         end if
@@ -966,7 +972,6 @@ contains
                 deallocate (MPI_IO_HIFU_DATA%var)
                 deallocate (MPI_IO_HIFU_DATA%view)
             end if
-
 
         end if
 

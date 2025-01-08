@@ -24,7 +24,7 @@ module m_boundary_conditions
 
 contains
 
-        !>  The purpose of this procedure is to populate the buffers
+    !>  The purpose of this procedure is to populate the buffers
         !!      of the primitive variables, depending on the selected
         !!      boundary conditions.
     subroutine s_populate_variables_buffers(q_prim_vf, pb, mv)
@@ -228,7 +228,6 @@ contains
         integer :: j, k, l, q, i
         real(wp) :: tau, gFun, rc, rbeta
 
-
         !< x-direction =========================================================
         if (bc_dir == 1) then !< x-direction
 
@@ -239,52 +238,50 @@ contains
                     do k = 0, n
                         do j = 1, buff_size
                             tau = 0._wp
-                            
+
                             ! Velocities (# dim), and fluids' volume fraction
                             !$acc loop seq
-                            do i = 1, sys_size     
+                            do i = 1, sys_size
                                 q_prim_vf(i)%sf(-j, k, l) = &
                                     q_prim_vf(i)%sf(0, k, l)
                             end do
-                            
-                            
 
-                            if (acoustic_bc_params%iwave .eq. 1) then
+                            if (acoustic_bc_params%iwave == 1) then
                                 ! Pressure : Planar wave
-                                tau = mytime 
+                                tau = mytime
 
-                                if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
-                                    q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
-                                                                        acoustic_bc_params%Pamp *  &
-                                                    sin( 2._wp * pi * acoustic_bc_params%freq * tau )
+                                if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
+                                    q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
+                                                                        acoustic_bc_params%Pamp* &
+                                                                        sin(2._wp*pi*acoustic_bc_params%freq*tau)
                                     q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
                                 else
-                                    q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase 
+                                    q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase
                                 end if
 
-                            elseif (acoustic_bc_params%iwave .eq. 2) then
+                            elseif (acoustic_bc_params%iwave == 2) then
                                 ! Single hemispherical transdurer
                                 rc = (0.5_wp*acoustic_bc_params%apert)/sqrt(1._wp - ((0.5_wp*acoustic_bc_params%apert)/ &
-                                                         (acoustic_bc_params%focLen + acoustic_bc_params%focCal) )**2._wp)
+                                                                                     (acoustic_bc_params%focLen + acoustic_bc_params%focCal))**2._wp)
                                 rbeta = sqrt(1._wp + ((0.5_wp*acoustic_bc_params%apert)/ &
-                                                         (acoustic_bc_params%focLen + acoustic_bc_params%focCal) )**2._wp)
+                                                      (acoustic_bc_params%focLen + acoustic_bc_params%focCal))**2._wp)
 
-                                if (y_cc(k) .lt. rc) then
-                                    tau = mytime + y_cc(k)**2._wp / (2._wp * acoustic_bc_params%cson * & 
-                                                                (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
+                                if (y_cc(k) < rc) then
+                                    tau = mytime + y_cc(k)**2._wp/(2._wp*acoustic_bc_params%cson* &
+                                                                   (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
                                     gFun = (1._wp/rbeta)
 
-                                    if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
-                                        q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
-                                                                           acoustic_bc_params%Pamp *  &
-                                                        sin( 2._wp * pi * acoustic_bc_params%freq * tau ) 
+                                    if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
+                                        q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
+                                                                            acoustic_bc_params%Pamp* &
+                                                                            sin(2._wp*pi*acoustic_bc_params%freq*tau)
                                         q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
                                     else
-                                        q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase 
-                                    end if    
+                                        q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase
+                                    end if
                                 else
-                                    q_prim_vf(momxe+1)%sf(-j, k, l) = acoustic_bc_params%Pbase 
-                                end if  
+                                    q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase
+                                end if
 
                             else
                                 call s_mpi_abort('acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)')
@@ -310,35 +307,35 @@ contains
                     do j = 1, buff_size
                         do l = -buff_size, m + buff_size
                             tau = 0._wp
-                            
+
                             ! Velocities (# dim), and fluids' volume fraction
                             !$acc loop seq
-                            do i = 1, sys_size     
+                            do i = 1, sys_size
                                 q_prim_vf(i)%sf(l, -j, k) = &
                                     q_prim_vf(i)%sf(l, 0, k)
                             end do
 
-                            if (acoustic_bc_params%iwave .eq. 1) then
+                            if (acoustic_bc_params%iwave == 1) then
                                 ! Pressure : Planar wave
-                                tau = mytime 
+                                tau = mytime
 
-                                if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
-                                    q_prim_vf(momxe+1)%sf(l, -j, k) = acoustic_bc_params%Pbase + &
-                                                                        acoustic_bc_params%Pamp *  &
-                                                    sin( 2._wp * pi * acoustic_bc_params%freq * tau )
+                                if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
+                                    q_prim_vf(momxe + 1)%sf(l, -j, k) = acoustic_bc_params%Pbase + &
+                                                                        acoustic_bc_params%Pamp* &
+                                                                        sin(2._wp*pi*acoustic_bc_params%freq*tau)
                                     q_prim_vf(1)%sf(l, -j, k) = acoustic_bc_params%rho
                                 else
-                                    q_prim_vf(momxe+1)%sf(l, -j, k) = acoustic_bc_params%Pbase 
+                                    q_prim_vf(momxe + 1)%sf(l, -j, k) = acoustic_bc_params%Pbase
                                 end if
 
-                            elseif (acoustic_bc_params%iwave .eq. 2) then
+                            elseif (acoustic_bc_params%iwave == 2) then
                                 ! Single hemispherical transdurer
-                                call s_mpi_abort('Axisymmetric spherical transducer only valid with bc_x%beg') 
+                                call s_mpi_abort('Axisymmetric spherical transducer only valid with bc_x%beg')
 
                             else
                                 call s_mpi_abort('acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)')
-                            end if  
-                            
+                            end if
+
                         end do
                     end do
                 end do
@@ -359,35 +356,35 @@ contains
                     do l = -buff_size, n + buff_size
                         do k = -buff_size, m + buff_size
                             tau = 0._wp
-                            
+
                             ! Velocities (# dim), and fluids' volume fraction
                             !$acc loop seq
-                            do i = 1, sys_size     
+                            do i = 1, sys_size
                                 q_prim_vf(i)%sf(k, l, -j) = &
                                     q_prim_vf(i)%sf(k, l, 0)
                             end do
 
-                            if (acoustic_bc_params%iwave .eq. 1) then
+                            if (acoustic_bc_params%iwave == 1) then
                                 ! Pressure : Planar wave
-                                tau = mytime 
+                                tau = mytime
 
-                                if (tau .lt. (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
-                                    q_prim_vf(momxe+1)%sf(k, l, -j) = acoustic_bc_params%Pbase + &
-                                                                    acoustic_bc_params%Pamp *  &
-                                                    sin( 2._wp * pi * acoustic_bc_params%freq * tau )
+                                if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
+                                    q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase + &
+                                                                        acoustic_bc_params%Pamp* &
+                                                                        sin(2._wp*pi*acoustic_bc_params%freq*tau)
                                     q_prim_vf(1)%sf(k, l, -j) = acoustic_bc_params%rho
                                 else
-                                    q_prim_vf(momxe+1)%sf(k, l, -j) = acoustic_bc_params%Pbase 
+                                    q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase
                                 end if
 
-                            elseif (acoustic_bc_params%iwave .eq. 2) then
+                            elseif (acoustic_bc_params%iwave == 2) then
                                 ! Single hemispherical transdurer
-                                call s_mpi_abort('Axisymmetric spherical transducer only valid with bc_x%beg') 
+                                call s_mpi_abort('Axisymmetric spherical transducer only valid with bc_x%beg')
 
                             else
                                 call s_mpi_abort('acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)')
                             end if
-                            
+
                         end do
                     end do
                 end do

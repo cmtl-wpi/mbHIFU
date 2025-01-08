@@ -226,14 +226,14 @@ contains
 
         !Marmmotant model for the lipid shell
         if (lag_params%coatedBub_model) then
-            if (fshell==1._wp) then
+            if (fshell == 1._wp) then
                 if (fR <= fRbuck) then  !Buckling regime
                     f_cpbw_KM = f_cpbw_KM - 4._wp*lag_params%srfDilVsc_ctdBub*fV/(fR**2._wp)
                 else                    !Elastic regime
-                    f_cpbw_KM = f_cpbw_KM - 2._wp*(lag_params%srfElast_ctdBub * ((fR/fRbuck)**2._wp - 1._wp))/fR &
-                                                                - 4._wp*lag_params%srfDilVsc_ctdBub*fV/(fR**2._wp)
+                    f_cpbw_KM = f_cpbw_KM - 2._wp*(lag_params%srfElast_ctdBub*((fR/fRbuck)**2._wp - 1._wp))/fR &
+                                - 4._wp*lag_params%srfDilVsc_ctdBub*fV/(fR**2._wp)
                 end if
-            elseif (fshell==0._wp) then   !Rupture regime
+            elseif (fshell == 0._wp) then   !Rupture regime
                 f_cpbw_KM = f_cpbw_KM - 2._wp/(fR*Web)
             end if
         else
@@ -334,7 +334,7 @@ contains
                 grad_chi = (chi_bar - fconc_v)
                 rho_mw_lag = (fmass_n + fmass_v)/(4._wp/3._wp*pi*fR**3._wp)
                 f_vflux = 0._wp
-                if (lag_params%massTransfer_model .and. (fshell==0._wp)) then
+                if (lag_params%massTransfer_model .and. (fshell == 0._wp)) then
                     f_vflux = -fbeta_c*rho_mw_lag*grad_chi/(1._wp - fconc_v)/fR
                 end if
                 return
@@ -381,7 +381,7 @@ contains
                 T_bar = fpb*(4._wp/3._wp*pi*fR**3._wp)/fR_m
                 grad_T = -fbeta_t*(T_bar - Tw)
                 heatflux = 0._wp
-                if (lag_params%heatTransfer_model .and. (fshell==0._wp)) then
+                if (lag_params%heatTransfer_model .and. (fshell == 0._wp)) then
                     heatflux = (fgamma_m - 1._wp)/fgamma_m*grad_T/fR
                 end if
                 f_bpres_dot = 3._wp*fgamma_m*(-fV*fpb + fvflux*R_v*Tw &

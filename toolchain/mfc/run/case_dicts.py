@@ -258,20 +258,20 @@ for var in [ 'solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb']:
     SIMULATION[f'lag_params%{var}'] = ParamType.INT
 
 for var in [ 'epsilonb', 'valmaxvoid', 'charwidth', 'diffcoefvap',
-            'c0', 'rho0', 'T0', 'x0', 'Thost', 'ss0_ctdBub', 'srfDilVsc_ctdBub', 
+            'c0', 'rho0', 'T0', 'x0', 'Thost', 'ss0_ctdBub', 'srfDilVsc_ctdBub',
              'srfElast_ctdBub' ]:
     SIMULATION[f'lag_params%{var}'] = ParamType.REAL
 
-for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages', 
-             'stg1', 'stg2', 'stg3' ]:
+for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',
+             'stg1', 'stg2', 'stg3', 'stg3_3d' ]:
     SIMULATION[f'hifu_params%{var}'] = ParamType.LOG
 
-for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3', 
+for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
              't_step_save_stg3']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-             'dt_stg3']:
+             'dt_stg2', 'dt_stg3']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
 
 for var in [ 'iwave', 'ncycles']:
@@ -409,6 +409,18 @@ POST_PROCESS.update({
     'bubbles_lagrange': ParamType.LOG,
     'hifu': ParamType.LOG,
 })
+
+for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',
+             'stg1', 'stg2', 'stg3', 'stg3_3d' ]:
+    POST_PROCESS[f'hifu_params%{var}'] = ParamType.LOG
+
+for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
+             't_step_save_stg3']:
+    POST_PROCESS[f'hifu_params%{var}'] = ParamType.INT
+
+for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
+             'dt_stg2', 'dt_stg3']:
+    POST_PROCESS[f'hifu_params%{var}'] = ParamType.REAL
 
 for cmp_id in range(1,3+1):
     cmp = ["x", "y", "z"][cmp_id-1]

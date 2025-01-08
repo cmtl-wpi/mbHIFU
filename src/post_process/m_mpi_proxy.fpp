@@ -199,6 +199,24 @@ contains
         #:endfor
         call MPI_BCAST(schlieren_alpha(1), num_fluids_max, mpi_p, 0, MPI_COMM_WORLD, ierr)
 
+        if (hifu) then
+            #:for VAR in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages', &
+                & 'stg1', 'stg2', 'stg3', 'stg3_3d']
+                call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+
+            #:for VAR in ['t_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3', &
+                & 'stepStopSource', 't_step_save_stg3']
+                call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+
+            #:for VAR in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 'dt_stg3', 't_stop_stg1', &
+                & 't_stop_stg2']
+                call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+
+        end if
+
 #endif
 
     end subroutine s_mpi_bcast_user_inputs

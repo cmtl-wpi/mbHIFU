@@ -57,7 +57,7 @@ module m_data_input
 
     type(scalar_field), allocatable, dimension(:), public :: q_cons_hifu !<
     !! HIFU variables
-    
+
     type(scalar_field), public :: q_T_sf !<
     !! Temperature field
 
@@ -373,6 +373,7 @@ contains
                 dz(0:p) = z_cb(0:p) - z_cb(-1:p - 1)
                 ! Computing the cell center location
                 z_cc(0:p) = z_cb(-1:p - 1) + dz(0:p)/2._wp
+
             end if
         end if
 
@@ -439,7 +440,7 @@ contains
 
                 ! Initialize MPI data I/O
                 if (present(hifu_id)) then !HIFU vars
-                    call s_initialize_mpi_data(q_cons_vf, q_cons_hifu=q_cons_hifu, hifu_id=hifu_id)
+                    call s_initialize_mpi_data(q_cons_vf, q_hifu_vf=q_cons_hifu)
                 else
                     if (ib) then
                         call s_initialize_mpi_data(q_cons_vf, ib_markers)
@@ -1347,7 +1348,6 @@ contains
                     end do
                 end if
 
-
                 if (bubbles_lagrange) then
                     allocate (q_particle(1)%sf(-buff_size:m + buff_size, &
                                                -buff_size:n + buff_size, &
@@ -1381,8 +1381,8 @@ contains
                 if (hifu) then
                     do i = 1, sys_size_hifu
                         allocate (q_cons_hifu(i)%sf(-buff_size:m + buff_size, &
-                                                -buff_size:n + buff_size, &
-                                                0:0))
+                                                    -buff_size:n + buff_size, &
+                                                    0:0))
                     end do
                 end if
 

@@ -121,6 +121,12 @@ contains
         integer :: i, j, k !< Generic loop iterators
 
         if (probe_wrt) then
+
+            if (hifu_params%stg3_3d .and. hifu_params%heatSolver) then
+                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag, q_hifu_3d%vf)
+                return
+            end if
+
             call s_derive_acceleration_component(1, q_prim_ts(0)%vf, &
                                                  q_prim_ts(1)%vf, &
                                                  q_prim_ts(2)%vf, &
@@ -160,8 +166,8 @@ contains
             call s_derive_center_of_mass(q_prim_ts(3)%vf, c_mass)
 
             !call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
-            if (hifu_params%heatSolver) then
-                call s_write_probe_files(t_step, q_hifu, accel_mag)
+            if (hifu) then
+                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag, q_hifu)
             else
                 call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
             end if

@@ -77,4 +77,7 @@ module m_constants
     real(wp), parameter :: ERRCON = 1.89e-4_wp !< Limit to slightly increase dt when truncation error is between ERRCON and 1
     real(wp), parameter :: PGROW = -0.2_wp !< Factor to increase dt when truncation error is between ERRCON and 1
 
+    !HIFU constants
+    integer, parameter :: p_hifu = 36 !< Number of cells in the azimuthal angle direction (from 2d axisymmetric to 3d cylindrical)
+
 end module m_constants

@@ -474,7 +474,7 @@ module m_global_parameters
     real(wp) :: rkck_time_tmp, rkck_tolerance    !Temp time (in rkck stepper) and tolerance error
     real(wp) :: dt_max                           !< Maximum time step size
     !$acc declare create(bubbles_lagrange, lag_params, rkck_adap_dt, dt_max, rkck_time_tmp, rkck_tolerance)
-    
+
     !> @}
 
     !> @name hifu parameters
@@ -482,8 +482,6 @@ module m_global_parameters
     logical :: hifu
     type(hifu_parameters) :: hifu_params    !< HIFU parameters
     integer :: sys_size_hifu
-    
-
     !$acc declare create(hifu, hifu_params, sys_size_hifu)
 
     !> @}
@@ -777,11 +775,13 @@ contains
         hifu_params%stg1 = .false.
         hifu_params%stg2 = .false.
         hifu_params%stg3 = .false.
+        hifu_params%stg3_3d = .false.
         hifu_params%t_step_stop_stg1 = dflt_int
         hifu_params%t_step_stop_stg2 = dflt_int
         hifu_params%t_step_stop_stg3 = dflt_int
         hifu_params%t_stop_stg1 = dflt_real
         hifu_params%t_stop_stg2 = dflt_real
+        hifu_params%dt_stg2 = dflt_real
         hifu_params%dt_stg3 = dflt_real
         hifu_params%t_step_save_stg3 = dflt_int
 
@@ -1128,7 +1128,7 @@ contains
             sys_size = species_idx%end
         end if
 
-        if (hifu) sys_size_hifu=max(sys_size,14)
+        if (hifu) sys_size_hifu = max(sys_size, 14)
 
         if (bubbles_euler .and. qbmm .and. .not. polytropic) then
             allocate (MPI_IO_DATA%view(1:sys_size + 2*nb*4))
@@ -1360,7 +1360,7 @@ contains
                     MPI_IO_DATA%var(i)%sf => null()
                 end do
             end if
-            
+
             if (hifu) then
                 do i = 1, sys_size_HIFU
                     MPI_IO_HIFU_DATA%var(i)%sf => null()
@@ -1368,7 +1368,7 @@ contains
                 deallocate (MPI_IO_HIFU_DATA%var)
                 deallocate (MPI_IO_HIFU_DATA%view)
             end if
-            
+
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)
         end if

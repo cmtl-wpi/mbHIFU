@@ -80,7 +80,7 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:) :: bub_qvis       !< Time-averaged viscous intensity (HIFU)
     real(wp), allocatable, dimension(:) :: bub_qth        !< Time-averaged thermal intensity (HIFU)
 
-     !$acc declare create(mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth)
+    !$acc declare create(mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth)
 
 contains
 
@@ -380,19 +380,19 @@ contains
             !Assume vapor and gas is present in bubble
             massflag = 1._wp
         end if
-        
+
         ! Marmotant model parameters
         mrmtnt_shell(bub_id, 1) = 0._wp
         if (lag_params%coatedBub_model) mrmtnt_shell(bub_id, 1) = 1._wp
-        mrmtnt_Rbuck(bub_id) = mrmtnt_shell(bub_id, 1) * bub_R0(bub_id)/sqrt(1._wp + &
-                                    lag_params%ss0_ctdBub/lag_params%srfElast_ctdBub)
-        mrmtnt_Rrupt(bub_id) = mrmtnt_Rbuck(bub_id) * sqrt(1._wp + ss/lag_params%srfElast_ctdBub)
+        mrmtnt_Rbuck(bub_id) = mrmtnt_shell(bub_id, 1)*bub_R0(bub_id)/sqrt(1._wp + &
+                                                                           lag_params%ss0_ctdBub/lag_params%srfElast_ctdBub)
+        mrmtnt_Rrupt(bub_id) = mrmtnt_Rbuck(bub_id)*sqrt(1._wp + ss/lag_params%srfElast_ctdBub)
 
         ! Initial particle pressure
         gas_p(bub_id, 1) = pliq + 2._wp*(1._wp/Web)/bub_R0(bub_id)
         if (lag_params%coatedBub_model) then
             gas_p(bub_id, 1) = pliq + 2._wp*(lag_params%ss0_ctdBub)/bub_R0(bub_id)
-            print*, 'Rbuck and Rrupt', mrmtnt_Rbuck(bub_id), mrmtnt_Rrupt(bub_id), bub_id
+            print *, 'Rbuck and Rrupt', mrmtnt_Rbuck(bub_id), mrmtnt_Rrupt(bub_id), bub_id
         end if
 
         ! Initial particle mass
@@ -532,7 +532,6 @@ contains
                     ! hifu
                     bub_qvis(bub_id) = inputvals(24)
                     bub_qth(bub_id) = inputvals(25)
-                    
 
                     cell = -buff_size
                     call s_locate_cell(mtn_pos(bub_id, 1:3, 1), cell, mtn_s(bub_id, 1:3, 1))
@@ -1084,7 +1083,7 @@ contains
         real(wp) :: fpb, fmass_n, fmass_v, fR, fV, fbeta_t, fshell
         real(wp) :: conc_v, R_m, gamma_m, T_bar, grad_T, heatflux
         integer :: k
-        
+
         !$acc parallel loop gang vector default(present) private(k)
         do k = 1, nBubs
 
@@ -1106,16 +1105,16 @@ contains
             gamma_m = conc_v*gamma_v + (1._wp - conc_v)*gamma_n
 
             !> Viscous damping of the bubble (Watts)
-            bub_qvis(k) = bub_qvis(k) + hdid * (4._wp*pi*fR**2._wp)*(4._wp*mul0*(fV**2._wp)/(fR))
+            bub_qvis(k) = bub_qvis(k) + hdid*(4._wp*pi*fR**2._wp)*(4._wp*mul0*(fV**2._wp)/(fR))
 
             !> Thermal damping of the bubble (Watts)
             heatflux = 0._wp
             T_bar = fpb*(4._wp/3._wp*pi*fR**3._wp)/R_m
             grad_T = -fbeta_t*(T_bar - Tw)
-            if (lag_params%heatTransfer_model .and. (fshell==0._wp)) then
+            if (lag_params%heatTransfer_model .and. (fshell == 0._wp)) then
                 heatflux = (gamma_m - 1._wp)/gamma_m*grad_T/fR
             end if
-            bub_qth(k) = bub_qth(k) + hdid * heatFlux * 4._wp*pi*fR**2._wp
+            bub_qth(k) = bub_qth(k) + hdid*heatFlux*4._wp*pi*fR**2._wp
 
         end do
 
@@ -1181,7 +1180,7 @@ contains
                     gas_p(k, 1) = gas_p(k, 1) + dt*(gas_dpdt(k, 1) + gas_dpdt(k, 2))/2._wp
                     gas_mv(k, 1) = gas_mv(k, 1) + dt*(gas_dmvdt(k, 1) + gas_dmvdt(k, 2))/2._wp
                     if (intfc_rad(k, 1) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
-                    if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) ==0._wp)) then 
+                    if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) == 0._wp)) then
                         if (intfc_rad(k, 1) < mrmtnt_Rrupt(k)) mrmtnt_shell(k, 2) = 1._wp ! No actual rupture happened during dt
                     end if
                     mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
@@ -1235,7 +1234,7 @@ contains
                     gas_p(k, 1) = gas_p(k, 1) + (2._wp/3._wp)*dt*(gas_dpdt(k, 1)/4._wp + gas_dpdt(k, 2)/4._wp + gas_dpdt(k, 3))
                     gas_mv(k, 1) = gas_mv(k, 1) + (2._wp/3._wp)*dt*(gas_dmvdt(k, 1)/4._wp + gas_dmvdt(k, 2)/4._wp + gas_dmvdt(k, 3))
                     if (intfc_rad(k, 1) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
-                    if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) ==0._wp)) then 
+                    if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) == 0._wp)) then
                         if (intfc_rad(k, 1) < mrmtnt_Rrupt(k)) mrmtnt_shell(k, 2) = 1._wp ! No actual rupture happened during dt
                     end if
                     mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
@@ -1274,7 +1273,7 @@ contains
         logical :: transferShell
 
         transferShell = .false.
-        if (RKstep==1) transferShell = .true.
+        if (RKstep == 1) transferShell = .true.
         call s_transfer_data_to_tmp(transferShell)
 
         lag_largestep = 0._wp
@@ -1744,8 +1743,8 @@ contains
                 intfc_rad(k, 1), &
                 intfc_vel(k, 1), &
                 gas_p(k, 1), &
-                bub_qvis(k),     &
-                bub_qth(k),      &
+                bub_qvis(k), &
+                bub_qth(k), &
                 mrmtnt_shell(k, 1)
         end do
 

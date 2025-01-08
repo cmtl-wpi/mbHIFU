@@ -315,18 +315,18 @@ contains
         end if
 
         do i = 0, m_glb
-            dxDV(i) = abs(x_cb_glb(i-1) - x_cb_glb(i))
+            dxDV(i) = abs(x_cb_glb(i - 1) - x_cb_glb(i))
         end do
         do i = 0, n_glb
-            dyDV(i) = abs(y_cb_glb(i-1) - y_cb_glb(i))    
+            dyDV(i) = abs(y_cb_glb(i - 1) - y_cb_glb(i))
         end do
 
         print *, 'Stretched grid: dx min, dx max - x grid: ', minval(dxDV(:)), maxval(dxDV(:))
-        print *, 'Stretched grid: loc dx min, loc dx max - x grid: ', x_cb_glb(minloc(dxDV(:))-1), x_cb_glb(maxloc(dxDV(:))-1)
+        print *, 'Stretched grid: loc dx min, loc dx max - x grid: ', x_cb_glb(minloc(dxDV(:)) - 1), x_cb_glb(maxloc(dxDV(:)) - 1)
         print *, 'Stretched grid: dx m=0, dx m=m_glb - x grid: ', dxDV(0), dxDV(m_glb)
 
         print *, 'Stretched grid: dy min, dy max - y grid: ', minval(dyDV(:)), maxval(dyDV(:))
-        print *, 'Stretched grid: loc dy min, loc dy max - y grid: ', y_cb_glb(minloc(dyDV(:))-1), y_cb_glb(maxloc(dyDV(:))-1)
+        print *, 'Stretched grid: loc dy min, loc dy max - y grid: ', y_cb_glb(minloc(dyDV(:)) - 1), y_cb_glb(maxloc(dyDV(:)) - 1)
         print *, 'Stretched grid: dy n=0, dy n=n_glb - y grid: ', dyDV(0), dyDV(n_glb)
 
         ! Write cell boundary locations to grid data files

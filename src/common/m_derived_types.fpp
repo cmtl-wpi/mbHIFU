@@ -440,13 +440,15 @@ module m_derived_types
         real(wp) :: atmPres
         real(wp) :: absCoef      !< needed to find q_us from Prms (probably no needed)
 
-        logical :: automatic_stages     !< Automatic changes from stg1 -> stg2 -> stg3. 
-                                        !                           Need to start from fresh always (*) 
-        logical :: stg1, stg2, stg3                         !< Activate different stages  (*)
+        logical :: automatic_stages     !< Automatic changes from stg1 -> stg2 -> stg3.
+        !                           Need to start from fresh always (*)
+        logical :: stg1, stg2, stg3, stg3_3d                !< Activate different stages  (*)
         integer :: t_step_stop_stg1, t_step_stop_stg2       !> Time step to stop stages  (*)
         integer :: t_step_stop_stg3, t_step_save_stg3
         real(wp) :: t_stop_stg1, t_stop_stg2                !> Stop time at diff stages (adapt dt)  (*)
-        real(wp) :: dt_stg3                                 !< dt in stage 3 (heat solver)  (*)
+        real(wp) :: dt_stg2, dt_stg3                                 !< dt in stage 3 (heat solver)  (*)
+
+        integer :: T_idx, tsamp_idx, qus_idx, qus_prms_idx, qvis_idx, qth_idx, P_idx, u_idx, v_idx
 
     end type hifu_parameters
 
@@ -459,10 +461,10 @@ module m_derived_types
         real(wp) :: cson     !< Speed of sound
         real(wp) :: Pamp     !< Pressure amplitude
         real(wp) :: freq     !< Frequency
-        real(wp) :: focLen   !< Focal lenght
+        real(wp) :: focLen   !< Focal length
         real(wp) :: focCal   !< Focus calibration
         real(wp) :: apert    !< Aperture
-        integer :: ncycles          !<  Number of cycles, 
+        integer :: ncycles          !<  Number of cycles,
 
     end type acoustic_bc_parameters
 

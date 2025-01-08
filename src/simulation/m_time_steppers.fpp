@@ -117,7 +117,7 @@ contains
                     idwbuff(3)%beg:idwbuff(3)%end))
             end do
             @:ACC_SETUP_VFs(q_cons_ts(i))
-        end do      
+        end do
 
         ! Allocating the cell-average primitive ts variables
         if (probe_wrt) then
@@ -322,25 +322,36 @@ contains
 
         call nvtxStartRange("Time_Step")
 
-        if (t_step == t_step_start .and. proc_rank==0) print*, 'HIFU simulation >>>> Stage 3: Finding the final temperature distribution'
-
-        call s_rhs_heatEqn(q_cons_ts(1)%vf, t_step)
+        call s_rhs_heatEqn(q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf, t_step)
 
         if (t_step == t_step_stop) return
 
-        l = 0
-        do  j = 0, m
-            do k = 0, n
-  
-                !Forward euler time scheme, explicit
-                q_hifu(T_hifu_idx)%sf(j, k, l) = q_hifu(T_hifu_idx)%sf(j, k, l) + q_hifu(T_hifu_idx+1)%sf(j, k, l)*dt
+        if (hifu_params%stg3_3d) then   ! Cylindrical coord
 
-                if (ieee_is_nan(q_hifu(T_hifu_idx)%sf(j, k, l))) then
-                    call s_mpi_abort('Temperature value is NaN!!')
-                end if
-
+            do l = 0, p
+                do j = 0, m
+                    do k = 0, n
+                        !Forward euler time scheme, explicit
+                        q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
+                                                                      + dt*q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+                        if (ieee_is_nan(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))) call s_mpi_abort('Temperature value is NaN!!')
+                    end do
+                end do
             end do
-        end do
+
+        else                            ! Axisymmetric coord
+
+            do l = 0, p
+                do j = 0, m
+                    do k = 0, n
+                        !Forward euler time scheme, explicit
+                        q_hifu(hifu_params%T_idx)%sf(j, k, l) = q_hifu(hifu_params%T_idx)%sf(j, k, l) &
+                                                                + dt*q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)
+                        if (ieee_is_nan(q_hifu(hifu_params%T_idx)%sf(j, k, l))) call s_mpi_abort('Temperature value is NaN!!')
+                    end do
+                end do
+            end do
+        end if
 
         call nvtxEndRange
 
@@ -692,7 +703,7 @@ contains
 
         if (probe_wrt) then
             call s_time_step_cycling(t_step)
-        end if     
+        end if
 
         if (cfl_dt) then
             if (mytime >= t_stop) return

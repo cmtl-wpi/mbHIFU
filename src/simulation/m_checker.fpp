@@ -343,7 +343,7 @@ contains
     !> Checks hifu constraints,
     subroutine s_check_inputs_hifu
         @:PROHIBIT(hifu_params%sampling .and. hifu_params%heatSolver, "Unsupported HIFU flags. IntensityFlag and heatEqnFlag cannot be both true.")
-        @:PROHIBIT(p>0 .or. .not. cyl_coord, "HIFU works in axisymmetric mode only.")
+        !@:PROHIBIT(p>0 .or. .not. cyl_coord, "HIFU works in axisymmetric mode only.")
         !@:PROHIBIT (hifu_params%heatSolver .and. bubbles_lagrange, "particleflag must be False when solving bioheat HIFU")
     end subroutine s_check_inputs_hifu
 
