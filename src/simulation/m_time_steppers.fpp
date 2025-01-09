@@ -12,7 +12,6 @@
 !!              where TVD designates a total-variation-diminishing time-stepper.
 module m_time_steppers
 
-    ! Dependencies =============================================================
     use m_derived_types        !< Definitions of the derived types
 
     use m_global_parameters    !< Definitions of the global parameters
@@ -45,9 +44,7 @@ module m_time_steppers
 
     use m_body_forces
 
-    use m_hifu                 !< HIFU
-
-    ! ==========================================================================
+    use m_hifu
 
     implicit none
 
@@ -368,7 +365,7 @@ contains
 
         integer :: i, j, k, l, q !< Generic loop iterator
 
-        ! Stage 1 of 1 =====================================================
+        ! Stage 1 of 1
         call nvtxStartRange("TIMESTEP")
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
@@ -457,7 +454,6 @@ contains
         end if
 
         if (bodyForces) call s_apply_bodyforces(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, dt)
-        call nvtxEndRange
 
         if (grid_geometry == 3) call s_apply_fourier_filter(q_cons_ts(1)%vf)
 
@@ -473,7 +469,7 @@ contains
             end if
         end if
 
-        ! ==================================================================
+        call nvtxEndRange
 
     end subroutine s_1st_order_tvd_rk
 
@@ -487,7 +483,7 @@ contains
         integer :: i, j, k, l, q!< Generic loop iterator
         real(wp) :: start, finish
 
-        ! Stage 1 of 2 =====================================================
+        ! Stage 1 of 2
 
         call cpu_time(start)
 
@@ -587,9 +583,8 @@ contains
                 call s_ibm_correct_state(q_cons_ts(2)%vf, q_prim_vf)
             end if
         end if
-        ! ==================================================================
 
-        ! Stage 2 of 2 =====================================================
+        ! Stage 2 of 2
 
         call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
 
@@ -669,13 +664,12 @@ contains
         call nvtxEndRange
 
         call cpu_time(finish)
-        ! ==================================================================
 
     end subroutine s_2nd_order_tvd_rk
 
     !> 3rd order TVD RK time-stepping algorithm
         !! @param t_step Current time-step
-    subroutine s_3rd_order_tvd_rk(t_step, time_avg) ! --------------------------------
+    subroutine s_3rd_order_tvd_rk(t_step, time_avg)
 
         integer, intent(IN) :: t_step
         real(wp), intent(INOUT) :: time_avg
@@ -684,7 +678,7 @@ contains
 
         real(wp) :: start, finish
 
-        ! Stage 1 of 3 =====================================================
+        ! Stage 1 of 3
 
         if (.not. adap_dt) then
             call cpu_time(start)
@@ -781,9 +775,8 @@ contains
                 call s_ibm_correct_state(q_cons_ts(2)%vf, q_prim_vf)
             end if
         end if
-        ! ==================================================================
 
-        ! Stage 2 of 3 =====================================================
+        ! Stage 2 of 3
 
         call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
 
@@ -859,9 +852,8 @@ contains
                 call s_ibm_correct_state(q_cons_ts(2)%vf, q_prim_vf)
             end if
         end if
-        ! ==================================================================
 
-        ! Stage 3 of 3 =====================================================
+        ! Stage 3 of 3
         call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
 
         if (bubbles_lagrange) then
@@ -947,7 +939,6 @@ contains
 
             time = time + (finish - start)
         end if
-        ! ==================================================================
     end subroutine s_3rd_order_tvd_rk
 
     !> Strang splitting scheme with 3rd order TVD RK time-stepping algorithm for
@@ -965,13 +956,13 @@ contains
 
         call nvtxStartRange("TIMESTEP")
 
-        ! Stage 1 of 3 =====================================================
+        ! Stage 1 of 3
         call s_adaptive_dt_bubble(t_step)
 
-        ! Stage 2 of 3 =====================================================
+        ! Stage 2 of 3
         call s_3rd_order_tvd_rk(t_step, time_avg)
 
-        ! Stage 3 of 3 =====================================================
+        ! Stage 3 of 3
         call s_adaptive_dt_bubble(t_step)
 
         call nvtxEndRange
@@ -979,8 +970,6 @@ contains
         call cpu_time(finish)
 
         time = time + (finish - start)
-
-        ! ==================================================================
 
     end subroutine s_strang_splitting
 

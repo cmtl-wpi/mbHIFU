@@ -620,6 +620,8 @@ contains
 
     subroutine s_write_parallel_grid_zdir()
 
+#ifdef MFC_MPI
+
         ! Locations of cell boundaries
         real(wp), allocatable, dimension(:) :: z_cb_glb !<
             !! Locations of cell boundaries
@@ -654,6 +656,8 @@ contains
         end if
 
         deallocate (z_cb_glb)
+
+#endif
 
     end subroutine s_write_parallel_grid_zdir
 

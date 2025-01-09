@@ -5,7 +5,6 @@
 
 module m_check_ib_patches
 
-    ! Dependencies =============================================================
     use m_derived_types          !< Definitions of the derived types
 
     use m_global_parameters      !< Global parameters for the code
@@ -22,7 +21,6 @@ module m_check_ib_patches
     use m_compile_specific
 
     use m_helper
-    ! ==========================================================================
 
     implicit none
 
