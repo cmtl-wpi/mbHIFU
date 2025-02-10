@@ -1087,6 +1087,9 @@ contains
         logical :: dir_check
         integer :: id, nlg_bubs
 
+        character(len=200) :: line
+        character(len=20) :: value_str1, value_str2, value_str3, value_str4, value_str5
+
 #ifdef MFC_MPI
         real(wp), dimension(20) :: inputvals
         real(wp) :: id_real, time_real
@@ -1148,11 +1151,13 @@ contains
             call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA_lg_bubbles, 21*tot_data, &
                                    mpi_p, status, ierr)
 
-            write (file_loc, '(A,I0,A)') 'lag_bubbles_post_process_', t_step, '.dat'
+            write (file_loc, '(A,I0,A)') 'lag_bubbles_post_process_', t_step, '.txt'
             file_loc = trim(case_dir)//'/lag_bubbles_post_process/'//trim(file_loc)
 
             if (proc_rank == 0) then
-                open (unit=29, file=file_loc, form='formatted', position='rewind')
+                !open (unit=29, file=file_loc, form='formatted', position='rewind')
+                open (unit=29, file=file_loc, status="replace", action="write", form="formatted")
+                
                 !write(29,*) 'lg_bubID, x, y, z, xPrev, yPrev, zPrev, xVel, yVel, ',   &
                 !            'zVel, radius, interfaceVelocity, equilibriumRadius',       &
                 !            'Rmax, Rmin, dphidt, pressure, mv, mg, betaT, betaC, time'
@@ -1160,13 +1165,34 @@ contains
                     id = int(MPI_IO_DATA_lg_bubbles(i, 1))
                     inputvals(1:20) = MPI_IO_DATA_lg_bubbles(i, 2:21)
                     if (id > 0) then
-                        write (29, 6) int(id), inputvals(1), inputvals(2), &
-                            inputvals(3), inputvals(4), inputvals(5), inputvals(6), inputvals(7), &
-                            inputvals(8), inputvals(9), inputvals(10), inputvals(11), &
-                            inputvals(12), inputvals(13), inputvals(14), inputvals(15), &
-                            inputvals(16), inputvals(17), inputvals(18), inputvals(19), &
-                            inputvals(20), time_real
-6                       format(I6, 21(1x, E15.7))
+!                         write (29, 6) int(id), inputvals(1), inputvals(2), &
+!                             inputvals(3), inputvals(4), inputvals(5), inputvals(6), inputvals(7), &
+!                             inputvals(8), inputvals(9), inputvals(10), inputvals(11), &
+!                             inputvals(12), inputvals(13), inputvals(14), inputvals(15), &
+!                             inputvals(16), inputvals(17), inputvals(18), inputvals(19), &
+!                             inputvals(20), time_real
+! 6                       format(I6, 21(1x, E15.7))
+
+                        ! Convert real numbers to strings with a specified format
+                        write(value_str1, '(I10)') int(id)
+                        write(value_str2, '(F10.5)') inputvals(1)
+                        write(value_str3, '(F10.5)') inputvals(2)
+                        write(value_str4, '(F10.5)') inputvals(3)
+                        write(value_str5, '(F10.5)') inputvals(10)
+
+                        if (num_dims==2 .and. cyl_coord) then
+                            write(value_str3, '(F10.5)') inputvals(2) * cos(inputvals(3))
+                            write(value_str4, '(F10.5)') inputvals(2) * sin(inputvals(3))
+                        end if
+                        
+                        ! Enclose the real numbers in quotes and combine them with commas
+                        line = trim(adjustl(value_str1)) // ',' //  trim(adjustl(value_str2)) // ',' // &
+                                                                    trim(adjustl(value_str3)) // ',' // &
+                                                                    trim(adjustl(value_str4)) // ',' // &
+                                                                    trim(adjustl(value_str5))
+                        ! Write the line to the file
+                        write (29, '(A)') line
+
                     end if
                 end do
                 close (29)

@@ -57,13 +57,13 @@ contains
             t_step_stop = hifu_params%t_step_stop_stg3
 
             if (hifu_params%stg3_3d) then
-                p = p_hifu
+                p = hifu_params%p
                 p_glb = p
                 nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
                 num_dims = 3
                 if (bc_x%beg == -20) bc_x%beg = -6    ! from -20: acoustic bc
                 bc_z%beg = -1; bc_z%end = -1        ! Assume entire cylindrical ring is taking care by one processor
-                if (bc_y%beg == -2) bc_y%beg = -14    !   from -2: reflective boundary
+                if (bc_y%beg == -2) bc_y%beg = -21    !   from -2: reflective boundary
             end if
         end if
 

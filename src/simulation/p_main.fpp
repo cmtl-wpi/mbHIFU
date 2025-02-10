@@ -29,7 +29,7 @@ program p_main
     real(wp) :: io_time_avg, io_time_final
     real(wp), allocatable, dimension(:) :: proc_time
     real(wp), allocatable, dimension(:) :: io_proc_time
-    logical :: file_exists
+    logical :: file_exists, exitFlag
     real(wp) :: start, finish
     integer :: nt
 
@@ -77,14 +77,16 @@ program p_main
         if (cfl_dt) then
             if (mytime >= t_stop) then
                 call s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, &
-                                                io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
-                exit
+                                                io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, &
+                                                exitFlag)
+                if (exitFlag) exit
             end if
         else
             if (t_step == t_step_stop) then
                 call s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, &
-                                                io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
-                exit
+                                                io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, &
+                                                exitFlag)
+                if (exitFlag) exit
             end if
         end if
 

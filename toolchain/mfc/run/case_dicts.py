@@ -267,11 +267,11 @@ for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages
     SIMULATION[f'hifu_params%{var}'] = ParamType.LOG
 
 for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
-             't_step_save_stg3']:
+             't_step_save_stg3', 'p']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-             'dt_stg2', 'dt_stg3']:
+             'dt_stg2', 'dt_stg3', 'z_max']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
 
 for var in [ 'iwave', 'ncycles']:
@@ -415,11 +415,11 @@ for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages
     POST_PROCESS[f'hifu_params%{var}'] = ParamType.LOG
 
 for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
-             't_step_save_stg3']:
+             't_step_save_stg3', 'p']:
     POST_PROCESS[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-             'dt_stg2', 'dt_stg3']:
+             'dt_stg2', 'dt_stg3', 'z_max']:
     POST_PROCESS[f'hifu_params%{var}'] = ParamType.REAL
 
 for cmp_id in range(1,3+1):

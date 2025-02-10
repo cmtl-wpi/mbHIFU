@@ -774,6 +774,8 @@ contains
         hifu_params%dt_stg2 = dflt_real
         hifu_params%dt_stg3 = dflt_real
         hifu_params%t_step_save_stg3 = dflt_int
+        hifu_params%z_max = dflt_real
+        hifu_params%p = dflt_int
 
         !Acoustic wave generator (boundary condition)
         acoustic_bc_params%iwave = dflt_int

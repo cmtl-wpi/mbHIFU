@@ -109,6 +109,8 @@ contains
             call s_no_slip_wall(q_prim_vf, pb, mv, 2, -1)
         case (-20)    ! Sinusoudal pressure (acoustic transducer)
             call s_acoustic_bc(q_prim_vf, pb, mv, 2, -1)
+        case (-21)    ! Axis BC in a cylindrical sector HIFU
+            call s_axis_cylindrical_sector_hifu(q_prim_vf, pb, mv, 2, -1)
         case default ! Processor BC at beginning
             call s_mpi_sendrecv_variables_buffers( &
                 q_prim_vf, pb, mv, 2, -1)
@@ -231,7 +233,7 @@ contains
 
             if (bc_loc == -1) then !bc_x%beg
 
-                !$acc parallel loop collapse(3) gang vector default(present)
+                !$acc parallel loop collapse(3) gang vector default(present) copyin(mytime)
                 do l = 0, p
                     do k = 0, n
                         do j = 1, buff_size
@@ -282,7 +284,7 @@ contains
                                 end if
 
                             else
-                                call s_mpi_abort('acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)')
+                                stop "acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)."
                             end if
 
                         end do
@@ -300,7 +302,7 @@ contains
 
             if (bc_loc == -1) then !< bc_y%beg
 
-                !$acc parallel loop collapse(3) gang vector default(present)
+                !$acc parallel loop collapse(3) gang vector default(present) copyin(mytime)
                 do k = 0, p
                     do j = 1, buff_size
                         do l = -buff_size, m + buff_size
@@ -328,10 +330,9 @@ contains
 
                             elseif (acoustic_bc_params%iwave == 2) then
                                 ! Single hemispherical transdurer
-                                call s_mpi_abort('Axisymmetric spherical transducer only valid with bc_x%beg')
-
+                                stop "Axisymmetric spherical transducer only valid with bc_x%beg."
                             else
-                                call s_mpi_abort('acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)')
+                                stop "acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)."
                             end if
 
                         end do
@@ -349,7 +350,7 @@ contains
 
             if (bc_loc == -1) then !< bc_z%beg
 
-                !$acc parallel loop collapse(3) gang vector default(present)
+                !$acc parallel loop collapse(3) gang vector default(present) copyin(mytime)
                 do j = 1, buff_size
                     do l = -buff_size, n + buff_size
                         do k = -buff_size, m + buff_size
@@ -377,10 +378,9 @@ contains
 
                             elseif (acoustic_bc_params%iwave == 2) then
                                 ! Single hemispherical transdurer
-                                call s_mpi_abort('Axisymmetric spherical transducer only valid with bc_x%beg')
-
+                                stop "Axisymmetric spherical transducer only valid with bc_x%beg."
                             else
-                                call s_mpi_abort('acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)')
+                                stop "acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)."
                             end if
 
                         end do
@@ -1051,6 +1051,7 @@ contains
         do k = 0, p
             do j = 1, buff_size
                 do l = -buff_size, m + buff_size
+
                     if (z_cc(k) < pi) then
                         !$acc loop seq
                         do i = 1, momxb
@@ -1111,6 +1112,27 @@ contains
         end if
 
     end subroutine s_axis
+
+    subroutine s_axis_cylindrical_sector_hifu(q_prim_vf, pb, mv, bc_dir, bc_loc)
+
+        type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
+        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, mv
+        integer, intent(in) :: bc_dir, bc_loc
+
+        integer :: j, k, l, q, i
+
+        !$acc parallel loop collapse(3) gang vector default(present)
+        do k = 0, p
+            do j = 1, buff_size
+                do l = -buff_size, m + buff_size
+                    q_prim_vf(hifu_params%T_idx)%sf(l, -j, k) = &
+                            q_prim_vf(hifu_params%T_idx)%sf(l, j - 1, k)
+                end do
+            end do
+        end do
+    
+    end subroutine s_axis_cylindrical_sector_hifu
+
 
     subroutine s_slip_wall(q_prim_vf, pb, mv, bc_dir, bc_loc)
 

@@ -1266,6 +1266,7 @@ contains
 
 
         integer :: i
+        logical :: probe_wrt_dv
 
         if (cfl_dt) then
             if (cfl_const_dt .and. t_step == 0 .and. .not. rkck_adap_dt) call s_compute_dt()
@@ -1310,12 +1311,6 @@ contains
             end if
         end if
 
-        if (probe_wrt) then
-            do i = 1, sys_size
-                !$acc update host(q_cons_ts(1)%vf(i)%sf)
-            end do
-        end if
-
         if (t_step == t_step_start .and. hifu_params%heatSolver .and. hifu_params%stg3_3d) then
             ! Transforming from 2d axisymmetric to 3d cylindrical coords
             call s_finalize_derived_variables_module()
@@ -1324,8 +1319,31 @@ contains
             call s_initialize_derived_variables()
         end if
 
-        call s_compute_derived_variables(t_step)
+        probe_wrt_dv = .true.
 
+        if (probe_wrt) then
+
+            if (hifu_params%heatSolver) then
+                if (hifu_params%stg3_3d) then
+                    if (mod(t_step - t_step_start, 100) == 0) then !Get temperature probe every 100 t_steps
+                        !$acc update host(q_hifu_3d%vf(hifu_params%T_idx)%sf)
+                    else
+                        probe_wrt_dv = .false.
+                    end if
+                else
+                    !$acc update host(q_hifu(hifu_params%T_idx)%sf)
+                end if
+            else
+                do i = 1, sys_size
+                    !$acc update host(q_cons_ts(1)%vf(i)%sf)
+                end do
+            end if
+
+            !print*, probe_wrt_dv
+
+        end if
+
+        if (probe_wrt_dv) call s_compute_derived_variables(t_step)
 
 #ifdef DEBUG
         print *, 'Computed derived vars'
@@ -1357,7 +1375,7 @@ contains
         
     end subroutine s_perform_time_step
 
-    subroutine s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
+    subroutine s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, exitFlag)
 
         integer, intent(inout) :: t_step
         real(wp), intent(inout) :: time_avg, time_final
@@ -1367,8 +1385,34 @@ contains
         logical, intent(inout) :: file_exists
         real(wp), intent(inout) :: start, finish
         integer, intent(inout) :: nt
+        logical, intent(out) :: exitFlag !used for hifu
 
         real(wp) :: grind_time
+        logical :: hifu_write_output
+        integer :: i, save_count
+
+        exitFlag = .true.
+
+        if (hifu .and. hifu_params%automatic_stages) then ! stg1 -> stg2 -> stg3
+            call s_HIFU_stages(t_step, hifu_write_output, exitFlag) 
+            if (hifu_write_output) then
+                do i = 1, sys_size_hifu
+                    !$acc update host(q_hifu(i)%sf)
+                end do
+
+                if (cfl_dt) then
+                    save_count = int(mytime/t_save)
+                else
+                    save_count = t_step
+                end if
+
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, &
+                                                        save_count, q_hifu_vf=q_hifu)
+            end if
+
+            if (.not. exitFlag) return
+
+        end if
 
         call s_mpi_barrier()
 
@@ -1464,11 +1508,20 @@ contains
         !HIFU
         if (hifu_params%heatSolver) then
             if (hifu_params%stg3_3d) then
+                do i = 1, sys_size_hifu
+                    !$acc update host(q_hifu_3d%vf(i)%sf)
+                end do
                 call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu_3d%vf)
             else
+                do i = 1, sys_size_hifu
+                    !$acc update host(q_hifu(i)%sf)
+                end do
                 call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu)
             end if
         elseif (hifu_params%sampling) then
+            do i = 1, sys_size_hifu
+                !$acc update host(q_hifu(i)%sf)
+            end do
             call s_write_Pmax(save_count)
             call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu)
         end if
@@ -1477,8 +1530,9 @@ contains
             if (bubbles_lagrange) then
                 !$acc update host(q_beta%vf(1)%sf)
                 call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_beta%vf(1))
-                !$acc update host(Rmax_stats, Rmin_stats, gas_p, gas_mv, intfc_rad, intfc_vel)
-                call s_write_restart_lag_bubbles(save_count) !parallel 
+                !$acc update host(Rmax_stats, Rmin_stats, gas_p, gas_mv, intfc_rad, intfc_vel, &
+                !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth)
+                call s_write_restart_lag_bubbles(save_count) !parallel
                 if (lag_params%write_bubbles_stats) call s_write_lag_bubble_stats()
             else
                 call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count)
@@ -1497,12 +1551,6 @@ contains
             io_time_avg = abs(finish - start)
         else
             io_time_avg = (abs(finish - start) + io_time_avg*(nt - 1))/nt
-        end if
-
-        if (hifu .and. hifu_params%automatic_stages) then ! stg1 -> stg2 -> stg3
-            call s_HIFU_stages(t_step, hifu_write_output) 
-            if (hifu_write_output) call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, &
-                                                        save_count, q_hifu_vf=q_hifu)
         end if
 
     end subroutine s_save_data
@@ -1564,7 +1612,6 @@ contains
         call s_initialize_derived_variables_module()
         call s_initialize_time_steppers_module()
         if (hifu) call s_initialize_HIFU_module()
-
 #if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
         call acc_present_dump()
 #endif
@@ -1689,6 +1736,12 @@ contains
             !$acc update device(q_cons_ts(1)%vf(i)%sf)
         end do
 
+        if (hifu_params%sampling .or. hifu_params%heatSolver) then
+            do i = 1, sys_size_hifu
+                !$acc update device(q_hifu(i)%sf)
+            end do
+        end if
+
         if (qbmm .and. .not. polytropic) then
             !$acc update device(pb_ts(1)%sf, mv_ts(1)%sf)
         end if
@@ -1700,7 +1753,9 @@ contains
 
         !$acc update device(acoustic_source, num_source)
         !$acc update device(sigma, surface_tension)
+        
         !$acc update device(acoustic_bc_params)
+        !$acc update device(hifu, hifu_params, sys_size_hifu)
 
         !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
    

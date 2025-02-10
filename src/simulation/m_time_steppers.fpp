@@ -34,6 +34,8 @@ module m_time_steppers
 
     use m_helper
 
+    use m_helper_basic
+
     use m_sim_helpers
 
     use m_fftw
@@ -325,26 +327,34 @@ contains
 
         if (hifu_params%stg3_3d) then   ! Cylindrical coord
 
+            !$acc parallel loop collapse(3) gang vector default(present)
             do l = 0, p
                 do j = 0, m
                     do k = 0, n
                         !Forward euler time scheme, explicit
                         q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
                                                                       + dt*q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
-                        if (ieee_is_nan(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))) call s_mpi_abort('Temperature value is NaN!!')
+                        if (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) then
+                            print*, 'NaNs in q hifu temp', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l
+                            stop "Temperature value is NaN!!"
+                        end if
                     end do
                 end do
             end do
 
         else                            ! Axisymmetric coord
 
+            !$acc parallel loop collapse(3) gang vector default(present)
             do l = 0, p
                 do j = 0, m
                     do k = 0, n
                         !Forward euler time scheme, explicit
                         q_hifu(hifu_params%T_idx)%sf(j, k, l) = q_hifu(hifu_params%T_idx)%sf(j, k, l) &
                                                                 + dt*q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)
-                        if (ieee_is_nan(q_hifu(hifu_params%T_idx)%sf(j, k, l))) call s_mpi_abort('Temperature value is NaN!!')
+                        if (q_hifu(hifu_params%T_idx)%sf(j, k, l) /= q_hifu(hifu_params%T_idx)%sf(j, k, l)) then
+                            print*, 'NaNs in q hifu temp', q_hifu(hifu_params%T_idx)%sf(j, k, l), j, k, l
+                            stop "Temperature value is NaN!!"
+                        end if
                     end do
                 end do
             end do
@@ -401,6 +411,7 @@ contains
         end if
 
         if (bubbles_lagrange) then
+            if (t_step == 0 .and. mytime-dt<dt) call s_initial_pressure_correction(q_prim_vf)
             call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
             call s_update_lagrange_tdv_rk(stage=1)
         end if
@@ -514,6 +525,7 @@ contains
         end if
 
         if (bubbles_lagrange) then
+            if (t_step == 0 .and. mytime-dt<dt) call s_initial_pressure_correction(q_prim_vf)
             call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
             call s_update_lagrange_tdv_rk(stage=1)
         end if
@@ -706,6 +718,7 @@ contains
         end if
 
         if (bubbles_lagrange) then
+            if (t_step == 0 .and. mytime-dt<dt) call s_initial_pressure_correction(q_prim_vf)
             call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
             call s_update_lagrange_tdv_rk(stage=1)
         end if
@@ -1152,6 +1165,7 @@ contains
             if (proc_rank == 0) print *, 'RKCK 1st time-stage at', rkck_time_tmp
 #endif
             call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(1)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+            if (t_step == 0 .and. mytime<dt) call s_initial_pressure_correction(q_prim_vf)
             call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_ts_rkck(1)%vf, RKstep)
             call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
             if (lag_largestep > 0._wp) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)

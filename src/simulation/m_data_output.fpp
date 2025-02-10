@@ -1134,7 +1134,7 @@ contains
         T = dflt_T_guess
 
         ! Non-dimensional time calculation
-        if (time_stepper == 23) then
+        if (time_stepper == 23 .or. rkck_adap_dt) then
             nondim_time = mytime
         else
             if (t_step_old /= dflt_int) then

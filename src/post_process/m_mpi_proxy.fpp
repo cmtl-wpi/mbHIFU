@@ -204,12 +204,12 @@ contains
             #:endfor
 
             #:for VAR in ['t_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3', &
-                & 'stepStopSource', 't_step_save_stg3']
+                & 'stepStopSource', 't_step_save_stg3', 'p']
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
             #:for VAR in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 'dt_stg3', 't_stop_stg1', &
-                & 't_stop_stg2']
+                & 't_stop_stg2', 'z_max']
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 

@@ -516,7 +516,7 @@ contains
                     end do
                 end if
 
-                if (bubbles_lagrange) then !Lagrangian solver
+                if (bubbles_lagrange .and. .not. present(hifu_id)) then !Lagrangian solver
                     var_MOK = int(sys_size + 1, MPI_OFFSET_KIND)
 
                     ! Initial displacement to skip at beginning of file
@@ -1067,6 +1067,16 @@ contains
                         end do
                     end if
 
+                end do
+            
+                ! Axis of a cylindrical sector HIFU
+            elseif (bc_y%beg == -21) then
+
+                do j = 1, buff_size
+                    do i = 1, sys_size_hifu
+                        q_cons_hifu(i)%sf(:, -j, 0:p) = &
+                            q_cons_hifu(i)%sf(:, j - 1, 0:p)
+                    end do
                 end do
 
                 ! Periodic BC at the beginning
