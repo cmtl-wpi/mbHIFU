@@ -57,13 +57,32 @@ contains
             t_step_stop = hifu_params%t_step_stop_stg3
 
             if (hifu_params%stg3_3d) then
-                p = hifu_params%p
-                p_glb = p
-                nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
-                num_dims = 3
-                if (bc_x%beg == -20) bc_x%beg = -6    ! from -20: acoustic bc
-                bc_z%beg = -1; bc_z%end = -1        ! Assume entire cylindrical ring is taking care by one processor
-                if (bc_y%beg == -2) bc_y%beg = -21    !   from -2: reflective boundary
+
+                if (hifu_params%cartesian) then
+                    m = hifu_params%m
+                    n = hifu_params%n
+                    p = hifu_params%p
+                    cyl_coord = .false.
+                    m_glb = m
+                    n_glb = n
+                    p_glb = p   
+                    num_dims = 3
+                    grid_geometry = 1
+                    nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
+
+                    bc_x%beg = -6; bc_x%end = -6
+                    bc_y%beg = -6; bc_y%end = -6
+                    bc_z%beg = -6; bc_z%end = -6
+
+                else
+                    p = hifu_params%p
+                    p_glb = p
+                    nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
+                    num_dims = 3
+                    if (bc_x%beg == -20) bc_x%beg = -6    ! from -20: acoustic bc
+                    bc_z%beg = -1; bc_z%end = -1        ! Assume entire cylindrical ring is taking care by one processor
+                    if (bc_y%beg == -2) bc_y%beg = -21    !   from -2: reflective boundary
+                end if
             end if
         end if
 

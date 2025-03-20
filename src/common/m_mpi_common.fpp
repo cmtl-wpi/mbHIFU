@@ -111,8 +111,11 @@ contains
 
         if (present(q_hifu_vf)) then
             do i = 1, sys_size_hifu
-                !if (proc_rank==0) print*, size(MPI_IO_HIFU_DATA%var), size(q_hifu_vf)
-                MPI_IO_HIFU_DATA%var(i)%sf => q_hifu_vf(i)%sf(0:m, 0:n, 0:p)
+                if (hifu_params%cartesian .and. hifu_params%heatSolver) then
+                    MPI_IO_HIFU_DATA%var(i)%sf => q_hifu_vf(i)%sf(0:m_hf, 0:n_hf, 0:p_hf)
+                else
+                    MPI_IO_HIFU_DATA%var(i)%sf => q_hifu_vf(i)%sf(0:m, 0:n, 0:p)
+                end if
             end do
         else
             do i = 1, sys_size
@@ -158,9 +161,20 @@ contains
         ! Define the view for each variable
         if (present(q_hifu_vf)) then
             do i = 1, sys_size_hifu
-                call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
-                                              MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
-                call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
+                if (hifu_params%cartesian .and. hifu_params%heatSolver) then
+                    sizes_glb(1) = m_hf + 1; sizes_loc(1) = m_hf + 1
+                    sizes_glb(2) = n_hf + 1; sizes_loc(2) = n_hf + 1
+                    sizes_glb(3) = p_hf + 1; sizes_loc(3) = p_hf + 1
+
+                    call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
+                                            MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
+                    call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
+
+                else
+                    call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
+                                                MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
+                    call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
+                end if
             end do
         else
             do i = 1, alt_sys
@@ -460,6 +474,21 @@ contains
 #endif
 
     end subroutine s_mpi_reduce_min
+
+    subroutine s_mpi_allreduce_or(var_loc, var_glb)
+
+        logical, intent(in) :: var_loc
+        logical, intent(out) :: var_glb
+
+#ifdef MFC_MPI
+
+        ! Performing the reduction procedure
+        call MPI_ALLREDUCE(var_loc, var_glb, 1, MPI_C_BOOL, &
+                           MPI_LOR, MPI_COMM_WORLD, ierr)
+
+#endif
+
+    end subroutine s_mpi_allreduce_or
 
     !>  The following subroutine takes the first element of the
         !!      2-element inputted variable and determines its maximum

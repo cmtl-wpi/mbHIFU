@@ -35,6 +35,8 @@ module m_rhs
 
     use m_bubbles_EE           !< Ensemble-averaged bubble dynamics routines
 
+    use m_bubbles_EL           !< Volume-averaged bubble dynamics routines
+
     use m_qbmm                 !< Moment inversion
 
     use m_hypoelastic
@@ -601,7 +603,7 @@ contains
 
     end subroutine s_initialize_rhs_module
 
-    subroutine s_compute_rhs(q_cons_vf, q_T_sf, q_prim_vf, rhs_vf, pb, rhs_pb, mv, rhs_mv, t_step, time_avg)
+    subroutine s_compute_rhs(q_cons_vf, q_T_sf, q_prim_vf, rhs_vf, pb, rhs_pb, mv, rhs_mv, t_step, stage, time_avg)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         type(scalar_field), intent(inout) :: q_T_sf
@@ -610,6 +612,7 @@ contains
         real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb, rhs_pb
         real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: mv, rhs_mv
         integer, intent(in) :: t_step
+        integer, intent(in) :: stage
         real(wp), intent(inout) :: time_avg
 
         real(wp), dimension(0:m, 0:n, 0:p) :: nbub
@@ -885,6 +888,34 @@ contains
                 t_step, &
                 rhs_vf)
             call nvtxEndRange
+        end if
+
+        if (bubbles_lagrange) then
+
+            ! RHS additions for sub-grid bubbles_lagrange
+            call nvtxStartRange("RHS-EL-BUBBLES-SRC")
+            call s_compute_bubbles_EL_source( &
+                q_cons_qp%vf(1:sys_size), &
+                q_prim_qp%vf(1:sys_size), &
+                rhs_vf)
+            call nvtxEndRange
+
+            ! Compute bubble dynamics
+            if (.not. adap_dt) then
+                if (stage == 0 .and. mytime <= dt) then
+                    call s_initial_pressure_correction( &
+                        q_prim_qp%vf(1:sys_size))
+                end if
+                call nvtxStartRange("RHS-EL-BUBBLES-DYN")
+                call s_compute_bubble_EL_dynamics( &
+                    q_cons_qp%vf(1:sys_size), &
+                    q_prim_qp%vf(1:sys_size), &
+                    t_step, &
+                    rhs_vf, &
+                    stage)
+                call nvtxEndRange
+            end if
+
         end if
 
         if (chemistry .and. chem_params%reactions) then

@@ -823,6 +823,7 @@ contains
 
         if (present(q_hifu_vf)) then
             alt_sys = sys_size_hifu
+            if (hifu_params%cartesian .and. hifu_params%heatSolver) alt_sys = hifu_params%qth_idx
         else
             if (present(beta)) then
                 alt_sys = sys_size + 1
@@ -910,6 +911,7 @@ contains
             ! Initialize MPI data I/O
 
             if (present(q_hifu_vf)) then
+                !if (hifu_params%cartesian .and. hifu_params%heatSolver) call s_unify_temperature_field()
                 call s_initialize_mpi_data(q_cons_vf, q_hifu_vf=q_hifu_vf)
             else
                 if (ib) then
@@ -931,20 +933,39 @@ contains
             if (file_exist .and. proc_rank == 0) then
                 call MPI_FILE_DELETE(file_loc, mpi_info_int, ierr)
             end if
-            call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, ior(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+
+            if (hifu_params%cartesian .and. hifu_params%heatSolver) then
+                call MPI_FILE_OPEN(MPI_COMM_SELF, file_loc, ior(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
                                mpi_info_int, ifile, ierr)
 
-            ! Size of local arrays
-            data_size = (m + 1)*(n + 1)*(p + 1)
+                ! Size of local arrays
+                data_size = (m_hf + 1)*(n_hf + 1)*(p_hf + 1)
 
-            ! Resize some integers so MPI can write even the biggest files
-            m_MOK = int(m_glb + 1, MPI_OFFSET_KIND)
-            n_MOK = int(n_glb + 1, MPI_OFFSET_KIND)
-            p_MOK = int(p_glb + 1, MPI_OFFSET_KIND)
-            WP_MOK = int(8._wp, MPI_OFFSET_KIND)
-            MOK = int(1._wp, MPI_OFFSET_KIND)
-            str_MOK = int(name_len, MPI_OFFSET_KIND)
-            NVARS_MOK = int(alt_sys, MPI_OFFSET_KIND)
+                ! Resize some integers so MPI can write even the biggest files
+                m_MOK = int(m_hf + 1, MPI_OFFSET_KIND)
+                n_MOK = int(n_hf + 1, MPI_OFFSET_KIND)
+                p_MOK = int(p_hf + 1, MPI_OFFSET_KIND)
+                WP_MOK = int(8._wp, MPI_OFFSET_KIND)
+                MOK = int(1._wp, MPI_OFFSET_KIND)
+                str_MOK = int(name_len, MPI_OFFSET_KIND)
+                NVARS_MOK = int(alt_sys, MPI_OFFSET_KIND)
+            else
+
+                call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, ior(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+                               mpi_info_int, ifile, ierr)
+
+                ! Size of local arrays
+                data_size = (m + 1)*(n + 1)*(p + 1)
+
+                ! Resize some integers so MPI can write even the biggest files
+                m_MOK = int(m_glb + 1, MPI_OFFSET_KIND)
+                n_MOK = int(n_glb + 1, MPI_OFFSET_KIND)
+                p_MOK = int(p_glb + 1, MPI_OFFSET_KIND)
+                WP_MOK = int(8._wp, MPI_OFFSET_KIND)
+                MOK = int(1._wp, MPI_OFFSET_KIND)
+                str_MOK = int(name_len, MPI_OFFSET_KIND)
+                NVARS_MOK = int(alt_sys, MPI_OFFSET_KIND)
+            end if
 
             if (bubbles_euler) then
                 ! Write the data for each variable
@@ -975,7 +996,7 @@ contains
                 end if
 
             else if (present(q_hifu_vf)) then
-                do i = 1, sys_size_hifu
+                do i = 1, alt_sys
                     var_MOK = int(i, MPI_OFFSET_KIND)
 
                     ! Initial displacement to skip at beginning of file
@@ -983,8 +1004,13 @@ contains
 
                     call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_HIFU_DATA%view(i), &
                                            'native', mpi_info_int, ierr)
-                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
-                                            MPI_DOUBLE_PRECISION, status, ierr)
+                    if (hifu_params%cartesian .and. hifu_params%heatSolver) then
+                        call MPI_FILE_WRITE(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
+                                                MPI_DOUBLE_PRECISION, status, ierr)
+                    else
+                        call MPI_FILE_WRITE_ALL(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
+                                                MPI_DOUBLE_PRECISION, status, ierr)
+                    end if
                 end do
 
             else
@@ -1087,6 +1113,9 @@ contains
         real(wp), dimension(-1:m) :: distx
         real(wp), dimension(-1:n) :: disty
         real(wp), dimension(-1:p) :: distz
+        real(wp), dimension(-1:m_hf) :: distx_hf
+        real(wp), dimension(-1:n_hf) :: disty_hf
+        real(wp), dimension(-1:p_hf) :: distz_hf
 
         ! The cell-averaged partial densities, density, velocity, pressure,
         ! volume fractions, specific heat ratio function, liquid stiffness
@@ -1175,189 +1204,119 @@ contains
                 Temp_hifu = 0._wp
             end if
 
-            ! Find probe location in terms of indices on a
-            ! specific processor
-            if (n == 0) then ! 1D simulation
-                if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
-                    do s = -1, m
-                        distx(s) = x_cb(s) - probe(i)%x
-                        if (distx(s) < 0._wp) distx(s) = 1000._wp
-                    end do
-                    j = minloc(distx, 1)
-                    if (j == 1) j = 2 ! Pick first point if probe is at edge
-                    k = 0
-                    l = 0
+            if (hifu_params%cartesian .and. hifu_params%heatSolver) then
 
-                    if (chemistry) then
-                        do d = 1, num_species
-                            rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k, l)
-                        end do
-                    end if
+                if (proc_rank==0) then
+                    ! print*, 'Entering probe point, x:', x_cb_hf(-1), probe(i)%x, x_cb_hf(m_hf), i
+                    ! print*, 'Entering probe point, y:', y_cb_hf(-1), probe(i)%y, y_cb_hf(n_hf), i
+                    ! print*, 'Entering probe point, z:', z_cb_hf(-1), probe(i)%z, z_cb_hf(p_hf), i
 
-                    ! Computing/Sharing necessary state variables
-                    if (elasticity) then
-                        call s_convert_to_mixture_variables(q_cons_vf, j - 2, k, l, &
-                                                            rho, gamma, pi_inf, qv, &
-                                                            Re, G, fluid_pp(:)%G)
-                    else
-                        call s_convert_to_mixture_variables(q_cons_vf, j - 2, k, l, &
-                                                            rho, gamma, pi_inf, qv)
-                    end if
-                    do s = 1, num_dims
-                        vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k, l)/rho
-                    end do
+                    if ((probe(i)%x >= x_cb_hf(-1)) .and. (probe(i)%x <= x_cb_hf(m_hf))) then
+                        if ((probe(i)%y >= y_cb_hf(-1)) .and. (probe(i)%y <= y_cb_hf(n_hf))) then
+                            if ((probe(i)%z >= z_cb_hf(-1)) .and. (probe(i)%z <= z_cb_hf(p_hf))) then
+                                do s = -1, m_hf
+                                    distx_hf(s) = x_cb_hf(s) - probe(i)%x
+                                    if (distx_hf(s) < 0._wp) distx_hf(s) = 1000._wp
+                                end do
+                                do s = -1, n_hf
+                                    disty_hf(s) = y_cb_hf(s) - probe(i)%y
+                                    if (disty_hf(s) < 0._wp) disty_hf(s) = 1000._wp
+                                end do
+                                do s = -1, p_hf
+                                    distz_hf(s) = z_cb_hf(s) - probe(i)%z
+                                    if (distz_hf(s) < 0._wp) distz_hf(s) = 1000._wp
+                                end do
+                                j = minloc(distx_hf, 1)
+                                k = minloc(disty_hf, 1)
+                                l = minloc(distz_hf, 1)
+                                if (j == 1) j = 2 ! Pick first point if probe is at edge
+                                if (k == 1) k = 2 ! Pick first point if probe is at edge
+                                if (l == 1) l = 2 ! Pick first point if probe is at edge
 
-                    dyn_p = 0.5_wp*rho*dot_product(vel, vel)
+                                ! Temperature hifu
+                                Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l - 2)
+                                Temp_hifu = Temp_hifu - hifu_params%Tref ! Delta T
+                                rho = 0._wp
+                                vel(1) = 0._wp
+                                vel(2) = 0._wp
+                                pres = 0._wp
 
-                    if (elasticity) then
-
-                        call s_compute_pressure( &
-                            q_cons_vf(1)%sf(j - 2, k, l), &
-                            q_cons_vf(alf_idx)%sf(j - 2, k, l), &
-                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, T, &
-                            q_cons_vf(stress_idx%beg)%sf(j - 2, k, l), &
-                            q_cons_vf(mom_idx%beg)%sf(j - 2, k, l), G)
-                    else
-                        call s_compute_pressure( &
-                            q_cons_vf(1)%sf(j - 2, k, l), &
-                            q_cons_vf(alf_idx)%sf(j - 2, k, l), &
-                            dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, T)
-                    end if
-
-                    if (model_eqns == 4) then
-                        lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
-                    else if (elasticity) then
-                        tau_e(1) = q_cons_vf(stress_idx%end)%sf(j - 2, k, l)/rho
-                    end if
-
-                    if (bubbles_euler) then
-                        alf = q_cons_vf(alf_idx)%sf(j - 2, k, l)
-                        if (num_fluids == 3) then
-                            alfgr = q_cons_vf(alf_idx - 1)%sf(j - 2, k, l)
+                                ! print*, 'Probe point:', i, 'cell:', j - 2, k - 2, l - 2
+                                
+                            end if
                         end if
-                        do s = 1, nb
-                            nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k, l)
-                            nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k, l)
-                        end do
-
-                        if (adv_n) then
-                            nbub = q_cons_vf(n_idx)%sf(j - 2, k, l)
-                        else
-                            nR3 = 0._wp
-                            do s = 1, nb
-                                nR3 = nR3 + weight(s)*(nR(s)**3._wp)
-                            end do
-
-                            nbub = sqrt((4._wp*pi/3._wp)*nR3/alf)
-                        end if
-#ifdef DEBUG
-                        print *, 'In probe, nbub: ', nbub
-#endif
-                        if (qbmm) then
-                            M00 = q_cons_vf(bub_idx%moms(1, 1))%sf(j - 2, k, l)/nbub
-                            M10 = q_cons_vf(bub_idx%moms(1, 2))%sf(j - 2, k, l)/nbub
-                            M01 = q_cons_vf(bub_idx%moms(1, 3))%sf(j - 2, k, l)/nbub
-                            M20 = q_cons_vf(bub_idx%moms(1, 4))%sf(j - 2, k, l)/nbub
-                            M11 = q_cons_vf(bub_idx%moms(1, 5))%sf(j - 2, k, l)/nbub
-                            M02 = q_cons_vf(bub_idx%moms(1, 6))%sf(j - 2, k, l)/nbub
-
-                            M10 = M10/M00
-                            M01 = M01/M00
-                            M20 = M20/M00
-                            M11 = M11/M00
-                            M02 = M02/M00
-
-                            varR = M20 - M10**2._wp
-                            varV = M02 - M01**2._wp
-                        end if
-                        R(:) = nR(:)/nbub
-                        Rdot(:) = nRdot(:)/nbub
-
-                        ptilde = ptil(j - 2, k, l)
-                        ptot = pres - ptilde
                     end if
-
-                    ! Compute mixture sound Speed
-                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                  ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
-
-                    accel = accel_mag(j - 2, k, l)
-                end if
-            elseif (p == 0) then ! 2D simulation
-
-                if (chemistry) then
-                    do d = 1, num_species
-                        rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k - 2, l)
-                    end do
                 end if
 
-                if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
-                    if ((probe(i)%y >= y_cb(-1)) .and. (probe(i)%y <= y_cb(n))) then
+            else
+
+                ! Find probe location in terms of indices on a
+                ! specific processor
+                if (n == 0) then ! 1D simulation
+                    if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
                         do s = -1, m
                             distx(s) = x_cb(s) - probe(i)%x
                             if (distx(s) < 0._wp) distx(s) = 1000._wp
                         end do
-                        do s = -1, n
-                            disty(s) = y_cb(s) - probe(i)%y
-                            if (disty(s) < 0._wp) disty(s) = 1000._wp
-                        end do
                         j = minloc(distx, 1)
-                        k = minloc(disty, 1)
                         if (j == 1) j = 2 ! Pick first point if probe is at edge
-                        if (k == 1) k = 2 ! Pick first point if probe is at edge
+                        k = 0
                         l = 0
 
-                        ! Temperature hifu
-                        if (hifu_params%heatSolver) then
-                            Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l)
-                            Temp_hifu = Temp_hifu - hifu_params%Tref ! Delta T
+                        if (chemistry) then
+                            do d = 1, num_species
+                                rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k, l)
+                            end do
                         end if
 
                         ! Computing/Sharing necessary state variables
-                        call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l, &
-                                                            rho, gamma, pi_inf, qv, &
-                                                            Re, G, fluid_pp(:)%G)
-
+                        if (elasticity) then
+                            call s_convert_to_mixture_variables(q_cons_vf, j - 2, k, l, &
+                                                                rho, gamma, pi_inf, qv, &
+                                                                Re, G, fluid_pp(:)%G)
+                        else
+                            call s_convert_to_mixture_variables(q_cons_vf, j - 2, k, l, &
+                                                                rho, gamma, pi_inf, qv)
+                        end if
                         do s = 1, num_dims
-                            vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l)/rho
+                            vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k, l)/rho
                         end do
 
                         dyn_p = 0.5_wp*rho*dot_product(vel, vel)
 
                         if (elasticity) then
+
                             call s_compute_pressure( &
-                                q_cons_vf(1)%sf(j - 2, k - 2, l), &
-                                q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                dyn_p, pi_inf, gamma, rho, qv, &
-                                rhoYks, &
-                                pres, &
-                                T, &
-                                q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
-                                q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
+                                q_cons_vf(1)%sf(j - 2, k, l), &
+                                q_cons_vf(alf_idx)%sf(j - 2, k, l), &
+                                dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, T, &
+                                q_cons_vf(stress_idx%beg)%sf(j - 2, k, l), &
+                                q_cons_vf(mom_idx%beg)%sf(j - 2, k, l), G)
                         else
-                            call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
-                                                    q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
-                                                    dyn_p, pi_inf, gamma, rho, qv, &
-                                                    rhoYks, pres, T)
+                            call s_compute_pressure( &
+                                q_cons_vf(1)%sf(j - 2, k, l), &
+                                q_cons_vf(alf_idx)%sf(j - 2, k, l), &
+                                dyn_p, pi_inf, gamma, rho, qv, rhoYks(:), pres, T)
                         end if
 
                         if (model_eqns == 4) then
                             lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
                         else if (elasticity) then
-                            do s = 1, 3
-                                tau_e(s) = q_cons_vf(s)%sf(j - 2, k - 2, l)/rho
-                            end do
+                            tau_e(1) = q_cons_vf(stress_idx%end)%sf(j - 2, k, l)/rho
                         end if
 
                         if (bubbles_euler) then
-                            alf = q_cons_vf(alf_idx)%sf(j - 2, k - 2, l)
+                            alf = q_cons_vf(alf_idx)%sf(j - 2, k, l)
+                            if (num_fluids == 3) then
+                                alfgr = q_cons_vf(alf_idx - 1)%sf(j - 2, k, l)
+                            end if
                             do s = 1, nb
-                                nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k - 2, l)
-                                nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k - 2, l)
+                                nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k, l)
+                                nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k, l)
                             end do
 
                             if (adv_n) then
-                                nbub = q_cons_vf(n_idx)%sf(j - 2, k - 2, l)
+                                nbub = q_cons_vf(n_idx)%sf(j - 2, k, l)
                             else
                                 nR3 = 0._wp
                                 do s = 1, nb
@@ -1366,19 +1325,49 @@ contains
 
                                 nbub = sqrt((4._wp*pi/3._wp)*nR3/alf)
                             end if
+#ifdef DEBUG
+                            print *, 'In probe, nbub: ', nbub
+#endif
+                            if (qbmm) then
+                                M00 = q_cons_vf(bub_idx%moms(1, 1))%sf(j - 2, k, l)/nbub
+                                M10 = q_cons_vf(bub_idx%moms(1, 2))%sf(j - 2, k, l)/nbub
+                                M01 = q_cons_vf(bub_idx%moms(1, 3))%sf(j - 2, k, l)/nbub
+                                M20 = q_cons_vf(bub_idx%moms(1, 4))%sf(j - 2, k, l)/nbub
+                                M11 = q_cons_vf(bub_idx%moms(1, 5))%sf(j - 2, k, l)/nbub
+                                M02 = q_cons_vf(bub_idx%moms(1, 6))%sf(j - 2, k, l)/nbub
 
+                                M10 = M10/M00
+                                M01 = M01/M00
+                                M20 = M20/M00
+                                M11 = M11/M00
+                                M02 = M02/M00
+
+                                varR = M20 - M10**2._wp
+                                varV = M02 - M01**2._wp
+                            end if
                             R(:) = nR(:)/nbub
                             Rdot(:) = nRdot(:)/nbub
+
+                            ptilde = ptil(j - 2, k, l)
+                            ptot = pres - ptilde
                         end if
-                        ! Compute mixture sound speed
+
+                        ! Compute mixture sound Speed
                         call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                      ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                    ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+
+                        accel = accel_mag(j - 2, k, l)
                     end if
-                end if
-            else ! 3D
-                if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
-                    if ((probe(i)%y >= y_cb(-1)) .and. (probe(i)%y <= y_cb(n))) then
-                        if ((probe(i)%z >= z_cb(-1)) .and. (probe(i)%z <= z_cb(p))) then
+                elseif (p == 0) then ! 2D simulation
+
+                    if (chemistry) then
+                        do d = 1, num_species
+                            rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k - 2, l)
+                        end do
+                    end if
+
+                    if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
+                        if ((probe(i)%y >= y_cb(-1)) .and. (probe(i)%y <= y_cb(n))) then
                             do s = -1, m
                                 distx(s) = x_cb(s) - probe(i)%x
                                 if (distx(s) < 0._wp) distx(s) = 1000._wp
@@ -1387,66 +1376,158 @@ contains
                                 disty(s) = y_cb(s) - probe(i)%y
                                 if (disty(s) < 0._wp) disty(s) = 1000._wp
                             end do
-                            do s = -1, p
-                                distz(s) = z_cb(s) - probe(i)%z
-                                if (distz(s) < 0._wp) distz(s) = 1000._wp
-                            end do
                             j = minloc(distx, 1)
                             k = minloc(disty, 1)
-                            l = minloc(distz, 1)
                             if (j == 1) j = 2 ! Pick first point if probe is at edge
                             if (k == 1) k = 2 ! Pick first point if probe is at edge
-                            if (l == 1) l = 2 ! Pick first point if probe is at edge
+                            l = 0
 
                             ! Temperature hifu
-                            if (hifu_params%heatSolver .and. hifu_params%stg3_3d) then
-                                Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l - 2)
+                            if (hifu_params%heatSolver) then
+                                Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l)
                                 Temp_hifu = Temp_hifu - hifu_params%Tref ! Delta T
                             end if
 
                             ! Computing/Sharing necessary state variables
-                            call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l - 2, &
+                            call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l, &
                                                                 rho, gamma, pi_inf, qv, &
                                                                 Re, G, fluid_pp(:)%G)
-                            do s = 1, num_dims
-                                vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l - 2)/rho
-                            end do
 
-                            if (hifu_params%stg3_3d) vel(3) = 0._wp
+                            do s = 1, num_dims
+                                vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l)/rho
+                            end do
 
                             dyn_p = 0.5_wp*rho*dot_product(vel, vel)
 
-                            if (chemistry) then
-                                do d = 1, num_species
-                                    rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k - 2, l - 2)
-                                end do
-                            end if
-
                             if (elasticity) then
                                 call s_compute_pressure( &
-                                    q_cons_vf(1)%sf(j - 2, k - 2, l - 2), &
-                                    q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
+                                    q_cons_vf(1)%sf(j - 2, k - 2, l), &
+                                    q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
                                     dyn_p, pi_inf, gamma, rho, qv, &
-                                    rhoYks, pres, T, &
-                                    q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l - 2), &
-                                    q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l - 2), G)
+                                    rhoYks, &
+                                    pres, &
+                                    T, &
+                                    q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l), &
+                                    q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l), G)
                             else
-                                call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l - 2), &
-                                                        q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
+                                call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l), &
+                                                        q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
                                                         dyn_p, pi_inf, gamma, rho, qv, &
                                                         rhoYks, pres, T)
                             end if
 
+                            if (model_eqns == 4) then
+                                lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
+                            else if (elasticity) then
+                                do s = 1, 3
+                                    tau_e(s) = q_cons_vf(s)%sf(j - 2, k - 2, l)/rho
+                                end do
+                            end if
+
+                            if (bubbles_euler) then
+                                alf = q_cons_vf(alf_idx)%sf(j - 2, k - 2, l)
+                                do s = 1, nb
+                                    nR(s) = q_cons_vf(bub_idx%rs(s))%sf(j - 2, k - 2, l)
+                                    nRdot(s) = q_cons_vf(bub_idx%vs(s))%sf(j - 2, k - 2, l)
+                                end do
+
+                                if (adv_n) then
+                                    nbub = q_cons_vf(n_idx)%sf(j - 2, k - 2, l)
+                                else
+                                    nR3 = 0._wp
+                                    do s = 1, nb
+                                        nR3 = nR3 + weight(s)*(nR(s)**3._wp)
+                                    end do
+
+                                    nbub = sqrt((4._wp*pi/3._wp)*nR3/alf)
+                                end if
+
+                                R(:) = nR(:)/nbub
+                                Rdot(:) = nRdot(:)/nbub
+                            end if
                             ! Compute mixture sound speed
                             call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                          ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                        ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                        end if
+                    end if
+                else ! 3D
+                    if ((probe(i)%x >= x_cb(-1)) .and. (probe(i)%x <= x_cb(m))) then
+                        if ((probe(i)%y >= y_cb(-1)) .and. (probe(i)%y <= y_cb(n))) then
+                            if ((probe(i)%z >= z_cb(-1)) .and. (probe(i)%z <= z_cb(p))) then
+                                do s = -1, m
+                                    distx(s) = x_cb(s) - probe(i)%x
+                                    if (distx(s) < 0._wp) distx(s) = 1000._wp
+                                end do
+                                do s = -1, n
+                                    disty(s) = y_cb(s) - probe(i)%y
+                                    if (disty(s) < 0._wp) disty(s) = 1000._wp
+                                end do
+                                do s = -1, p
+                                    distz(s) = z_cb(s) - probe(i)%z
+                                    if (distz(s) < 0._wp) distz(s) = 1000._wp
+                                end do
+                                j = minloc(distx, 1)
+                                k = minloc(disty, 1)
+                                l = minloc(distz, 1)
+                                if (j == 1) j = 2 ! Pick first point if probe is at edge
+                                if (k == 1) k = 2 ! Pick first point if probe is at edge
+                                if (l == 1) l = 2 ! Pick first point if probe is at edge
 
-                            accel = accel_mag(j - 2, k - 2, l - 2)
+                                ! Temperature hifu
+                                if (hifu_params%heatSolver .and. hifu_params%stg3_3d) then
+
+                                    Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l - 2)
+                                    Temp_hifu = Temp_hifu - hifu_params%Tref ! Delta T
+                                    rho = 0._wp
+                                    vel(1) = 0._wp
+                                    vel(2) = 0._wp
+                                    pres = 0._wp
+                                else
+                            
+                                    ! Computing/Sharing necessary state variables
+                                    call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l - 2, &
+                                                                        rho, gamma, pi_inf, qv, &
+                                                                        Re, G, fluid_pp(:)%G)
+                                    do s = 1, num_dims
+                                        vel(s) = q_cons_vf(cont_idx%end + s)%sf(j - 2, k - 2, l - 2)/rho
+                                    end do
+
+                                    dyn_p = 0.5_wp*rho*dot_product(vel, vel)
+
+                                    if (chemistry) then
+                                        do d = 1, num_species
+                                            rhoYks(d) = q_cons_vf(chemxb + d - 1)%sf(j - 2, k - 2, l - 2)
+                                        end do
+                                    end if
+
+                                    if (elasticity) then
+                                        call s_compute_pressure( &
+                                            q_cons_vf(1)%sf(j - 2, k - 2, l - 2), &
+                                            q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
+                                            dyn_p, pi_inf, gamma, rho, qv, &
+                                            rhoYks, pres, T, &
+                                            q_cons_vf(stress_idx%beg)%sf(j - 2, k - 2, l - 2), &
+                                            q_cons_vf(mom_idx%beg)%sf(j - 2, k - 2, l - 2), G)
+                                    else
+                                        call s_compute_pressure(q_cons_vf(E_idx)%sf(j - 2, k - 2, l - 2), &
+                                                                q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
+                                                                dyn_p, pi_inf, gamma, rho, qv, &
+                                                                rhoYks, pres, T)
+                                    end if
+
+                                    ! Compute mixture sound speed
+                                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
+                                                                ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+
+                                    accel = accel_mag(j - 2, k - 2, l - 2)
+
+                                end if
+                            end if
                         end if
                     end if
                 end if
             end if
-            if (num_procs > 1) then
+            if (num_procs > 1 .and. .not. (hifu_params%cartesian .and. hifu_params%heatSolver)) then
                 #:for VAR in ['rho','pres','gamma','pi_inf','qv','c','accel']
                     tmp = ${VAR}$
                     call s_mpi_allreduce_sum(tmp, ${VAR}$)
@@ -1486,7 +1567,16 @@ contains
                 end if
             end if
             if (proc_rank == 0) then
-                if (n == 0) then
+                if (hifu_params%cartesian .and. hifu_params%heatSolver) then
+                    write (i + 30, '(6X,6E24.8)') &
+                            nondim_time, &
+                            rho, &
+                            vel(1), &
+                            vel(2), &
+                            pres, &
+                            Temp_hifu
+                        !print *, 'time =', nondim_time, 'focal temperature =', Temp_hifu, '3D cartesian sim'
+                elseif (n == 0) then
                     if (bubbles_euler .and. (num_fluids <= 2)) then
                         if (qbmm) then
                             write (i + 30, '(6x,f12.6,14f28.16)') &

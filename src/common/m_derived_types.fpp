@@ -445,8 +445,13 @@ module m_derived_types
         integer :: t_step_stop_stg3, t_step_save_stg3
         real(wp) :: t_stop_stg1, t_stop_stg2                !> Stop time at diff stages (adapt dt)  (*)
         real(wp) :: dt_stg2, dt_stg3                        !< dt in stage 3 (heat solver)  (*)
-        real(wp) :: z_max       !< 3D domain, azumital goes from 0 to z_max (must be max 2*pi)
-        integer :: p            !< number of cells in the azimutal direction within 0 and z_max
+        real(wp) :: z_max       !< 3D domain, azumital goes from 0 to z_max (must be max 2*pi) (cylindrical)
+        integer :: p_cyl            !< number of cells in the azimutal direction within 0 and z_max (cylindrical)
+        
+        real(wp) :: xb, xe, ye  !< Reduce domain to solve heat eqn (cyl and cartesian)
+        integer :: mb, me, ne   !< Reduce domain to solve heat eqn (cylindrical)
+        logical :: cartesian    !< from 2D to 3D cartesian (needs interpolation of qus)
+        integer :: m, n, p      !< number of cells for the cartesian grid
 
         integer :: T_idx, tsamp_idx, qus_idx, qus_prms_idx, qvis_idx, qth_idx, P_idx, u_idx, v_idx
 

@@ -277,18 +277,18 @@ contains
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
-            !------- Avg heat intensity from acoustic damping q_us PRMS ---------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i, j, k) = q_cons_hifu(hifu_params%qus_prms_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
-                    end do
-                end do
-            end do
+            ! !------- Avg heat intensity from acoustic damping q_us PRMS ---------
+            ! do i = -offset_x%beg, m + offset_x%end
+            !     do j = -offset_y%beg, n + offset_y%end
+            !         do k = -offset_z%beg, p + offset_z%end
+            !             q_sf(i, j, k) = q_cons_hifu(hifu_params%qus_prms_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+            !         end do
+            !     end do
+            ! end do
 
-            write (varname, '(A)') 'avgAcousticIntensity'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
+            ! write (varname, '(A)') 'avgAcousticIntensity'
+            ! call s_write_variable_to_formatted_database_file(varname, t_step)
+            ! varname(:) = ' '
 
             !------- Avg heat intensity from viscous damping q_vis ---------
             do i = -offset_x%beg, m + offset_x%end
@@ -316,6 +316,8 @@ contains
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
+            if (hifu_params%stg3 .and. hifu_params%cartesian) return
+            
             !------- Avg streming velocity x-dir---------------------------
             do i = -offset_x%beg, m + offset_x%end
                 do j = -offset_y%beg, n + offset_y%end

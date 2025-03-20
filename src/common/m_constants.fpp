@@ -80,7 +80,7 @@ module m_constants
 
     !HIFU constants
     !integer, parameter :: p_hifu = 100 !< (ideal: 120) Number of cells in the azimuthal angle direction (from 2d axisymmetric to 3d cylindrical)
-    
+
     ! System constants
     integer, parameter :: CASE_FILE_ERROR_CODE = 22
 

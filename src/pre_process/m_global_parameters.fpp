@@ -251,7 +251,10 @@ module m_global_parameters
 
     !< Lagrangian solver
     integer :: solverapproach
+
+    type(hifu_parameters) :: hifu_params    !< HIFU parameters
     integer :: sys_size_hifu
+    integer :: m_hf, n_hf, p_hf
 
 contains
 

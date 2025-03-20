@@ -307,6 +307,7 @@ module m_global_parameters
     logical :: hifu
     type(hifu_parameters) :: hifu_params    !< HIFU parameters
     integer :: sys_size_hifu
+    integer :: m_hf, n_hf, p_hf
 
 contains
 
@@ -451,8 +452,18 @@ contains
         hifu_params%t_step_stop_stg3 = dflt_int
         hifu_params%t_stop_stg1 = dflt_real
         hifu_params%t_stop_stg2 = dflt_real
+        hifu_params%dt_stg2 = dflt_real
         hifu_params%dt_stg3 = dflt_real
         hifu_params%t_step_save_stg3 = dflt_int
+        hifu_params%z_max = dflt_real
+        hifu_params%p_cyl = dflt_int
+        hifu_params%xb = dflt_real
+        hifu_params%xe = dflt_real
+        hifu_params%ye = dflt_real
+        hifu_params%cartesian = .false.
+        hifu_params%m = dflt_int
+        hifu_params%n = dflt_int
+        hifu_params%p = dflt_int
 
         ! IBM
         num_ibs = dflt_int

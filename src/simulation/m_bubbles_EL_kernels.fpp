@@ -54,16 +54,20 @@ contains
         real(wp), dimension(1:lag_params%nBubs_glb), intent(in), optional :: lbk_qvis, lbk_qth
 
         if (hifu_params%heatSolver) then
-            lag_params%smooth_type = 2 ! Force delta function for hifu intensities
-            !$acc update device(lag_params)
-        end if
-        
-        smoothfunc:select case(lag_params%smooth_type)
-        case (1)
-        call s_gaussian(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
-        case (2)
-        call s_deltafunc(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
-        end select smoothfunc
+            if (hifu_params%cartesian) then
+                !call s_deltafunc_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
+                call s_gaussian_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
+            else
+                call s_deltafunc(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
+            end if
+        else
+            smoothfunc:select case(lag_params%smooth_type)
+            case (1)
+            call s_gaussian(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
+            case (2)
+            call s_deltafunc(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
+            end select smoothfunc
+        end if  
 
     end subroutine s_smoothfunction
 
@@ -95,11 +99,11 @@ contains
             volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
             s_coord(1:3) = lbk_s(l, 1:3, 2)
 
-            if (hifu_params%heatSolver .and. num_dims==3) then
+            if (hifu_params%heatSolver .and. num_dims == 3) then
                 ! Find azimuthal cell location
                 ! -pi to pi -> 0 to 2*pi
                 thetaPos = lbk_pos(l, 3, 1)
-                if (thetaPos<0._wp) thetaPos = 2._wp*pi + lbk_pos(l, 3, 1)  
+                if (thetaPos < 0._wp) thetaPos = 2._wp*pi + lbk_pos(l, 3, 1)
 
                 bubble_in_hifu_domain = .true.
                 thetaCell = -buff_size
@@ -137,18 +141,18 @@ contains
             if (hifu_params%heatSolver) then
                 ! Smear the viscous and thermal intensities in the 3D domain
                 !Update heat source field (qvis)
-                addFun1 = lbk_qvis(l) / Vol
+                addFun1 = lbk_qvis(l)/Vol
                 !$acc atomic update
-                updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), cell(3)) =     &
+                updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), cell(3)) = &
                     updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), cell(3)) + &
-                                                                                  addFun1
+                    addFun1
 
                 !Update heat source field (qth)
-                addFun2 = lbk_qth(l) / Vol
+                addFun2 = lbk_qth(l)/Vol
                 !$acc atomic update
-                updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), cell(2), cell(3)) =     &
+                updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), cell(2), cell(3)) = &
                     updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), cell(2), cell(3)) + &
-                                                                                 addFun2
+                    addFun2
             else
                 !Update void fraction field
                 addFun1 = strength_vol/Vol
@@ -237,7 +241,7 @@ contains
                             if (lag_params%cluster_type >= 4) call s_applygaussian(center, cellaux, nodecoord, stddsv, 1._wp, func2)
 
                             ! Relocate cells for bubbles intersecting symmetric boundaries
-                            if (bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. bczb == -2 .or.bcze == -2) then
+                            if (bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. bczb == -2 .or. bcze == -2) then
                                 call s_shift_cell_symmetric_bc(cellaux, cell)
                             end if
                         else
@@ -273,11 +277,11 @@ contains
                                 + addFun3
                         end if
 
-                        if (cellaux(1)>=0 .and. cellaux(1)<=m .and. &
-                            cellaux(2)>=0 .and. cellaux(2)<=n) then
-                                addFun1 = dx(cellaux(1))*dy(cellaux(2))*y_cc(cellaux(2))*2._wp*pi
+                        if (cellaux(1) >= 0 .and. cellaux(1) <= m .and. &
+                            cellaux(2) >= 0 .and. cellaux(2) <= n) then
+                            addFun1 = dx(cellaux(1))*dy(cellaux(2))*y_cc(cellaux(2))*2._wp*pi
                         else
-                                addFun1 = 0._wp
+                            addFun1 = 0._wp
                         end if
 
                         gpu_sum = gpu_sum + func*strength_vol*addFun1
@@ -291,93 +295,10 @@ contains
             end do
         end do
 
-        ! Populate symetric boundaries
-        if (bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. bczb == -2 .or.bcze == -2) then
+        ! Populate symmetric boundaries
+        if (bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. bczb == -2 .or. bcze == -2) then
             call s_populate_symmetric_bc(updatedvar)
         end if
-
-        !print*, 'in kernel:', mytime, gpu_sum
-
-        ! !$acc parallel loop gang vector default(present) private(l, s_coord, cell, center) copyin(smearGrid, smearGridz)
-        ! do l = 1, nBubs
-        !     center(1:3) = 0._wp
-        !     volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
-        !     s_coord(1:3) = lbk_s(l, 1:3, 2)
-        !     center(1:2) = lbk_pos(l, 1:2, 2)
-        !     if (p > 0) center(3) = lbk_pos(l, 3, 2)
-        !     call s_get_cell(s_coord, cell)
-        !     call s_compute_stddsv(cell, volpart, stddsv)
-
-        !     strength_vol = volpart
-        !     strength_vel = 4._wp*pi*lbk_rad(l, 2)**2._wp*lbk_vel(l, 2)
-
-        !     print*, l, stddsv, volpart
-
-        !     !$acc loop collapse(3) private(cellaux, nodecoord)
-        !     do i = 0, smearGrid
-        !         do j = 0, smearGrid
-        !             do k = 0, smearGridz
-        !                 cellaux(1) = cell(1) + i - mapCells
-        !                 cellaux(2) = cell(2) + j - mapCells
-        !                 cellaux(3) = cell(3) + k - mapCells
-        !                 if (p == 0) cellaux(3) = 0
-
-        !                 !Check if the cells intended to smear the bubbles in are in the computational domain
-        !                 !and redefine the cells for symmetric boundary
-        !                 call s_check_celloutside(cellaux, celloutside)
-
-        !                 if (.not. celloutside) then
-        !                     nodecoord(1:3) = 0
-        !                     nodecoord(1) = x_cc(cellaux(1))
-        !                     nodecoord(2) = y_cc(cellaux(2))
-        !                     if (p > 0) nodecoord(3) = z_cc(cellaux(3))
-        !                     call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
-        !                     if (lag_params%cluster_type >= 4) call s_applygaussian(center, cellaux, nodecoord, stddsv, 1._wp, func2)
-
-        !                     ! Relocate cells for bubbles intersecting symmetric boundaries
-        !                     if (bcxb == -2 .or. bcxe == -2 .or.bcyb == -2 .or.bcye == -2 .or.bczb == -2 .or.bcze == -2) then
-        !                         call s_shift_cell_symmetric_bc(cellaux, cell)
-        !                     end if
-        !                 else
-        !                     func = 0._wp
-        !                     func2 = 0._wp
-        !                     cellaux(1) = cell(1)
-        !                     cellaux(2) = cell(2)
-        !                     cellaux(3) = cell(3)
-        !                     if (p == 0) cellaux(3) = 0
-        !                 end if
-
-        !                 !Update void fraction field
-        !                 addFun1 = func*strength_vol
-        !                 !$acc atomic update
-        !                 updatedvar%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
-        !                     updatedvar%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-        !                     + addFun1
-
-        !                 !Update time derivative of void fraction
-        !                 addFun2 = func*strength_vel
-        !                 !$acc atomic update
-        !                 updatedvar%vf(2)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
-        !                     updatedvar%vf(2)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-        !                     + addFun2
-
-        !                 !Product of two smeared functions
-        !                 !Update void fraction * time derivative of void fraction
-        !                 if (lag_params%cluster_type >= 4) then
-        !                     addFun3 = func2*strength_vol*strength_vel
-        !                     !$acc atomic update
-        !                     updatedvar%vf(5)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
-        !                         updatedvar%vf(5)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-        !                         + addFun3
-        !                 end if
-
-        !                 !if (cellaux(1)==1418 .and. cellaux(2)==0) print*, l, lbk_rad(l, 2), stddsv, strength_vol, strength_vel, func, func2
-        !                 !if (l==696) print*, i, j, stddsv, func, func2
-
-        !             end do
-        !         end do
-        !     end do
-        ! end do
 
     end subroutine s_gaussian
 
@@ -433,7 +354,8 @@ contains
                 theta = 0._wp
                 Nr = ceiling(lag_params%charwidth/(y_cb(cellaux(2)) - y_cb(cellaux(2) - 1)))
                 Nr_count = 1._wp - mapCells*1._wp
-                dzp = y_cb(cellaux(2) + 1) - y_cb(cellaux(2))
+                !dzp = y_cb(cellaux(2) + 1) - y_cb(cellaux(2))
+                dzp = dy(cellaux(2))
                 Lz2 = (center(3) - (dzp*(0.5_wp + Nr_count) - lag_params%charwidth/2._wp))**2._wp
                 distance = sqrt((center(1) - nodecoord(1))**2._wp + (center(2) - nodecoord(2))**2._wp + Lz2)
                 func = dzp/lag_params%charwidth*exp(-0.5_wp*(distance/stddsv)**2._wp)/(sqrt(2._wp*pi)*stddsv)**3._wp
@@ -448,6 +370,261 @@ contains
         end if
 
     end subroutine s_applygaussian
+
+
+    subroutine s_gaussian_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
+
+        integer, intent(in) :: nBubs
+        real(wp), dimension(1:lag_params%nBubs_glb, 1:3, 1:2), intent(in) :: lbk_s, lbk_pos
+        real(wp), dimension(1:lag_params%nBubs_glb, 1:2), intent(in) :: lbk_rad, lbk_vel
+        type(vector_field), intent(inout) :: updatedvar
+        real(wp), dimension(1:lag_params%nBubs_glb), intent(in), optional :: lbk_qvis, lbk_qth
+
+        real(wp), dimension(3) :: center
+        integer, dimension(3) :: cell
+        real(wp) :: stddsv
+        real(wp) :: strength_vel, strength_vol, gpu_sum
+
+        real(wp), dimension(3) :: nodecoord, scoord
+        real(wp) :: addFun1, addFun2, addFun3, sumFun
+        real(wp) :: func, func2, volpart, normGaussSum
+        integer, dimension(3) :: cellaux
+        integer :: l, i, j, k
+        logical :: celloutside, particle_in_domain
+        integer :: smearGrid, smearGridz
+
+        smearGrid = mapCells - (-mapCells) ! Include the cell that contains the bubble (3+1+3)
+
+        !$acc parallel loop gang vector default(present) private(l, cell, scoord, center) &
+        !$acc copyin(smearGrid)
+        do l = 1, nBubs
+
+            !> Is the particle in the domain?
+            particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb_hf(m_hf + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb_hf(-1 - buff_size)) .and. &
+            (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
+            (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
+
+            if (particle_in_domain) then
+
+                !> Find cell of the bubble in the heat solver domain
+                cell = - buff_size
+                !x
+                do while (lbk_pos(l, 1, 1) < x_cb_hf(cell(1) - 1))
+                    cell(1) = cell(1) - 1
+                end do
+                do while (lbk_pos(l, 1, 1) > x_cb_hf(cell(1)))
+                    cell(1) = cell(1) + 1
+                end do
+                !y
+                do while (lbk_pos(l, 2, 1) < y_cb_hf(cell(2) - 1))
+                    cell(2) = cell(2) - 1
+                end do
+                do while (lbk_pos(l, 2, 1) > y_cb_hf(cell(2)))
+                    cell(2) = cell(2) + 1
+                end do
+                !z
+                do while (lbk_pos(l, 3, 1) < z_cb_hf(cell(3) - 1))
+                    cell(3) = cell(3) - 1
+                end do
+                do while (lbk_pos(l, 3, 1) > z_cb_hf(cell(3)))
+                    cell(3) = cell(3) + 1
+                end do
+                !coordinates in computational space
+                scoord(1) = cell(1) + (lbk_pos(l, 1, 1) - x_cb_hf(cell(1) - 1))/dx_hf(cell(1))
+                scoord(2) = cell(2) + (lbk_pos(l, 2, 1) - y_cb_hf(cell(2) - 1))/dy_hf(cell(2))
+                scoord(3) = cell(3) + (lbk_pos(l, 3, 1) - z_cb_hf(cell(3) - 1))/dz_hf(cell(3))
+                !cell
+                cell(:) = int(scoord(:))
+
+                !> Gasussian parameters and cells to smear
+                volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
+                call s_compute_stddsv(cell, volpart, stddsv)
+                center(1:3) = lbk_pos(l, 1:3, 2) 
+
+                ! !> Get the sumation of Gausian functions to correct smearing
+                ! sumFun = 0._wp
+                ! !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+:sumFun)
+                ! do i = 0, smearGrid
+                !     do j = 0, smearGrid
+                !         do k = 0, smearGrid
+
+                !                 cellaux(1) = cell(1) + i - mapCells
+                !                 cellaux(2) = cell(2) + j - mapCells
+                !                 cellaux(3) = cell(3) + k - mapCells
+
+                !                 !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
+                !                 celloutside = .false.
+                !                 if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
+                !                     celloutside = .true.
+                !                 end if
+                !                 if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
+                !                     celloutside = .true.
+                !                 end if      
+
+                !                 if (.not. celloutside) then
+                !                     nodecoord(1) = x_cc_hf(cellaux(1))
+                !                     nodecoord(2) = y_cc_hf(cellaux(2))
+                !                     nodecoord(3) = z_cc_hf(cellaux(3))
+                !                     call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
+                !                     sumFun = sumFun + func * (sqrt(2._wp*pi)*stddsv)**3._wp
+                !                 end if
+                !         end do
+                !     end do
+                ! end do
+
+                !if (sumFun <= 0._wp .or. sumFun/=sumFun) print*, 'SumFun error', sumFun
+
+                 !> Smearing
+                normGaussSum = 0._wp
+                !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+: normGaussSum)
+                do i = 0, smearGrid
+                    do j = 0, smearGrid
+                        do k = 0, smearGrid
+
+                                cellaux(1) = cell(1) + i - mapCells
+                                cellaux(2) = cell(2) + j - mapCells
+                                cellaux(3) = cell(3) + k - mapCells
+
+                                !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
+                                celloutside = .false.
+                                if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
+                                    celloutside = .true.
+                                end if
+                                if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
+                                    celloutside = .true.
+                                end if      
+
+                                if (.not. celloutside) then
+                                    nodecoord(1) = x_cc_hf(cellaux(1))
+                                    nodecoord(2) = y_cc_hf(cellaux(2))
+                                    nodecoord(3) = z_cc_hf(cellaux(3))
+                                    call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
+                                    !func = func / sumFun !Adjusted intensity
+                                else
+                                    func = 0._wp
+                                    cellaux(1) = cell(1)
+                                    cellaux(2) = cell(2)
+                                    cellaux(3) = cell(3)
+                                end if
+
+                                !Summation of the normalized gaussian function
+                                normGaussSum = normGaussSum + func*(dx_hf(cellaux(1))*dy_hf(cellaux(2))*dz_hf(cellaux(3)))
+
+                                !Update qvis field
+                                addFun1 = func*lbk_qvis(l)
+                                !$acc atomic update
+                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                    updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                    + addFun1
+
+                                !Update qth field
+                                addFun2 = func*lbk_qth(l)
+                                !$acc atomic update
+                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                    updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                    + addFun2
+
+
+                        end do
+                    end do
+                end do
+
+                ! Summation of normal gaussian weigths must be equal to one, exept from the cells at the buffers since some surrounding cells can be outside the domain.
+                ! Tolerance of 0.01 defined
+                if ( (cell(1) > 0 .and. cell(1) <= m_hf) .and. (cell(2) > 0 .and. cell(2) <= n_hf) .and. &
+                     (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum-1._wp) > 0.01_wp) then
+                        print*, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
+                end if
+
+            end if
+
+        end do
+
+         if (proc_rank==0) print*, 'Bubble sources smeared with Gaussian kernel: qvis & qth'
+
+    end subroutine s_gaussian_hifu
+
+    !> The purpose of this procedure contains the algorithm to use the delta kernel function to map the effect of the bubbles.
+            !!      The effect of the bubbles only affects the cell where the bubble is located.
+    subroutine s_deltafunc_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
+
+        integer, intent(in) :: nBubs
+        real(wp), dimension(1:lag_params%nBubs_glb, 1:3, 1:2), intent(in) :: lbk_s, lbk_pos
+        real(wp), dimension(1:lag_params%nBubs_glb, 1:2), intent(in) :: lbk_rad, lbk_vel
+        type(vector_field), intent(inout) :: updatedvar
+        real(wp), dimension(1:lag_params%nBubs_glb), intent(in), optional :: lbk_qvis, lbk_qth
+
+        integer, dimension(3) :: cell
+        real(wp), dimension(3) :: scoord
+        real(wp) :: addFun1, addFun2
+        real(wp) :: volCell
+        integer :: l
+        logical :: particle_in_domain
+
+        !$acc parallel loop gang vector default(present) private(l, cell, scoord)
+        do l = 1, nBubs
+
+            !> Is the particle in the domain?
+            particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb_hf(m_hf + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb_hf(-1 - buff_size)) .and. &
+            (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
+            (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
+
+            if (particle_in_domain) then
+
+                !> Find cell of the bubble in the heat solver domain
+                cell = - buff_size
+                !x
+                do while (lbk_pos(l, 1, 1) < x_cb_hf(cell(1) - 1))
+                    cell(1) = cell(1) - 1
+                end do
+                do while (lbk_pos(l, 1, 1) > x_cb_hf(cell(1)))
+                    cell(1) = cell(1) + 1
+                end do
+                !y
+                do while (lbk_pos(l, 2, 1) < y_cb_hf(cell(2) - 1))
+                    cell(2) = cell(2) - 1
+                end do
+                do while (lbk_pos(l, 2, 1) > y_cb_hf(cell(2)))
+                    cell(2) = cell(2) + 1
+                end do
+                !z
+                do while (lbk_pos(l, 3, 1) < z_cb_hf(cell(3) - 1))
+                    cell(3) = cell(3) - 1
+                end do
+                do while (lbk_pos(l, 3, 1) > z_cb_hf(cell(3)))
+                    cell(3) = cell(3) + 1
+                end do
+                !coordinates in computational space
+                scoord(1) = cell(1) + (lbk_pos(l, 1, 1) - x_cb_hf(cell(1) - 1))/dx_hf(cell(1))
+                scoord(2) = cell(2) + (lbk_pos(l, 2, 1) - y_cb_hf(cell(2) - 1))/dy_hf(cell(2))
+                scoord(3) = cell(3) + (lbk_pos(l, 3, 1) - z_cb_hf(cell(3) - 1))/dz_hf(cell(3))
+                !cell
+                cell(:) = int(scoord(:))
+
+                !> Volume of the cell
+                volCell = dx_hf(cell(1))*dy_hf(cell(2))*dz_hf(cell(3))
+                
+                !> Smearing
+                !Update qvis field
+                addFun1 = lbk_qvis(l)/volCell
+                !$acc atomic update
+                updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), cell(3)) = &
+                    updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), cell(3)) &
+                    + addFun1
+
+                !Update qth field
+                addFun2 = lbk_qth(l)/volCell
+                !$acc atomic update
+                updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), cell(2), cell(3)) = &
+                    updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), cell(2), cell(3)) &
+                    + addFun2
+
+            end if
+        end do
+
+         if (proc_rank==0) print*, 'Bubble sources smeared with delta kernel: qvis & qth'
+
+    end subroutine s_deltafunc_hifu
 
     !> The purpose of this subroutine is to check if the current cell is outside the computational domain or not (including ghost cells).
             !! @param cellaux Tested cell to smear the bubble effect in.
@@ -469,11 +646,6 @@ contains
             end if
             if ((cellaux(2) > n + buff_size) .or. (cellaux(1) > m + buff_size)) then
                 celloutside = .true.
-            end if
-            if (.not. celloutside) then
-                if (cyl_coord .and. y_cc(cellaux(2)) < 0._wp) then
-                    celloutside = .true.
-                end if
             end if
         else
             if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
@@ -502,14 +674,14 @@ contains
         ! x-dir
         if (bcxb == -2 .and. (cell(1) <= mapCells - 1)) then
             if (cell(1) >= 0) then
-                cellaux(1) = abs(cellaux(1)) - 1
+                if (cellaux(1) < 0) cellaux(1) = abs(cellaux(1)) - 1
             else
                 stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_x%beg)."
             end if
         end if
         if (bcxe == -2 .and. (cell(1) >= m + 1 - mapCells)) then
             if (cell(1) <= m) then
-                cellaux(1) = cellaux(1) - (2*(cellaux(1) - m) - 1)
+                if (cellaux(1) > m) cellaux(1) = cellaux(1) - (2*(cellaux(1) - m) - 1)
             else
                 stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_x%end)."
             end if
@@ -518,14 +690,14 @@ contains
         !y-dir
         if (bcyb == -2 .and. (cell(2) <= mapCells - 1)) then
             if (cell(2) >= 0) then
-                cellaux(2) = abs(cellaux(2)) - 1
+                if (cellaux(2) < 0) cellaux(2) = abs(cellaux(2)) - 1
             else
                 stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_y%beg)."
             end if
         end if
         if (bcye == -2 .and. (cell(2) >= n + 1 - mapCells)) then
             if (cell(2) <= n) then
-                cellaux(2) = cellaux(2) - (2*(cellaux(2) - n) - 1)
+                if (cellaux(2) > n) cellaux(2) = cellaux(2) - (2*(cellaux(2) - n) - 1)
             else
                 stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_y%end)."
             end if
@@ -535,14 +707,14 @@ contains
             !z-dir
             if (bczb == -2 .and. (cell(3) <= mapCells - 1)) then
                 if (cell(3) >= 0) then
-                    cellaux(3) = abs(cellaux(3)) - 1
+                    if (cellaux(3) < 0) cellaux(3) = abs(cellaux(3)) - 1
                 else
                     stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_z%beg)."
                 end if
             end if
             if (bcze == -2 .and. (cell(3) >= p + 1 - mapCells)) then
                 if (cell(3) <= p) then
-                    cellaux(3) = cellaux(3) - (2*(cellaux(3) - p) - 1)
+                    if (cellaux(3) > p) cellaux(3) = cellaux(3) - (2*(cellaux(3) - p) - 1)
                 else
                     stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_z%end)."
                 end if
@@ -556,7 +728,7 @@ contains
         type(vector_field), intent(inout) :: updatedvar
 
         integer :: j, k, l
-        
+
         ! x-dir
         if (bcxb == -2) then
             !$acc parallel loop collapse(3) gang vector default(present)
@@ -634,7 +806,7 @@ contains
                 end do
             end if
             if (bcze == -2) then
-               !$acc parallel loop collapse(3) gang vector default(present)
+                !$acc parallel loop collapse(3) gang vector default(present)
                 do j = 1, buff_size
                     do l = -buff_size, n + buff_size
                         do k = -buff_size, m + buff_size
@@ -668,29 +840,43 @@ contains
         real(wp) :: chardist, charvol
         real(wp) :: rad
 
-        !< Compute characteristic distance
-        chardist = sqrt(dx(cell(1))*dy(cell(2)))
-        if (p > 0) chardist = (dx(cell(1))*dy(cell(2))*dz(cell(3)))**(1._wp/3._wp)
+        if (hifu_params%cartesian .and. hifu_params%heatSolver) then
 
-        !< Compute characteristic volume
-        if (p > 0) then
-            charvol = dx(cell(1))*dy(cell(2))*dz(cell(3))
-        else
-            if (cyl_coord) then
-                charvol = dx(cell(1))*dy(cell(2))*y_cc(cell(2))*2._wp*pi
-            else
-                charvol = dx(cell(1))*dy(cell(2))*lag_params%charwidth
-            end if
-        end if
+            !< Compute characteristic distance
+            chardist = (dx_hf(cell(1))*dy_hf(cell(2))*dz_hf(cell(3)))**(1._wp/3._wp)
 
-        !< Compute Standard deviaton
-        if (((volpart/charvol) > 0.5_wp*lag_params%valmaxvoid) .or. (lag_params%smooth_type == 1)) then
+            !< Compute Standard deviaton
             rad = (3._wp*volpart/(4._wp*pi))**(1._wp/3._wp)
-            stddsv = 1._wp*lag_params%epsilonb*max(chardist, rad)
-            !print*, rad, dx(cell(1)), dy(cell(2)), y_cc(cell(2)), cell(1), cell(2)
+            stddsv = max(chardist, rad)
+
         else
-            stddsv = 0._wp
+
+            !< Compute characteristic distance
+            chardist = sqrt(dx(cell(1))*dy(cell(2)))
+            if (p > 0) chardist = (dx(cell(1))*dy(cell(2))*dz(cell(3)))**(1._wp/3._wp)
+
+            !< Compute characteristic volume
+            if (p > 0) then
+                charvol = dx(cell(1))*dy(cell(2))*dz(cell(3))
+            else
+                if (cyl_coord) then
+                    charvol = dx(cell(1))*dy(cell(2))*y_cc(cell(2))*2._wp*pi
+                else
+                    charvol = dx(cell(1))*dy(cell(2))*lag_params%charwidth
+                end if
+            end if
+
+            !< Compute Standard deviaton
+            if (((volpart/charvol) > 0.5_wp*lag_params%valmaxvoid) .or. (lag_params%smooth_type == 1)) then
+                rad = (3._wp*volpart/(4._wp*pi))**(1._wp/3._wp)
+                stddsv = 1._wp*lag_params%epsilonb*max(chardist, rad)
+                !print*, rad, dx(cell(1)), dy(cell(2)), y_cc(cell(2)), cell(1), cell(2)
+            else
+                stddsv = 0._wp
+            end if
+
         end if
+
 
     end subroutine s_compute_stddsv
 

@@ -1053,41 +1053,59 @@ contains
                 do l = -buff_size, m + buff_size
 
                     if (z_cc(k) < pi) then
-                        !$acc loop seq
-                        do i = 1, momxb
-                            q_prim_vf(i)%sf(l, -j, k) = &
-                                q_prim_vf(i)%sf(l, j - 1, k + ((p + 1)/2))
-                        end do
 
-                        q_prim_vf(momxb + 1)%sf(l, -j, k) = &
-                            -q_prim_vf(momxb + 1)%sf(l, j - 1, k + ((p + 1)/2))
+                        if (hifu_params%heatSolver) then
+                            !Temperature only
+                            q_prim_vf(1)%sf(l, -j, k) = &
+                                q_prim_vf(1)%sf(l, j - 1, k + ((p + 1)/2))
+                        else
+                        
+                            !$acc loop seq
+                            do i = 1, momxb
+                                q_prim_vf(i)%sf(l, -j, k) = &
+                                    q_prim_vf(i)%sf(l, j - 1, k + ((p + 1)/2))
+                            end do
 
-                        q_prim_vf(momxe)%sf(l, -j, k) = &
-                            -q_prim_vf(momxe)%sf(l, j - 1, k + ((p + 1)/2))
+                            q_prim_vf(momxb + 1)%sf(l, -j, k) = &
+                                -q_prim_vf(momxb + 1)%sf(l, j - 1, k + ((p + 1)/2))
 
-                        !$acc loop seq
-                        do i = E_idx, sys_size
-                            q_prim_vf(i)%sf(l, -j, k) = &
-                                q_prim_vf(i)%sf(l, j - 1, k + ((p + 1)/2))
-                        end do
+                            q_prim_vf(momxe)%sf(l, -j, k) = &
+                                -q_prim_vf(momxe)%sf(l, j - 1, k + ((p + 1)/2))
+
+                            !$acc loop seq
+                            do i = E_idx, sys_size
+                                q_prim_vf(i)%sf(l, -j, k) = &
+                                    q_prim_vf(i)%sf(l, j - 1, k + ((p + 1)/2))
+                            end do
+
+                        end if
                     else
-                        !$acc loop seq
-                        do i = 1, momxb
-                            q_prim_vf(i)%sf(l, -j, k) = &
-                                q_prim_vf(i)%sf(l, j - 1, k - ((p + 1)/2))
-                        end do
 
-                        q_prim_vf(momxb + 1)%sf(l, -j, k) = &
-                            -q_prim_vf(momxb + 1)%sf(l, j - 1, k - ((p + 1)/2))
+                        if (hifu_params%heatSolver) then
+                            !Temperature only
+                            q_prim_vf(1)%sf(l, -j, k) = &
+                                q_prim_vf(1)%sf(l, j - 1, k - ((p + 1)/2))
+                        else
 
-                        q_prim_vf(momxe)%sf(l, -j, k) = &
-                            -q_prim_vf(momxe)%sf(l, j - 1, k - ((p + 1)/2))
+                            !$acc loop seq
+                            do i = 1, momxb
+                                q_prim_vf(i)%sf(l, -j, k) = &
+                                    q_prim_vf(i)%sf(l, j - 1, k - ((p + 1)/2))
+                            end do
 
-                        !$acc loop seq
-                        do i = E_idx, sys_size
-                            q_prim_vf(i)%sf(l, -j, k) = &
-                                q_prim_vf(i)%sf(l, j - 1, k - ((p + 1)/2))
-                        end do
+                            q_prim_vf(momxb + 1)%sf(l, -j, k) = &
+                                -q_prim_vf(momxb + 1)%sf(l, j - 1, k - ((p + 1)/2))
+
+                            q_prim_vf(momxe)%sf(l, -j, k) = &
+                                -q_prim_vf(momxe)%sf(l, j - 1, k - ((p + 1)/2))
+
+                            !$acc loop seq
+                            do i = E_idx, sys_size
+                                q_prim_vf(i)%sf(l, -j, k) = &
+                                    q_prim_vf(i)%sf(l, j - 1, k - ((p + 1)/2))
+                            end do
+                            
+                        end if
                     end if
                 end do
             end do
@@ -1126,13 +1144,12 @@ contains
             do j = 1, buff_size
                 do l = -buff_size, m + buff_size
                     q_prim_vf(hifu_params%T_idx)%sf(l, -j, k) = &
-                            q_prim_vf(hifu_params%T_idx)%sf(l, j - 1, k)
+                        q_prim_vf(hifu_params%T_idx)%sf(l, j - 1, k)
                 end do
             end do
         end do
-    
-    end subroutine s_axis_cylindrical_sector_hifu
 
+    end subroutine s_axis_cylindrical_sector_hifu
 
     subroutine s_slip_wall(q_prim_vf, pb, mv, bc_dir, bc_loc)
 

@@ -263,15 +263,15 @@ for var in [ 'epsilonb', 'valmaxvoid', 'charwidth', 'diffcoefvap',
     SIMULATION[f'lag_params%{var}'] = ParamType.REAL
 
 for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',
-             'stg1', 'stg2', 'stg3', 'stg3_3d' ]:
+             'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian' ]:
     SIMULATION[f'hifu_params%{var}'] = ParamType.LOG
 
 for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
-             't_step_save_stg3', 'p']:
+             't_step_save_stg3', 'p_cyl', 'm', 'n', 'p']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-             'dt_stg2', 'dt_stg3', 'z_max']:
+             'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
 
 for var in [ 'iwave', 'ncycles']:
@@ -411,11 +411,11 @@ POST_PROCESS.update({
 })
 
 for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',
-             'stg1', 'stg2', 'stg3', 'stg3_3d' ]:
+             'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian' ]:
     POST_PROCESS[f'hifu_params%{var}'] = ParamType.LOG
 
 for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
-             't_step_save_stg3', 'p']:
+             't_step_save_stg3', 'p_cyl', 'm', 'n', 'p']:
     POST_PROCESS[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',

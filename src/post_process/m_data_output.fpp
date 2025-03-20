@@ -1157,7 +1157,7 @@ contains
             if (proc_rank == 0) then
                 !open (unit=29, file=file_loc, form='formatted', position='rewind')
                 open (unit=29, file=file_loc, status="replace", action="write", form="formatted")
-                
+
                 !write(29,*) 'lg_bubID, x, y, z, xPrev, yPrev, zPrev, xVel, yVel, ',   &
                 !            'zVel, radius, interfaceVelocity, equilibriumRadius',       &
                 !            'Rmax, Rmin, dphidt, pressure, mv, mg, betaT, betaC, time'
@@ -1174,22 +1174,22 @@ contains
 ! 6                       format(I6, 21(1x, E15.7))
 
                         ! Convert real numbers to strings with a specified format
-                        write(value_str1, '(I10)') int(id)
-                        write(value_str2, '(F10.5)') inputvals(1)
-                        write(value_str3, '(F10.5)') inputvals(2)
-                        write(value_str4, '(F10.5)') inputvals(3)
-                        write(value_str5, '(F10.5)') inputvals(10)
+                        write (value_str1, '(I10)') int(id)
+                        write (value_str2, '(F10.5)') inputvals(1)
+                        write (value_str3, '(F10.5)') inputvals(2)
+                        write (value_str4, '(F10.5)') inputvals(3)
+                        write (value_str5, '(F10.5)') inputvals(10)
 
-                        if (num_dims==2 .and. cyl_coord) then
-                            write(value_str3, '(F10.5)') inputvals(2) * cos(inputvals(3))
-                            write(value_str4, '(F10.5)') inputvals(2) * sin(inputvals(3))
+                        if (num_dims == 2 .and. cyl_coord) then
+                            write (value_str3, '(F10.5)') inputvals(2)*cos(inputvals(3))
+                            write (value_str4, '(F10.5)') inputvals(2)*sin(inputvals(3))
                         end if
-                        
+
                         ! Enclose the real numbers in quotes and combine them with commas
-                        line = trim(adjustl(value_str1)) // ',' //  trim(adjustl(value_str2)) // ',' // &
-                                                                    trim(adjustl(value_str3)) // ',' // &
-                                                                    trim(adjustl(value_str4)) // ',' // &
-                                                                    trim(adjustl(value_str5))
+                        line = trim(adjustl(value_str1))//','//trim(adjustl(value_str2))//','// &
+                               trim(adjustl(value_str3))//','// &
+                               trim(adjustl(value_str4))//','// &
+                               trim(adjustl(value_str5))
                         ! Write the line to the file
                         write (29, '(A)') line
 

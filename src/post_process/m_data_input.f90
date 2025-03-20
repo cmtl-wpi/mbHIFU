@@ -291,6 +291,7 @@ contains
 
         if (present(hifu_id)) then
             alt_sys = sys_size_hifu
+            if (hifu_params%stg3 .and. hifu_params%cartesian) alt_sys = hifu_params%qth_idx
         else
             if (bubbles_lagrange) then
                 alt_sys = sys_size + 1
@@ -305,6 +306,9 @@ contains
 
         ! Read in cell boundary locations in x-direction
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'x_cb.dat'
+        if (hifu_params%stg3 .and. hifu_params%cartesian) then
+            file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'x_cb_hf.dat'
+        end if
         inquire (FILE=trim(file_loc), EXIST=file_exist)
 
         if (file_exist) then
@@ -326,6 +330,9 @@ contains
         if (n > 0) then
             ! Read in cell boundary locations in y-direction
             file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'y_cb.dat'
+            if (hifu_params%stg3 .and. hifu_params%cartesian) then
+                file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'y_cb_hf.dat'
+            end if
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
             if (file_exist) then
@@ -347,6 +354,9 @@ contains
             if (p > 0) then
                 ! Read in cell boundary locations in z-direction
                 file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'z_cb.dat'
+                if (hifu_params%stg3 .and. hifu_params%cartesian) then
+                    file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'z_cb_hf.dat'
+                end if
                 inquire (FILE=trim(file_loc), EXIST=file_exist)
 
                 if (file_exist) then
@@ -1068,7 +1078,7 @@ contains
                     end if
 
                 end do
-            
+
                 ! Axis of a cylindrical sector HIFU
             elseif (bc_y%beg == -21) then
 

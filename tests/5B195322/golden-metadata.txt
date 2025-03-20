@@ -1,16 +1,16 @@
-This file was created on 2024-12-21 23:07:55.896182.
+This file was created on 2025-02-10 15:42:31.776661.
 
 mfc.sh:
 
-    Invocation: test -f 18A29336 -t 5B195322 -j 2 --generate
+    Invocation: test -j 60 --a
     Lock:       mpi=Yes & gpu=No & debug=No & gcov=No & unified=No & single=No
-    Git:        12de93537fb42175887b1fb9c61a3aad406810ae on lagrangian (dirty)
+    Git:        c3de9e581d68135f0b6abc23982d197971f69329 on dgvacarevelo (dirty)
 
 syscheck:
 
     CMake Configuration:
     
-        CMake v3.25.2 on login-01
+        CMake v3.25.2 on login-03
     
         C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
         Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
@@ -43,7 +43,7 @@ pre_process:
 
     CMake Configuration:
     
-        CMake v3.25.2 on login-01
+        CMake v3.25.2 on login-03
     
         C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
         Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
@@ -72,18 +72,18 @@ pre_process:
         OMPI_CXX : 
         OMPI_FC  : 
 
-post_process:
+simulation:
 
     CMake Configuration:
     
-        CMake v3.25.2 on login-01
+        CMake v3.25.2 on login-03
     
         C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
         Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
     
         PRE_PROCESS   : OFF
-        SIMULATION    : OFF
-        POST_PROCESS  : ON
+        SIMULATION    : ON
+        POST_PROCESS  : OFF
         SYSCHECK      : OFF
         DOCUMENTATION : OFF
         ALL           : OFF
@@ -105,18 +105,18 @@ post_process:
         OMPI_CXX : 
         OMPI_FC  : 
 
-simulation:
+post_process:
 
     CMake Configuration:
     
-        CMake v3.25.2 on login-02
+        CMake v3.25.2 on login-03
     
         C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
         Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
     
         PRE_PROCESS   : OFF
-        SIMULATION    : ON
-        POST_PROCESS  : OFF
+        SIMULATION    : OFF
+        POST_PROCESS  : ON
         SYSCHECK      : OFF
         DOCUMENTATION : OFF
         ALL           : OFF
@@ -157,7 +157,7 @@ CPU:
     Model:                              134
     Model name:                         Intel Xeon Processor (Icelake)
     Stepping:                           0
-    CPU MHz:                            2992.966
+    CPU MHz:                            2992.968
     BogoMIPS:                           5985.93
     Hypervisor vendor:                  KVM
     Virtualization type:                full

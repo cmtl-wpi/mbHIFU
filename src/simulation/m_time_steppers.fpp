@@ -316,6 +316,8 @@ contains
         integer, intent(IN) :: t_step
 
         integer :: i, j, k, l, q!< Generic loop iterator
+        real(wp) :: rhs_heat, temp_max, temp_min
+        logical :: stopFlag
 
         ! Stage 1 of 1 =====================================================
 
@@ -325,44 +327,91 @@ contains
 
         if (t_step == t_step_stop) return
 
-        if (hifu_params%stg3_3d) then   ! Cylindrical coord
+        if (hifu_params%cartesian) then
 
-            !$acc parallel loop collapse(3) gang vector default(present)
-            do l = 0, p
-                do j = 0, m
-                    do k = 0, n
-                        !Forward euler time scheme, explicit
-                        q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
-                                                                      + dt*q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
-                        if (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) then
-                            print*, 'NaNs in q hifu temp', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l
-                            stop "Temperature value is NaN!!"
-                        end if
+            if (proc_rank == 0) then
+
+                temp_max = -abs(dflt_real)
+                temp_min = abs(dflt_real)
+
+                !$acc parallel loop collapse(3) gang vector default(present) reduction(MAX: temp_max) reduction(MIN: temp_min) copy(temp_max, temp_min)
+                do l = 0, p_hf
+                    do k = 0, n_hf
+                        do j = 0, m_hf
+
+                            !Forward euler time scheme, explicit
+                            q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
+                                                                        + dt*q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+
+                            ! Max and min
+                            temp_max = max(temp_max, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
+                            temp_min = min(temp_min, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
+
+                            if (abs(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) > 10._wp) then
+                                print *, 'Temp > 10', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l, m_hf, n_hf, p_hf, &
+                                                                                    x_cc_hf(j), y_cc_hf(k), z_cc_hf(l), proc_rank
+                                stop "Temperature value > 10!!"
+                            end if
+
+                        end do
                     end do
                 end do
-            end do
 
-        else                            ! Axisymmetric coord
+                print*, 'Temp max and min:', temp_max, temp_min
 
-            !$acc parallel loop collapse(3) gang vector default(present)
-            do l = 0, p
-                do j = 0, m
-                    do k = 0, n
-                        !Forward euler time scheme, explicit
-                        q_hifu(hifu_params%T_idx)%sf(j, k, l) = q_hifu(hifu_params%T_idx)%sf(j, k, l) &
-                                                                + dt*q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)
-                        if (q_hifu(hifu_params%T_idx)%sf(j, k, l) /= q_hifu(hifu_params%T_idx)%sf(j, k, l)) then
-                            print*, 'NaNs in q hifu temp', q_hifu(hifu_params%T_idx)%sf(j, k, l), j, k, l
-                            stop "Temperature value is NaN!!"
-                        end if
+            end if
+
+            call s_mpi_barrier()
+            
+        else
+
+            if (hifu_params%stg3_3d) then   ! Cylindrical coord
+
+                !$acc parallel loop collapse(3) gang vector default(present) copyin(t_step)
+                do l = 0, p
+                    do j = hifu_params%mb, hifu_params%me
+                        do k = 0, hifu_params%ne
+
+                            rhs_heat = q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+
+                            ! Correction to address numerical stiffness at the pole
+                            !call s_pole_correction(rhs_heat, j, k, l, t_step)
+
+
+                            !Forward euler time scheme, explicit
+                            q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
+                                                                        + dt*rhs_heat
+
+                            !if (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) then
+                            if (abs(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) > 10) then
+                                print *, 'Temp > 10', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l, m, n, p, x_cc(j), y_cc(k), proc_rank
+                                stop "Temperature value > 10!!"
+                            end if
+
+                        end do
                     end do
                 end do
-            end do
+
+            else                            ! Axisymmetric coord
+
+                !$acc parallel loop collapse(3) gang vector default(present)
+                do l = 0, p
+                    do j = hifu_params%mb, hifu_params%me
+                        do k = 0, hifu_params%ne
+                            !Forward euler time scheme, explicit
+                            q_hifu(hifu_params%T_idx)%sf(j, k, l) = q_hifu(hifu_params%T_idx)%sf(j, k, l) &
+                                                                    + dt*q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)
+                            if (q_hifu(hifu_params%T_idx)%sf(j, k, l) /= q_hifu(hifu_params%T_idx)%sf(j, k, l)) then
+                                print *, 'NaNs in q hifu temp', q_hifu(hifu_params%T_idx)%sf(j, k, l), j, k, l
+                                stop "Temperature value is NaN!!"
+                            end if
+                        end do
+                    end do
+                end do
+            end if
         end if
 
         call nvtxEndRange
-
-        ! ============================================================================
 
     end subroutine s_time_stepper_heatEqn
 
@@ -378,7 +427,7 @@ contains
         ! Stage 1 of 1
         call nvtxStartRange("TIMESTEP")
 
-        call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+        call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, 1, time_avg)
 
         if (ib .and. t_step == 1) then
             if (qbmm .and. .not. polytropic) then
@@ -410,11 +459,7 @@ contains
             if (t_step == t_step_stop) return
         end if
 
-        if (bubbles_lagrange) then
-            if (t_step == 0 .and. mytime-dt<dt) call s_initial_pressure_correction(q_prim_vf)
-            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
-            call s_update_lagrange_tdv_rk(stage=1)
-        end if
+        if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(stage=1)
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -500,7 +545,7 @@ contains
 
         call nvtxStartRange("TIMESTEP")
 
-        call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+        call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, 1, time_avg)
 
         if (ib .and. t_step == 1) then
             if (qbmm .and. .not. polytropic) then
@@ -524,11 +569,7 @@ contains
             if (t_step == t_step_stop) return
         end if
 
-        if (bubbles_lagrange) then
-            if (t_step == 0 .and. mytime-dt<dt) call s_initial_pressure_correction(q_prim_vf)
-            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
-            call s_update_lagrange_tdv_rk(stage=1)
-        end if
+        if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(stage=1)
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -598,12 +639,9 @@ contains
 
         ! Stage 2 of 2
 
-        call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
+        call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, 2, time_avg)
 
-        if (bubbles_lagrange) then
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, stage=2)
-            call s_update_lagrange_tdv_rk(stage=2)
-        end if
+        if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(stage=2)
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -697,9 +735,9 @@ contains
             call nvtxStartRange("TIMESTEP")
         end if
 
-        call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
+        call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, 1, time_avg)
 
-        if (hifu_params%sampling) then !HIFU sampling vars
+        if (hifu_params%sampling .and. .not. adap_dt) then !HIFU sampling vars
             call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
         end if
 
@@ -717,11 +755,7 @@ contains
             if (t_step == t_step_stop) return
         end if
 
-        if (bubbles_lagrange) then
-            if (t_step == 0 .and. mytime-dt<dt) call s_initial_pressure_correction(q_prim_vf)
-            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_vf, stage=1)
-            call s_update_lagrange_tdv_rk(stage=1)
-        end if
+        if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(stage=1)
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -791,12 +825,9 @@ contains
 
         ! Stage 2 of 3
 
-        call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
+        call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, 2, time_avg)
 
-        if (bubbles_lagrange) then
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, stage=2)
-            call s_update_lagrange_tdv_rk(stage=2)
-        end if
+        if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(stage=2)
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -867,12 +898,9 @@ contains
         end if
 
         ! Stage 3 of 3
-        call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, time_avg)
+        call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_vf, pb_ts(2)%sf, rhs_pb, mv_ts(2)%sf, rhs_mv, t_step, 3, time_avg)
 
-        if (bubbles_lagrange) then
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_vf, stage=3)
-            call s_update_lagrange_tdv_rk(stage=3)
-        end if
+        if (bubbles_lagrange .and. .not. adap_dt) call s_update_lagrange_tdv_rk(stage=3)
 
         !$acc parallel loop collapse(4) gang vector default(present)
         do i = 1, sys_size
@@ -970,13 +998,13 @@ contains
         call nvtxStartRange("TIMESTEP")
 
         ! Stage 1 of 3
-        call s_adaptive_dt_bubble(t_step)
+        call s_adaptive_dt_bubble(t_step, 1)
 
         ! Stage 2 of 3
         call s_3rd_order_tvd_rk(t_step, time_avg)
 
         ! Stage 3 of 3
-        call s_adaptive_dt_bubble(t_step)
+        call s_adaptive_dt_bubble(t_step, 3)
 
         call nvtxEndRange
 
@@ -988,9 +1016,9 @@ contains
 
     !> Bubble source part in Strang operator splitting scheme
         !! @param t_step Current time-step
-    subroutine s_adaptive_dt_bubble(t_step)
+    subroutine s_adaptive_dt_bubble(t_step, stage)
 
-        integer, intent(in) :: t_step
+        integer, intent(in) :: t_step, stage
 
         type(vector_field) :: gm_alpha_qp
 
@@ -1001,9 +1029,39 @@ contains
             idwint, &
             gm_alpha_qp%vf)
 
-        call s_compute_bubble_EE_source(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf)
+        if (bubbles_euler) then
 
-        call s_comp_alpha_from_n(q_cons_ts(1)%vf)
+            call s_compute_bubble_EE_source(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf)
+
+            call s_comp_alpha_from_n(q_cons_ts(1)%vf)
+
+        elseif (bubbles_lagrange) then
+
+            call s_populate_variables_buffers(q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf)
+
+            ! if (stage == 1 .and. mytime <= dt) then
+            !     call s_initial_pressure_correction(q_prim_vf)
+            ! end if
+
+            call s_compute_bubble_EL_dynamics(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf, stage)
+
+            call s_transfer_data_to_tmp(.true.)
+
+            call s_smear_voidfraction()
+
+            if (stage == 3) then
+                if (hifu_params%sampling) then !HIFU sampling vars
+                    call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
+                end if
+                call s_write_void_evol(mytime)
+                if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
+                if (lag_params%write_bubbles) then
+                    !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
+                    call s_write_lag_particles(mytime)
+                end if
+            end if
+
+        end if
 
     end subroutine s_adaptive_dt_bubble
 
@@ -1164,9 +1222,9 @@ contains
 #ifdef DEBUG
             if (proc_rank == 0) print *, 'RKCK 1st time-stage at', rkck_time_tmp
 #endif
-            call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(1)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
-            if (t_step == 0 .and. mytime<dt) call s_initial_pressure_correction(q_prim_vf)
-            call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_ts_rkck(1)%vf, RKstep)
+            !if (t_step == 0 .and. mytime<dt) call s_initial_pressure_correction(q_prim_vf)
+            call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(1)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, RKstep, time_avg)
+            ! call s_compute_EL_coupled_solver(q_cons_ts(1)%vf, q_prim_vf, rhs_ts_rkck(1)%vf, RKstep)
             call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
             if (lag_largestep > 0._wp) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
             if (restart_rkck_step) cycle
@@ -1179,8 +1237,8 @@ contains
 #ifdef DEBUG
             if (proc_rank == 0) print *, 'RKCK 2nd time-stage at', rkck_time_tmp
 #endif
-            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(2)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(2)%vf, RKstep)
+            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(2)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, RKstep, time_avg)
+            ! call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(2)%vf, RKstep)
             call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
             if (lag_largestep > 0._wp) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
             if (restart_rkck_step) cycle
@@ -1193,8 +1251,8 @@ contains
 #ifdef DEBUG
             if (proc_rank == 0) print *, 'RKCK 3rd time-stage at', rkck_time_tmp
 #endif
-            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(3)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(3)%vf, RKstep)
+            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(3)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, RKstep, time_avg)
+            ! call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(3)%vf, RKstep)
             call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
             if (lag_largestep > 0._wp) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
             if (restart_rkck_step) cycle
@@ -1207,8 +1265,8 @@ contains
 #ifdef DEBUG
             if (proc_rank == 0) print *, 'RKCK 4th time-stage at', rkck_time_tmp
 #endif
-            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(4)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(4)%vf, RKstep)
+            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(4)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, RKstep, time_avg)
+            ! call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(4)%vf, RKstep)
             call s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts_rkck, lag_largestep)
             if (lag_largestep > 0._wp) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
             if (restart_rkck_step) cycle
@@ -1221,8 +1279,8 @@ contains
 #ifdef DEBUG
             if (proc_rank == 0) print *, 'RKCK 5th time-stage at', rkck_time_tmp
 #endif
-            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(5)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(5)%vf, 5)
+            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(5)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, RKstep, time_avg)
+            ! call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(5)%vf, 5)
             call s_update_tmp_rkck(5, q_cons_ts, rhs_ts_rkck, lag_largestep)
             if (lag_largestep > 0._wp) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
             if (restart_rkck_step) cycle
@@ -1235,8 +1293,8 @@ contains
 #ifdef DEBUG
             if (proc_rank == 0) print *, 'RKCK 6th time-stage at', rkck_time_tmp
 #endif
-            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(6)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg)
-            call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(6)%vf, 6)
+            call s_compute_rhs(q_cons_ts(2)%vf, q_T_sf, q_prim_vf, rhs_ts_rkck(6)%vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, RKstep, time_avg)
+            ! call s_compute_EL_coupled_solver(q_cons_ts(2)%vf, q_prim_vf, rhs_ts_rkck(6)%vf, 6)
             call s_update_tmp_rkck(6, q_cons_ts, rhs_ts_rkck, lag_largestep)
             if (lag_largestep > 0._wp) call s_compute_rkck_dt(lag_largestep, restart_rkck_step)
             if (restart_rkck_step) cycle
@@ -1262,7 +1320,6 @@ contains
         if (hifu_params%sampling) then !HIFU sampling vars
             call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt_did)
         end if
-        call s_compute_bubble_heat_sources_HIFU(dt_did)
         call s_write_void_evol(mytime)
         if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
         if (lag_params%write_bubbles) then

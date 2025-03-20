@@ -597,6 +597,7 @@ contains
             end if
         end if
 
+
         if (file_per_process) then
             if (cfl_dt) then
                 call s_int_to_str(n_start, t_step_start_string)
@@ -1325,13 +1326,13 @@ contains
 
             if (hifu_params%heatSolver) then
                 if (hifu_params%stg3_3d) then
-                    if (mod(t_step - t_step_start, 100) == 0) then !Get temperature probe every 100 t_steps
+                    if (mod(t_step - t_step_start, 1) == 0) then !Get temperature probe every 100 t_steps
                         !$acc update host(q_hifu_3d%vf(hifu_params%T_idx)%sf)
                     else
                         probe_wrt_dv = .false.
                     end if
                 else
-                    !$acc update host(q_hifu(hifu_params%T_idx)%sf)
+                !$acc update host(q_hifu(hifu_params%T_idx)%sf)
                 end if
             else
                 do i = 1, sys_size
@@ -1511,7 +1512,11 @@ contains
                 do i = 1, sys_size_hifu
                     !$acc update host(q_hifu_3d%vf(i)%sf)
                 end do
-                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu_3d%vf)
+                if (hifu_params%cartesian) then
+                    if (proc_rank == 0) call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu_3d%vf)
+                else
+                    call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu_3d%vf)
+                end if
             else
                 do i = 1, sys_size_hifu
                     !$acc update host(q_hifu(i)%sf)
@@ -1802,6 +1807,7 @@ contains
 
         ! Terminating MPI execution environment
         call s_mpi_finalize()
+
     end subroutine s_finalize_modules
 
 end module m_start_up

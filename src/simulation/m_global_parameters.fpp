@@ -473,6 +473,11 @@ module m_global_parameters
     logical :: hifu
     type(hifu_parameters) :: hifu_params    !< HIFU parameters
     integer :: sys_size_hifu
+    integer :: m_hf, n_hf, p_hf !< heat solver cartesian with reduced domain
+    real(wp), target, allocatable, dimension(:) :: x_cb_hf, y_cb_hf, z_cb_hf
+    real(wp), target, allocatable, dimension(:) :: x_cc_hf, y_cc_hf, z_cc_hf
+    real(wp), target, allocatable, dimension(:) :: dx_hf, dy_hf, dz_hf
+    !$acc declare create(x_cb_hf, y_cb_hf, z_cb_hf, x_cc_hf, y_cc_hf, z_cc_hf, dx_hf, dy_hf, dz_hf, m_hf, n_hf, p_hf)
     !$acc declare create(hifu, hifu_params, sys_size_hifu)
 
     !> @}
@@ -775,6 +780,13 @@ contains
         hifu_params%dt_stg3 = dflt_real
         hifu_params%t_step_save_stg3 = dflt_int
         hifu_params%z_max = dflt_real
+        hifu_params%p_cyl = dflt_int
+        hifu_params%xb = dflt_real
+        hifu_params%xe = dflt_real
+        hifu_params%ye = dflt_real
+        hifu_params%cartesian = .false.
+        hifu_params%m = dflt_int
+        hifu_params%n = dflt_int
         hifu_params%p = dflt_int
 
         !Acoustic wave generator (boundary condition)
