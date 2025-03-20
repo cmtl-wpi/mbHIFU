@@ -24,6 +24,8 @@ module m_start_up
 
     use m_mpi_proxy            !< Message passing interface (MPI) module proxy
 
+    use m_mpi_common
+
     use m_variables_conversion !< State variables type conversion procedures
 
     use m_weno                 !< Weighted and essentially non-oscillatory (WENO)
@@ -659,7 +661,7 @@ contains
                                            mpi_p, status, ierr)
                     end do
                 end if
-                
+
 
                 call s_mpi_barrier()
 
@@ -1364,7 +1366,7 @@ contains
         elseif (time_stepper == 3 .and. adap_dt) then
             call s_strang_splitting(t_step, time_avg)
         elseif (time_stepper == 4) then
-            ! (Adaptive) 4th/5th order Runge—Kutta–Cash–Karp (RKCK) time-stepper (Cash J. and Karp A., 1990)         
+            ! (Adaptive) 4th/5th order Runge—Kutta–Cash–Karp (RKCK) time-stepper (Cash J. and Karp A., 1990)
             call s_4th_5th_order_rkck(t_step, time_avg)
         end if
 
@@ -1373,7 +1375,7 @@ contains
         ! Time-stepping loop controls
 
         t_step = t_step + 1
-        
+
     end subroutine s_perform_time_step
 
     subroutine s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, exitFlag)
@@ -1582,6 +1584,8 @@ contains
         call acc_present_dump()
 #endif
 
+
+        call s_initialize_mpi_common_module()
         call s_initialize_mpi_proxy_module()
         call s_initialize_variables_conversion_module()
         if (grid_geometry == 3) call s_initialize_fftw_module()
@@ -1763,7 +1767,7 @@ contains
         !$acc update device(hifu, hifu_params, sys_size_hifu)
 
         !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
-   
+
         !$acc update device(bc_x%vb1, bc_x%vb2, bc_x%vb3, bc_x%ve1, bc_x%ve2, bc_x%ve3)
         !$acc update device(bc_y%vb1, bc_y%vb2, bc_y%vb3, bc_y%ve1, bc_y%ve2, bc_y%ve3)
         !$acc update device(bc_z%vb1, bc_z%vb2, bc_z%vb3, bc_z%ve1, bc_z%ve2, bc_z%ve3)
@@ -1783,8 +1787,8 @@ contains
 
         if(hifu_params%heatSolver .and. hifu_params%stg3_3d) call s_finalize_from_2d_to_3d()
         call s_finalize_time_steppers_module()
-        if (hypoelasticity) call s_finalize_hypoelastic_module() 
-        if (hyperelasticity) call s_finalize_hyperelastic_module() 
+        if (hypoelasticity) call s_finalize_hypoelastic_module()
+        if (hyperelasticity) call s_finalize_hyperelastic_module()
         call s_finalize_derived_variables_module()
         call s_finalize_data_output_module()
         call s_finalize_rhs_module()
@@ -1793,6 +1797,7 @@ contains
         call s_finalize_weno_module()
         call s_finalize_variables_conversion_module()
         if (grid_geometry == 3) call s_finalize_fftw_module
+        call s_finalize_mpi_common_module()
         call s_finalize_mpi_proxy_module()
         call s_finalize_global_parameters_module()
         if (relax) call s_finalize_relaxation_solver_module()

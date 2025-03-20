@@ -1511,8 +1511,7 @@ contains
     subroutine s_rhs_heatEqn(q_cons_vf, pb, mv, t_step)
 
         type(scalar_field), dimension(sys_size_hyd), intent(in) :: q_cons_vf
-        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: pb
-        real(wp), dimension(startx:, starty:, startz:, 1:, 1:), intent(inout) :: mv
+        real(wp), optional, dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: t_step
 
         real(wp) :: CFL_heat, val_tmp, CFL_heat_old, CFL_heat_2, CFL_heat_3, CFL_heat_4

@@ -92,6 +92,8 @@ PRE_PROCESS.update({
     'n_start': ParamType.INT,
     'n_start_old': ParamType.INT,
     'surface_tension': ParamType.LOG,
+    'elliptic_smoothing': ParamType.LOG,
+    'elliptic_smoothing_iters': ParamType.INT,
 })
 
 for ib_id in range(1, 10+1):
@@ -329,7 +331,7 @@ for cmp in ["x", "y", "z"]:
     for prepend in ["domain%beg", "domain%end"]:
         SIMULATION[f"{cmp}_{prepend}"] = ParamType.REAL
 
-for probe_id in range(1,6+1):
+for probe_id in range(1,10+1):
     for cmp in ["x", "y", "z"]:
         SIMULATION[f'probe({probe_id})%{cmp}'] = ParamType.REAL
 

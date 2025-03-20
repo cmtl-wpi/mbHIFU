@@ -309,6 +309,10 @@ module m_global_parameters
     integer :: sys_size_hifu
     integer :: m_hf, n_hf, p_hf
 
+    !> @name Acoustic wave generator (boundary condition)
+    type(acoustic_bc_parameters) :: acoustic_bc_params    !< Acoustic wave parameters
+    real(wp) :: mytime
+
 contains
 
     !> Assigns default values to user inputs prior to reading
@@ -762,7 +766,6 @@ contains
         if (hifu) sys_size_hifu = max(sys_size, 14)
 
 #ifdef MFC_MPI
-
         if (bubbles_lagrange) then
             allocate (MPI_IO_DATA%view(1:sys_size + 1))
             allocate (MPI_IO_DATA%var(1:sys_size + 1))
@@ -841,9 +844,9 @@ contains
         if (precision == 1) then
             allocate (x_cb_s(-1 - offset_x%beg:m + offset_x%end))
             if (n > 0) then
-                allocate (y_cb_s(-1 - offset_x%beg:n + offset_x%end))
+                allocate (y_cb_s(-1 - offset_y%beg:n + offset_y%end))
                 if (p > 0) then
-                    allocate (z_cb_s(-1 - offset_x%beg:m + offset_x%end))
+                    allocate (z_cb_s(-1 - offset_z%beg:p + offset_z%end))
                 end if
             end if
         else
