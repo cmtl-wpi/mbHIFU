@@ -396,8 +396,8 @@ contains
 
                 !$acc parallel loop collapse(3) gang vector default(present)
                 do l = 0, p
-                    do j = hifu_params%mb, hifu_params%me
-                        do k = 0, hifu_params%ne
+                    do j = 0, m
+                        do k = 0, n
                             !Forward euler time scheme, explicit
                             q_hifu(hifu_params%T_idx)%sf(j, k, l) = q_hifu(hifu_params%T_idx)%sf(j, k, l) &
                                                                     + dt*q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)

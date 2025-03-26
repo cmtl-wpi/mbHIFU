@@ -28,8 +28,9 @@ module m_bubbles_EL
     implicit none
 
     !(nBub)
-    integer, allocatable, dimension(:, :) :: lag_id                 !< Global and local IDs
+    integer, allocatable, dimension(:, :) :: lag_id          !< Global and local IDs
     real(wp), allocatable, dimension(:) :: bub_R0            !< Initial bubble radius
+    real(wp), allocatable, dimension(:) :: bub_nb            !< Local bubble density (p' white noise)
     real(wp), allocatable, dimension(:) :: Rmax_stats        !< Maximum radius
     real(wp), allocatable, dimension(:) :: Rmin_stats        !< Minimum radius
     real(wp), allocatable, dimension(:) :: gas_mg            !< Bubble's gas mass
@@ -54,27 +55,27 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:, :, :) :: mtn_dposdt  !< Time derivative of the bubble's position
     real(wp), allocatable, dimension(:, :, :) :: mtn_dveldt  !< Time derivative of the bubble's velocity
 
-    !$acc declare create(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC, bub_dphidt,       &
+    !$acc declare create(lag_id, bub_R0, bub_nb, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC, bub_dphidt,       &
     !$acc gas_p, gas_mv, intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel, mtn_s, intfc_draddt, intfc_dveldt, &
     !$acc gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt)
 
-    real(wp), allocatable, dimension(:, :) :: lag_RKCKcoef   !< RKCK 4th-5th time stepper coefficients
-    integer, private :: lag_num_ts                                  !<  Number of time stages in the time-stepping scheme
+    real(wp), allocatable, dimension(:, :) :: lag_RKCKcoef  !< RKCK 4th-5th time stepper coefficients
+    integer, private :: lag_num_ts                          !<  Number of time stages in the time-stepping scheme
 
     !$acc declare create(lag_RKCKcoef, lag_num_ts)
 
     integer :: nBubs                            !< Number of bubbles in the local domain
-    real(wp) :: Rmax_glb, Rmin_glb       !< Maximum and minimum bubbe size in the local domain
+    real(wp) :: Rmax_glb, Rmin_glb              !< Maximum and minimum bubbe size in the local domain
     type(vector_field) :: q_beta                !< Projection of the lagrangian particles in the Eulerian framework
     integer :: q_beta_idx                       !< Size of the q_beta vector field
 
     !$acc declare create(nBubs, Rmax_glb, Rmin_glb, q_beta, q_beta_idx)
 
-    real(wp), allocatable, dimension(:, :) :: mrmtnt_shell   !< Lipid shell indicator (Marmotant model)
-    real(wp), allocatable, dimension(:) :: mrmtnt_Rbuck   !< Buckling radius (Marmotant model)
-    real(wp), allocatable, dimension(:) :: mrmtnt_Rrupt   !< Rupture radius (Marmotant model)
-    real(wp), allocatable, dimension(:) :: bub_qvis       !< Time-averaged viscous intensity (HIFU)
-    real(wp), allocatable, dimension(:) :: bub_qth        !< Time-averaged thermal intensity (HIFU)
+    real(wp), allocatable, dimension(:, :) :: mrmtnt_shell  !< Lipid shell indicator (Marmotant model)
+    real(wp), allocatable, dimension(:) :: mrmtnt_Rbuck     !< Buckling radius (Marmotant model)
+    real(wp), allocatable, dimension(:) :: mrmtnt_Rrupt     !< Rupture radius (Marmotant model)
+    real(wp), allocatable, dimension(:) :: bub_qvis         !< Time-averaged viscous intensity (HIFU)
+    real(wp), allocatable, dimension(:) :: bub_qth          !< Time-averaged thermal intensity (HIFU)
 
     !$acc declare create(mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth)
 
@@ -124,6 +125,7 @@ contains
 
         @:ALLOCATE(lag_id(1:nBubs_glb, 1:2))
         @:ALLOCATE(bub_R0(1:nBubs_glb))
+        @:ALLOCATE(bub_nb(1:nBubs_glb))
         @:ALLOCATE(Rmax_stats(1:nBubs_glb))
         @:ALLOCATE(Rmin_stats(1:nBubs_glb))
         @:ALLOCATE(gas_mg(1:nBubs_glb))
@@ -291,6 +293,8 @@ contains
         end if
 
         print *, " Lagrange bubbles running, in proc", proc_rank, "number:", bub_id, "/", id
+
+        call s_compute_local_density_number
 
         !$acc update device(bubbles_lagrange, lag_params)
 
@@ -659,6 +663,60 @@ contains
 #endif
 
     end subroutine s_restart_bubbles
+
+    !>  Compute the local number density of each bubble for the p'_cell model as white noise (2D modeling).
+        !!      It is the number of bubbles per volume of mixture in the physical domain (not buffers).
+    subroutine s_compute_local_density_number
+
+        integer :: i, j, k
+        real(wp) :: nb_local
+        real(wp) :: xb_smear, xe_smear
+        real(wp) :: yb_smear, ye_smear
+        real(wp), dimension(3) :: scoord
+        integer, dimension(3) :: cell
+
+        if (num_dims == 3) return
+
+        do j = 1, nBubs
+
+            ! Is the bubble in the physical domain?
+            if (particle_in_domain_physical(mtn_pos(j, 1:3, 1))) then
+
+                ! Find the cell location
+                scoord = mtn_s(j, 1:3, 1)
+                cell(:) = int(scoord(:))
+                do i = 1, num_dims
+                    if (scoord(i) < 0._wp) cell(i) = cell(i) - 1
+                end do
+
+                ! Define smearing boundaries
+                    !   Assuming that the cell is always larger than the bubble, then
+                    !   the smearing volume is constant (3+1+3)x(3+1+3).
+                xb_smear = x_cb((cell(1)-3)-1)
+                xe_smear = x_cb(cell(1)+3)
+                yb_smear = y_cb((cell(2)-3)-1)
+                ye_smear = y_cb(cell(2)+3)
+
+                ! Find bubbles inside the boundaries
+                nb_local = 0._wp
+                do k = 1, nBubs
+                    if ((mtn_pos(k, 1, 1) < xe_smear) .and. (mtn_pos(k, 1, 1) >= xb_smear) .and. &
+                        (mtn_pos(k, 2, 1) < ye_smear) .and. (mtn_pos(k, 2, 1) >= yb_smear)) then
+
+                            nb_local = nb_local + 1._wp
+                    end if
+                end do
+
+                ! Update value
+                bub_nb(j) = nb_local
+
+            end if
+
+        end do
+
+        !$acc update device(bub_nb)
+
+    end subroutine s_compute_local_density_number
 
     !>  Contains the two-way and one-way Euler-Lagrange coupled algorithm, including the bubble dynamics subroutines.
         !! @param q_cons_vf Conservative variables
@@ -2297,6 +2355,7 @@ contains
         end if
         @:DEALLOCATE(lag_id)
         @:DEALLOCATE(bub_R0)
+        @:DEALLOCATE(bub_nb)
         @:DEALLOCATE(Rmax_stats)
         @:DEALLOCATE(Rmin_stats)
         @:DEALLOCATE(gas_mg)

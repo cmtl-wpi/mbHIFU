@@ -180,7 +180,7 @@ contains
                 if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3 -> restarting'
             end if
 
-            if (.not. hifu_params%cartesian) call s_reduce_heat_domain()
+            if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
 
             return
         end if
@@ -278,7 +278,7 @@ contains
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (2D)'
                 end if
 
-                if (.not. hifu_params%cartesian) call s_reduce_heat_domain()
+                if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
 
                 !$acc update device(hifu_params, dt)
 
@@ -323,7 +323,7 @@ contains
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (2D)'
                 end if
 
-                if (.not. hifu_params%cartesian) call s_reduce_heat_domain()
+                if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
 
                 !$acc update device(hifu_params, dt)
 
@@ -1637,8 +1637,8 @@ contains
 
                 !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step)
                 do l = 0, p
-                    do j = hifu_params%mb, hifu_params%me
-                        do k = 0, hifu_params%ne
+                    do j = 0, m
+                        do k = 0, n
 
                             !<  Zeroing RHS_heat
                             q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
@@ -1707,6 +1707,7 @@ contains
 
                             ! Calculate max CFL
                             if (t_step == 0) then
+                                CFL_heat = -100._wp
                                 CFL_heat = max(CFL_heat, tdiff*dt/(dx(j)**2_wp))
                                 CFL_heat = max(CFL_heat, tdiff*dt/(dy(k)**2_wp))
                             end if
@@ -1714,6 +1715,8 @@ contains
                         end do
                     end do
                 end do
+
+                if (proc_rank==0 .and. t_step == 0) print*, 'Max CFL:', CFL_heat
 
                 !< 3D Cylindrical rhs
             else
