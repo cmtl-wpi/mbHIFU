@@ -461,6 +461,57 @@ contains
 
     end function f_bpres_dot
 
+    function f_pres_stochastic(fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn)
+        !$acc routine seq
+        real(wp), intent(in) :: fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson
+        !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
+
+        real(wp) :: f_pres_stochastic
+        real(wp) :: constant_term, k, angFreq, rndPhase, A_k_sqrd
+        integer :: i
+
+        f_pres_stochastic = 0._wp
+
+        constant_term = (fnoise_constant/(0.5_wp*flambda_c*sqrt(2_wp*pi)))
+
+        if (constant_term <= 0._wp) return ! Avoid complex numbers when taking squared root of negative A_k_sqrd
+
+        k = 0._wp
+        do i = 1, num_noise
+            rndPhase = f_random_normal(0.5_wp*pi, 1.0_wp, 0._wp, 2._wp*pi) ! mean, dev, min, max
+            A_k_sqrd = constant_term * exp(-0.5_wp*((2._wp*pi/k - flambda_c)/(0.5_wp*flambda_c))**2._wp)
+            f_pres_stochastic = f_pres_stochastic + sqrt(A_k_sqrd) * fdk * cos(k*floc - k*fCson*ftime + rndPhase)!+ fPhase_rn(i))
+            if (f_pres_stochastic /= f_pres_stochastic) then
+                print*, i, k, A_k_sqrd, sqrt(A_k_sqrd), f_pres_stochastic
+                stop "f_pres_stochastic is NaN"
+            end if
+            k = k + fdk
+        end do
+
+    end function f_pres_stochastic
+
+    function f_random_normal(fmean, fdev, fmin, fmax)
+        !$acc routine seq
+        real(wp), intent(in) :: fmean, fdev, fmin, fmax
+
+        real(wp) :: f_random_normal
+        real(wp) :: num_rn1, num_rn2
+
+        do while (.true.)
+
+            call random_number(num_rn1)
+            num_rn1 = 1._wp - num_rn1
+            call random_number(num_rn2)
+            num_rn2 = 1._wp - num_rn2
+
+            f_random_normal = fdev*sqrt(-2._wp*log(num_rn1))*cos(2._wp*pi*num_rn2) + fmean
+
+            if (f_random_normal >= fmin .and. f_random_normal <= fmax) exit
+
+        end do
+
+    end function f_random_normal
+
     !> Adaptive time stepping routine for subgrid bubbles
         !!  (See Heirer, E. Hairer S.P.Nørsett G. Wanner, Solving Ordinary
         !!  Differential Equations I, Chapter II.4)
@@ -488,6 +539,7 @@ contains
         fntait, fBtait, f_bub_adv_src, f_divu, &
         bub_id, fmass_v, fmass_n, fbeta_c, &
         fbeta_t, fCson, fshell, fRbuck, fRrupt, &
+        fnoise_constant, flambda_c, fdk, floc, ftime, &!fPhase_rn, &
         fQvis, fQth)
 #ifdef _CRAYFTN
         !DIR$ INLINEALWAYS s_advance_step
@@ -499,6 +551,8 @@ contains
         real(wp), intent(in) :: fntait, fBtait, f_bub_adv_src, f_divu
         integer, intent(in) :: bub_id
         real(wp), intent(in) :: fmass_n, fbeta_c, fbeta_t, fCson, fRbuck, fRrupt
+        real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
+        !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
         real(wp), intent(out) :: fQvis, fQth
 
         real(wp) :: tol
@@ -537,6 +591,7 @@ contains
                        fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
+                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new, & !fPhase_rn&
                        fCson, fshell, fRbuck, h, &
                        myR_tmp1, myV_tmp1, myPb_tmp1, myMv_tmp1)
 
@@ -545,6 +600,7 @@ contains
                        fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
+                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new, & !fPhase_rn&
                        fCson, fshell, fRbuck, 0.5_wp*h, &
                        myR_tmp2, myV_tmp2, myPb_tmp2, myMv_tmp2)
 
@@ -552,6 +608,7 @@ contains
                        fRho, fP, myR_tmp2(4), myV_tmp2(4), fR0, myPb_tmp2(4), fpbdot, alf, &
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, myMv_tmp2(4), fmass_n, fbeta_c, fbeta_t, &
+                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new + 0.5_wp*h, & !fPhase_rn&
                        fCson, fshell, fRbuck, 0.5_wp*h, &
                        myR_tmp2, myV_tmp2, myPb_tmp2, myMv_tmp2)
 
@@ -747,6 +804,7 @@ contains
     function f_advance_substep(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                                 fntait, fBtait, f_bub_adv_src, f_divu, &
                                 bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
+                                fnoise_constant, flambda_c, fdk, floc, ftime, & !fPhase_rn &
                                 fCson, fshell, fRbuck, h, &
                                 myR_tmp, myV_tmp, myPb_tmp, myMv_tmp)
         !$acc routine seq
@@ -754,15 +812,22 @@ contains
         real(wp), intent(IN) :: fntait, fBtait, f_bub_adv_src, f_divu, h
         integer, intent(IN) :: bub_id
         real(wp), intent(IN) :: fmass_v, fmass_n, fbeta_c, fbeta_t, fCson, fshell, fRbuck
+        real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
+        !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
         real(wp), dimension(4), intent(OUT) :: myR_tmp, myV_tmp, myPb_tmp, myMv_tmp
         real(wp), dimension(4) :: myA_tmp, mydPbdt_tmp, mydMvdt_tmp
         real(wp) :: err_R, err_V, f_advance_substep
 
-        real(wp) :: myconc_v, myVapFlux, myR_m, mygamma_m, Pb_tmp, Pbdot_tmp
+        real(wp) :: myconc_v, myVapFlux, myR_m, mygamma_m, Pb_tmp, Pbdot_tmp, Pnoise_tmp, Pinf
 
         Pb_tmp = fpb
         Pbdot_tmp = fpbdot
-
+        Pinf = fP
+        if (bubbles_lagrange .and. num_dims == 2) then
+            Pnoise_tmp = f_pres_stochastic(fP, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn)
+            Pinf = fP + Pnoise_tmp
+        end if
+        
         ! Stage 0
         myR_tmp(1) = fR
         myV_tmp(1) = fV
@@ -776,7 +841,7 @@ contains
             Pb_tmp = myPb_tmp(1)
             Pbdot_tmp = mydPbdt_tmp(1)
         end if
-        myA_tmp(1) = f_rddot(fRho, fP, myR_tmp(1), myV_tmp(1), fR0, &
+        myA_tmp(1) = f_rddot(fRho, Pinf, myR_tmp(1), myV_tmp(1), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
                              fCson, fshell, fRbuck)
@@ -794,7 +859,7 @@ contains
             Pb_tmp = myPb_tmp(2)
             Pbdot_tmp = mydPbdt_tmp(2)
         end if
-        myA_tmp(2) = f_rddot(fRho, fP, myR_tmp(2), myV_tmp(2), fR0, &
+        myA_tmp(2) = f_rddot(fRho, Pinf, myR_tmp(2), myV_tmp(2), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
                              fCson, fshell, fRbuck)
@@ -812,7 +877,7 @@ contains
             Pb_tmp = myPb_tmp(3)
             Pbdot_tmp = mydPbdt_tmp(3)
         end if
-        myA_tmp(3) = f_rddot(fRho, fP, myR_tmp(3), myV_tmp(3), fR0, &
+        myA_tmp(3) = f_rddot(fRho, Pinf, myR_tmp(3), myV_tmp(3), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
                              fCson, fshell, fRbuck)
@@ -830,7 +895,7 @@ contains
             Pb_tmp = myPb_tmp(4)
             Pbdot_tmp = mydPbdt_tmp(4)
         end if
-        myA_tmp(4) = f_rddot(fRho, fP, myR_tmp(4), myV_tmp(4), fR0, &
+        myA_tmp(4) = f_rddot(fRho, Pinf, myR_tmp(4), myV_tmp(4), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
                              fCson, fshell, fRbuck)

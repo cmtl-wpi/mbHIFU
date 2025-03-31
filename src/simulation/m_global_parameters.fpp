@@ -731,6 +731,7 @@ contains
         lag_params%write_bubbles = .false.
         lag_params%write_bubbles_stats = .false.
         lag_params%nBubs_glb = dflt_int
+        lag_params%write_only_bub_id = dflt_int
         lag_params%epsilonb = 1._wp
         lag_params%charwidth = dflt_real
         lag_params%valmaxvoid = dflt_real

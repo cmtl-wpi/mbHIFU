@@ -410,6 +410,7 @@ module m_derived_types
         logical :: write_bubbles            !< Write files to track the bubble evolution each time step
         logical :: write_bubbles_stats      !< Write the maximum and minimum radius of each bubble
         integer :: nBubs_glb                !< Global number of bubbles
+        integer :: write_only_bub_id        !< Write to track a unique bubble with the given id
         real(wp) :: epsilonb         !< Standard deviation scaling for the gaussian function
         real(wp) :: charwidth        !< Domain virtual depth (z direction, for 2D simulations)
         real(wp) :: valmaxvoid       !< Maximum void fraction permitted

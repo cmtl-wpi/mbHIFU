@@ -317,10 +317,12 @@ contains
         print *, 'Stretched grid: dx min, dx max - x grid: ', minval(dxDV(:)), maxval(dxDV(:))
         print *, 'Stretched grid: loc dx min, loc dx max - x grid: ', x_cb_glb(minloc(dxDV(:)) - 1), x_cb_glb(maxloc(dxDV(:)) - 1)
         print *, 'Stretched grid: dx m=0, dx m=m_glb - x grid: ', dxDV(0), dxDV(m_glb)
+        print *, 'Stretched grid: x-boundaries: ', x_cb_glb(-1), x_cb_glb(m)
 
         print *, 'Stretched grid: dy min, dy max - y grid: ', minval(dyDV(:)), maxval(dyDV(:))
         print *, 'Stretched grid: loc dy min, loc dy max - y grid: ', y_cb_glb(minloc(dyDV(:)) - 1), y_cb_glb(maxloc(dyDV(:)) - 1)
         print *, 'Stretched grid: dy n=0, dy n=n_glb - y grid: ', dyDV(0), dyDV(n_glb)
+        print *, 'Stretched grid: y-boundaries: ', y_cb_glb(-1), y_cb_glb(n)
 
         ! Write cell boundary locations to grid data files
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'x_cb.dat'

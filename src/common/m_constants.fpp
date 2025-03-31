@@ -47,7 +47,8 @@ module m_constants
 
     ! Lagrange bubbles constants
     integer, parameter :: mapCells = 3 !< Number of cells around the bubble where the smoothening function will have effect
-    real(wp), parameter :: R_uni = 8314._wp ! Universal gas constant - J/kmol/K
+    real(wp), parameter :: R_uni = 8314._wp !< Universal gas constant - J/kmol/K
+    integer, parameter :: num_noise = 100 !< Number of fluctuations in the stochastic clousure to find the corrected Pinf (2D model reduction)
 
     ! RKCK constants
     integer, parameter :: num_ts_rkck = 6 !< Number of time-stages in the RKCK stepper
@@ -77,9 +78,6 @@ module m_constants
     real(wp), parameter :: SHRNKDT = 0.5_wp !< Factor to reduce dt due to negative bubble radius
     real(wp), parameter :: ERRCON = 1.89e-4_wp !< Limit to slightly increase dt when truncation error is between ERRCON and 1
     real(wp), parameter :: PGROW = -0.2_wp !< Factor to increase dt when truncation error is between ERRCON and 1
-
-    !HIFU constants
-    !integer, parameter :: p_hifu = 100 !< (ideal: 120) Number of cells in the azimuthal angle direction (from 2d axisymmetric to 3d cylindrical)
 
     ! System constants
     integer, parameter :: CASE_FILE_ERROR_CODE = 22

@@ -1053,12 +1053,12 @@ contains
                 if (hifu_params%sampling) then !HIFU sampling vars
                     call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
                 end if
-                call s_write_void_evol(mytime)
                 if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
                     !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
                     call s_write_lag_particles(mytime)
                 end if
+                call s_write_void_evol(mytime)
             end if
 
         end if
@@ -1320,12 +1320,12 @@ contains
         if (hifu_params%sampling) then !HIFU sampling vars
             call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt_did)
         end if
-        call s_write_void_evol(mytime)
         if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
         if (lag_params%write_bubbles) then
             !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
             call s_write_lag_particles(mytime)
         end if
+        call s_write_void_evol(mytime)
 
         if (run_time_info) then
             call s_write_run_time_information(q_prim_vf, t_step)

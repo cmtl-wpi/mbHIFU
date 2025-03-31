@@ -173,6 +173,8 @@ contains
 
         integer :: dmBub_id !< Dummy variables for unified subgrid bubble subroutines
         real(wp) :: dmMass_v, dmMass_n, dmBeta_c, dmBeta_t, dmCson, dmshell, dmRbuck, dmRrupt, dmQvis, dmQth
+        real(wp) :: dmNoise_constant, dmLambda_c, dmdk, dmLoc, dmTime
+        ! real(wp), dimension(num_noise) :: dmPhase_rn
 
         !$acc parallel loop collapse(3) gang vector default(present)
         do l = 0, p
@@ -289,6 +291,7 @@ contains
                                                 bub_adv_src(j, k, l), divu%sf(j, k, l), &
                                                 dmBub_id, dmMass_v, dmMass_n, dmBeta_c, &
                                                 dmBeta_t, dmCson, dmshell, dmRbuck, dmRrupt, &
+                                                dmNoise_constant, dmLambda_c, dmdk, dmLoc, dmTime, &!dmPhase_rn, &
                                                 dmQvis, dmQth)
 
                             q_cons_vf(rs(q))%sf(j, k, l) = nbub*myR
