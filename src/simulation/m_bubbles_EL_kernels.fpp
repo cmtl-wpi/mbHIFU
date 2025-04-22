@@ -166,7 +166,7 @@ contains
 
                 !Product of two smeared functions
                 !Update void fraction * time derivative of void fraction
-                if (lag_params%cluster_type >= 4) then
+                if (p == 0) then
                     addFun3 = (strength_vol*strength_vel)/Vol
                     !$acc atomic update
                     updatedvar%vf(5)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(5)%sf(cell(1), cell(2), cell(3)) + addFun3
@@ -238,7 +238,7 @@ contains
                             nodecoord(2) = y_cc(cellaux(2))
                             if (p > 0) nodecoord(3) = z_cc(cellaux(3))
                             call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
-                            if (lag_params%cluster_type >= 4) call s_applygaussian(center, cellaux, nodecoord, stddsv, 1._wp, func2)
+                            if (p == 0) call s_applygaussian(center, cellaux, nodecoord, stddsv, 1._wp, func2)
 
                             ! Relocate cells for bubbles intersecting symmetric boundaries
                             if (bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. bczb == -2 .or. bcze == -2) then
@@ -269,7 +269,7 @@ contains
 
                         !Product of two smeared functions
                         !Update void fraction * time derivative of void fraction
-                        if (lag_params%cluster_type >= 4) then
+                        if (p == 0) then
                             addFun3 = func2*strength_vol*strength_vel
                             !$acc atomic update
                             updatedvar%vf(5)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
@@ -737,7 +737,7 @@ contains
                     do j = 1, buff_size
                         updatedvar%vf(1)%sf(-j, k, l) = updatedvar%vf(1)%sf(j - 1, k, l)
                         updatedvar%vf(2)%sf(-j, k, l) = updatedvar%vf(2)%sf(j - 1, k, l)
-                        if (lag_params%cluster_type >= 4) then
+                        if (p == 0) then
                             updatedvar%vf(5)%sf(-j, k, l) = updatedvar%vf(5)%sf(j - 1, k, l)
                         end if
                     end do
@@ -751,7 +751,7 @@ contains
                     do j = 1, buff_size
                         updatedvar%vf(1)%sf(m + j, k, l) = updatedvar%vf(1)%sf(m - (j - 1), k, l)
                         updatedvar%vf(2)%sf(m + j, k, l) = updatedvar%vf(2)%sf(m - (j - 1), k, l)
-                        if (lag_params%cluster_type >= 4) then
+                        if (p == 0) then
                             updatedvar%vf(5)%sf(m + j, k, l) = updatedvar%vf(5)%sf(m - (j - 1), k, l)
                         end if
                     end do
@@ -767,7 +767,7 @@ contains
                     do l = -buff_size, m + buff_size
                         updatedvar%vf(1)%sf(l, -j, k) = updatedvar%vf(1)%sf(l, j - 1, k)
                         updatedvar%vf(2)%sf(l, -j, k) = updatedvar%vf(2)%sf(l, j - 1, k)
-                        if (lag_params%cluster_type >= 4) then
+                        if (p == 0) then
                             updatedvar%vf(5)%sf(l, -j, k) = updatedvar%vf(5)%sf(l, j - 1, k)
                         end if
                     end do
@@ -781,7 +781,7 @@ contains
                     do l = -buff_size, m + buff_size
                         updatedvar%vf(1)%sf(l, n + j, k) = updatedvar%vf(1)%sf(l, n - (j - 1), k)
                         updatedvar%vf(2)%sf(l, n + j, k) = updatedvar%vf(2)%sf(l, n - (j - 1), k)
-                        if (lag_params%cluster_type >= 4) then
+                        if (p == 0) then
                             updatedvar%vf(5)%sf(l, n + j, k) = updatedvar%vf(5)%sf(l, n - (j - 1), k)
                         end if
                     end do
@@ -798,7 +798,7 @@ contains
                         do k = -buff_size, m + buff_size
                             updatedvar%vf(1)%sf(k, l, -j) = updatedvar%vf(1)%sf(k, l, j - 1)
                             updatedvar%vf(2)%sf(k, l, -j) = updatedvar%vf(2)%sf(k, l, j - 1)
-                            if (lag_params%cluster_type >= 4) then
+                            if (p == 0) then
                                 updatedvar%vf(5)%sf(k, l, -j) = updatedvar%vf(5)%sf(k, l, j - 1)
                             end if
                         end do
@@ -812,7 +812,7 @@ contains
                         do k = -buff_size, m + buff_size
                             updatedvar%vf(1)%sf(k, l, p + j) = updatedvar%vf(1)%sf(k, l, p - (j - 1))
                             updatedvar%vf(2)%sf(k, l, p + j) = updatedvar%vf(2)%sf(k, l, p - (j - 1))
-                            if (lag_params%cluster_type >= 4) then
+                            if (p == 0) then
                                 updatedvar%vf(5)%sf(k, l, p + j) = updatedvar%vf(5)%sf(k, l, p - (j - 1))
                             end if
                         end do

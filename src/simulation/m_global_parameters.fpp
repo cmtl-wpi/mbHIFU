@@ -741,6 +741,11 @@ contains
         lag_params%Thost = dflt_real
         lag_params%x0 = dflt_real
         lag_params%diffcoefvap = dflt_real
+        lag_params%pnoise_dev = 0._wp
+        lag_params%pnoise_scale = 1._wp
+        lag_params%interaction_model = 1
+        lag_params%influence = 3
+        lag_params%scaleVirtualSphere = 2._wp
         !Marmottant model
         lag_params%coatedBub_model = .false.
         lag_params%ss0_ctdBub = dflt_real

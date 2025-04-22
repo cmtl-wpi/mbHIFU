@@ -156,12 +156,14 @@ contains
                 call MPI_BCAST(lag_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
-            #:for VAR in ['solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb', 'write_only_bub_id']
+            #:for VAR in ['solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb', &
+                & 'write_only_bub_id', 'interaction_model', 'influence']
                 call MPI_BCAST(lag_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
             #:for VAR in [ 'c0', 'rho0', 'T0', 'x0', 'diffcoefvap', 'epsilonb','charwidth', &
-                & 'valmaxvoid', 'Thost', 'ss0_ctdBub', 'srfDilVsc_ctdBub', 'srfElast_ctdBub']
+                & 'valmaxvoid', 'Thost', 'ss0_ctdBub', 'srfDilVsc_ctdBub', 'srfElast_ctdBub', &
+                & 'pnoise_dev', 'pnoise_scale', 'scaleVirtualSphere']
                 call MPI_BCAST(lag_params%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 

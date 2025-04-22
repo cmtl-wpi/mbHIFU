@@ -256,12 +256,13 @@ for var in [ 'heatTransfer_model', 'massTransfer_model', 'pressure_corrector',
              'write_bubbles', 'write_bubbles_stats', 'coatedBub_model']:
     SIMULATION[f'lag_params%{var}'] = ParamType.LOG
 
-for var in [ 'solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb', 'write_only_bub_id']:
+for var in [ 'solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb', 'write_only_bub_id', 
+            'interaction_model', 'influence']:
     SIMULATION[f'lag_params%{var}'] = ParamType.INT
 
 for var in [ 'epsilonb', 'valmaxvoid', 'charwidth', 'diffcoefvap',
             'c0', 'rho0', 'T0', 'x0', 'Thost', 'ss0_ctdBub', 'srfDilVsc_ctdBub',
-             'srfElast_ctdBub' ]:
+             'srfElast_ctdBub', 'pnoise_dev', 'pnoise_scale', 'scaleVirtualSphere']:
     SIMULATION[f'lag_params%{var}'] = ParamType.REAL
 
 for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',

@@ -422,6 +422,11 @@ module m_derived_types
         real(wp) :: ss0_ctdBub       !< Surface tension of the lipid-coated bubble when R=R0
         real(wp) :: srfDilVsc_ctdBub !< Surface dilatation viscosity of the lipid monolayer
         real(wp) :: srfElast_ctdBub  !< Surface elasticity of the lipid monolayer
+        real(wp) :: pnoise_dev       !< 2D noise pressure (standard deviation for random generator)
+        real(wp) :: pnoise_scale     !< 2D noise pressure (scaling Pnoise)
+        integer :: interaction_model !< 1: kazuki's model, 2: Aditya's model
+        integer :: influence         !< Number of cells around the bubble that limits the interacton volume
+        real(wp) :: scaleVirtualSphere !< Extract pinf from the cells that intersect the surface of the virtual sphere.
 
     end type bubbles_lagrange_parameters
 

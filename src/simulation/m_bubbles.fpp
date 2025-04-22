@@ -40,13 +40,15 @@ contains
         !!  @param fCson Speed of sound from fP (EL)
         !!  @param fshell Shell switch, Marmottant model (EL)
         !!  @param fRbuck Buckling radius, Marmottant model (EL)
-    function f_rddot(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, fntait, fBtait, f_bub_adv_src, f_divu, fCson, fshell, fRbuck)
+    function f_rddot(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, fntait, fBtait, f_bub_adv_src, f_divu, fCson, fInt, fshell, fRbuck, fRcell, fPrints)
         !$acc routine seq
         real(wp), intent(in) :: fRho, fP, fR, fV, fR0, fpb, fpbdot, alf
         real(wp), intent(in) :: fntait, fBtait, f_bub_adv_src, f_divu
-        real(wp), intent(in) :: fshell, fRbuck, fCson
+        real(wp), intent(in) :: fshell, fRbuck, fCson, fInt, fRcell
+        real(wp), dimension(5), intent(inout) :: fPrints
 
         real(wp) :: fCpbw, fCpinf, fCpinf_dot, fH, fHdot, c_gas, c_liquid
+        real(wp) :: pout
         real(wp) :: f_rddot
 
         if (bubble_model == 1) then
@@ -65,9 +67,11 @@ contains
             if (bubbles_euler) then
                 c_liquid = sqrt(fntait*(fP + fBtait)/(fRho*(1._wp - alf)))
             else
+                pout = f_pout(fpbdot, fP, fCpbw, fRho, fR, fV, fshell, fRcell)
+                fCpinf = fCpinf - pout
                 c_liquid = fCson
             end if
-            f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid)
+            f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid, fInt, fshell, fRbuck, fPrints)
         else if (bubble_model == 3) then
             ! Rayleigh-Plesset bubbles
             fCpbw = f_cpbw_KM(fR0, fR, fV, fpb)
@@ -263,6 +267,7 @@ contains
         real(wp), intent(in), optional :: fshell, fRbuck
 
         real(wp) :: f_cpbw_KM
+        real(wp) :: ss_mod
 
         if (polytropic) then
             f_cpbw_KM = Ca*((fR0/fR)**(3._wp*gam)) - Ca + 1._wp
@@ -274,18 +279,11 @@ contains
 
         if (.not. f_is_default(Re_inv)) f_cpbw_KM = f_cpbw_KM - 4._wp*Re_inv*fV/fR
 
-        !Marmmotant model for lipid coated bubbles
-        if (lag_params%coatedBub_model) then
-            if (fshell == 1._wp) then
-                if (fR <= fRbuck) then  !Buckling regime
-                    f_cpbw_KM = f_cpbw_KM - 4._wp*lag_params%srfDilVsc_ctdBub*fV/(fR**2._wp)
-                else                    !Elastic regime
-                    f_cpbw_KM = f_cpbw_KM - 2._wp*(lag_params%srfElast_ctdBub*((fR/fRbuck)**2._wp - 1._wp))/fR &
-                                - 4._wp*lag_params%srfDilVsc_ctdBub*fV/(fR**2._wp)
-                end if
-            elseif (fshell == 0._wp) then   !Rupture regime
-                f_cpbw_KM = f_cpbw_KM - 2._wp/(fR*Web)
-            end if
+        ! Coated bubbles (buckling and elastic regimes)
+        if (bubbles_lagrange .and. fshell == 1._wp) then
+            ss_mod = 0._wp
+            if (fR > fRbuck) ss_mod = lag_params%srfElast_ctdBub*((fR/fRbuck)**2._wp - 1._wp)
+            f_cpbw_KM = f_cpbw_KM - 2._wp*ss_mod/fR - 4._wp*lag_params%srfDilVsc_ctdBub*fV/(fR**2._wp)
         else
             if (.not. f_is_default(Web)) f_cpbw_KM = f_cpbw_KM - 2._wp/(fR*Web)
         end if
@@ -301,12 +299,13 @@ contains
         !!  @param fV Current bubble velocity
         !!  @param fR0 Equilibrium bubble radius
         !!  @param fC Current sound speed
-    function f_rddot_KM(fpbdot, fCp, fCpbw, fRho, fR, fV, fR0, fC)
+    function f_rddot_KM(fpbdot, fCp, fCpbw, fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck, fPrints)
         !$acc routine seq
         real(wp), intent(in) :: fpbdot, fCp, fCpbw
-        real(wp), intent(in) :: fRho, fR, fV, fR0, fC
+        real(wp), intent(in) :: fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck
+        real(wp), dimension(5), intent(inout) :: fPrints
 
-        real(wp) :: tmp1, tmp2, cdot_star
+        real(wp) :: tmp1, tmp2, denom, cdot_star, ss_mod
         real(wp) :: f_rddot_KM
 
         if (polytropic) then
@@ -317,22 +316,41 @@ contains
             cdot_star = fpbdot
         end if
 
-        if (.not. bubbles_lagrange) then
+        tmp1 = fV/fC
+        denom = fR*(1._wp - tmp1)
+
+        ! Coated bubbles
+        if (bubbles_lagrange .and. fshell == 1._wp) then
+            ss_mod = 0._wp
+            if (fR > fRbuck) then ! Elastic regime
+                ss_mod = lag_params%srfElast_ctdBub*((fR/fRbuck)**2._wp - 1._wp)
+                cdot_star = cdot_star - 4._wp*lag_params%srfElast_ctdBub*fV/fRbuck**2._wp
+            end if
+            denom = denom + 4._wp*lag_params%srfDilVsc_ctdBub/(fRho*fC*fR)
+            cdot_star = cdot_star + 2._wp*ss_mod*fV/(fR**2._wp) + &
+                                    8._wp*lag_params%srfDilVsc_ctdBub*(fV**2._wp)/fR**3._wp
+        else
             if (.not. f_is_default(Web)) cdot_star = cdot_star + (2._wp/Web)*fV/(fR**2._wp)
-            if (.not. f_is_default(Re_inv)) cdot_star = cdot_star + 4._wp*Re_inv*((fV/fR)**2._wp)
         end if
 
-        tmp1 = fV/fC
+        if (.not. f_is_default(Re_inv)) cdot_star = cdot_star + 4._wp*Re_inv*((fV/fR)**2._wp)
+        
         tmp2 = 1.5_wp*(fV**2._wp)*(tmp1/3._wp - 1._wp) + &
                (1._wp + tmp1)*(fCpbw - fCp)/fRho + &
                cdot_star*fR/(fRho*fC)
 
-        if (bubbles_lagrange .or. f_is_default(Re_inv)) then
-            f_rddot_KM = tmp2/(fR*(1._wp - tmp1))
-        else
-            f_rddot_KM = tmp2/(fR*(1._wp - tmp1) + 4._wp*Re_inv/(fRho*fC))
-        end if
+        if (lag_params%interaction_model == 2) tmp2 = tmp2 + fInt
 
+        if (.not. f_is_default(Re_inv)) denom = denom + 4._wp*Re_inv/(fRho*fC)
+
+        f_rddot_KM = tmp2/denom
+
+        fPrints(1) = 1.5_wp*(fV**2._wp)*(tmp1/3._wp - 1._wp) + (1._wp + tmp1)*(fCpbw - fCp)/fRho
+        fPrints(2) = cdot_star*fR/(fRho*fC)
+        fPrints(3) = fR/(fRho*fC)
+        fPrints(4) = fCp
+        fPrints(5) = fInt
+        
     end function f_rddot_KM
 
     !>  Subroutine that computes bubble wall properties for vapor bubbles
@@ -461,56 +479,123 @@ contains
 
     end function f_bpres_dot
 
-    function f_pres_stochastic(fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn)
+        !!  @param fpbdot Time-derivative of internal bubble pressure
+        !!  @param fCp Driving pressure
+        !!  @param fCpbw Bubble wall pressure
+        !!  @param fRho Current density
+        !!  @param fR Current bubble radius
+        !!  @param fV Current bubble velocity
+        !!  @param fR0 Equilibrium bubble radius
+        !!  @param fC Current sound speed
+    function f_pout(fpbdot, fCp, fCpbw, fRho, fR, fV, fshell, fRcell)
         !$acc routine seq
-        real(wp), intent(in) :: fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson
-        !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
+        real(wp), intent(in) :: fpbdot, fCp, fCpbw, fRho, fR, fV, fRcell, fshell
+        real(wp) :: f_pout, f_pout_2
 
-        real(wp) :: f_pres_stochastic
-        real(wp) :: constant_term, k, angFreq, rndPhase, A_k_sqrd
-        integer :: i
+        real(wp) :: c1, c2
+        real(wp) :: c1_dot, c2_dot
+        real(wp) :: aux, denom, ks, dphidt
+        real(wp) :: a1, a2, a3
 
-        f_pres_stochastic = 0._wp
+        f_pout = 0._wp
 
-        constant_term = (fnoise_constant/(0.5_wp*flambda_c*sqrt(2_wp*pi)))
+        if (.not. lag_params%pressure_corrector) return
+        if (.not. lag_params%interaction_model==1) return
+        if (p == 0) return
 
-        if (constant_term <= 0._wp) return ! Avoid complex numbers when taking squared root of negative A_k_sqrd
+        !Find Pout to modif Pinf
+        aux = fRcell**3._wp - fR**3._wp
+        c2 = 1.5_wp*(fR**3._wp)*(1._wp - fR/fRcell)/aux
+        c1 = 1.5_wp*(fR*(fRcell**2._wp - fR**2._wp))/aux
 
-        k = 0._wp
-        do i = 1, num_noise
-            rndPhase = f_random_normal(0.5_wp*pi, 1.0_wp, 0._wp, 2._wp*pi) ! mean, dev, min, max
-            A_k_sqrd = constant_term * exp(-0.5_wp*((2._wp*pi/k - flambda_c)/(0.5_wp*flambda_c))**2._wp)
-            f_pres_stochastic = f_pres_stochastic + sqrt(A_k_sqrd) * fdk * cos(k*floc - k*fCson*ftime + rndPhase)!+ fPhase_rn(i))
-            if (f_pres_stochastic /= f_pres_stochastic) then
-                print*, i, k, A_k_sqrd, sqrt(A_k_sqrd), f_pres_stochastic
-                stop "f_pres_stochastic is NaN"
-            end if
-            k = k + fdk
-        end do
+        dphidt = (fCp-fCpbw)/fRho - (c2 - 0.5_wp)*fV**2._wp
+        dphidt = dphidt/(1._wp - c1)
 
-    end function f_pres_stochastic
+        f_pout = fRho*(c2*fV**2._wp - c1*dphidt)    ! p_inf = pcell - pout
 
-    function f_random_normal(fmean, fdev, fmin, fmax)
-        !$acc routine seq
-        real(wp), intent(in) :: fmean, fdev, fmin, fmax
+        f_pout_2 = fCp - fCpbw - (c2-0.5_wp)*fRho*fV**2._wp
+        f_pout_2 = f_pout_2/(1._wp-c1)
 
-        real(wp) :: f_random_normal
-        real(wp) :: num_rn1, num_rn2
+        f_pout = -f_pout_2 !+ 0.5_wp*fRho*fV**2._wp
 
-        do while (.true.)
+        ! !Find Pinf_dot
+        ! c1_dot = 2._wp*c1 - 3._wp + (fRcell/fR)**2._wp
+        ! c1_dot = c1_dot*1.5_wp*(fV*fR**2._wp)/aux
+        ! c2_dot = fV/fR + (fV*fR**2._wp)/aux
+        ! c2_dot = c2_dot*3._wp*c2 - 1.5_wp*(fV*fR**3._wp)/(fRcell*aux)
 
-            call random_number(num_rn1)
-            num_rn1 = 1._wp - num_rn1
-            call random_number(num_rn2)
-            num_rn2 = 1._wp - num_rn2
+        ! ks = lag_params%srfDilVsc_ctdBub
 
-            f_random_normal = fdev*sqrt(-2._wp*log(num_rn1))*cos(2._wp*pi*num_rn2) + fmean
+        ! a1 = fV*(1._wp - 2._wp*c2) 
+        ! if (.not. f_is_default(Re_inv)) a1 = a1 + 4._wp*Re_inv/(fRho*fR)
+        ! if (fshell == 1._wp) a1 = a1 + 4._wp*ks/(fRho*fR**2._wp)
+        ! a1 = a1/(1._wp - c1)
 
-            if (f_random_normal >= fmin .and. f_random_normal <= fmax) exit
+        ! a2 = -fpbdot
+        ! if (.not. f_is_default(Re_inv)) a2 = a2 - 4._wp*Re_inv*(fV/fR)**2._wp
+        ! if (.not. f_is_default(Web)) a2 = a2 - (2._wp/Web)*fV/fR**2._wp
+        ! if (fshell == 1._wp) a2 = a2 - 4._wp*ks*(fV/(fR**2._wp))**2._wp
+        ! a2 = a2/fRho
+        ! a2 = a2 - c2_dot*fV**2._wp + dphidt*c1_dot
+        ! a2 = a2/(1._wp - c1)
 
-        end do
+        ! a3 = dphidt*c1_dot - 2._wp*c2_dot*fV**2._wp
 
-    end function f_random_normal
+        ! fPinfdot_star = (c1*a2 + a3)*fRho
+        ! fPinfdot_denom = (-c1*a1 + 2._wp*c2*fV)*fRho
+
+    end function f_pout
+
+    ! function f_pres_stochastic(fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn)
+    !     !$acc routine seq
+    !     real(wp), intent(in) :: fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson
+    !     !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
+
+    !     real(wp) :: f_pres_stochastic
+    !     real(wp) :: constant_term, k, angFreq, rndPhase, A_k_sqrd
+    !     integer :: i
+
+    !     f_pres_stochastic = 0._wp
+
+    !     constant_term = (fnoise_constant/(0.5_wp*flambda_c*sqrt(2_wp*pi)))
+
+    !     if (constant_term <= 0._wp) return ! Avoid complex numbers when taking squared root of negative A_k_sqrd
+
+    !     k = 0._wp
+    !     do i = 1, num_noise
+    !         rndPhase = f_random_normal(0.5_wp*pi, lag_params%pnoise_dev, 0._wp, 2._wp*pi) ! mean, dev, min, max
+    !         A_k_sqrd = constant_term * exp(-0.5_wp*((2._wp*pi/k - flambda_c)/(0.5_wp*flambda_c))**2._wp)
+    !         f_pres_stochastic = f_pres_stochastic + sqrt(A_k_sqrd) * fdk * cos(k*floc - k*fCson*ftime + rndPhase)!+ fPhase_rn(i))
+    !         if (f_pres_stochastic /= f_pres_stochastic) then
+    !             print*, i, k, A_k_sqrd, sqrt(A_k_sqrd), f_pres_stochastic
+    !             stop "f_pres_stochastic is NaN"
+    !         end if
+    !         k = k + fdk
+    !     end do
+
+    ! end function f_pres_stochastic
+
+    ! function f_random_normal(fmean, fdev, fmin, fmax)
+    !     !$acc routine seq
+    !     real(wp), intent(in) :: fmean, fdev, fmin, fmax
+
+    !     real(wp) :: f_random_normal
+    !     real(wp) :: num_rn1, num_rn2
+
+    !     do while (.true.)
+
+    !         call random_number(num_rn1)
+    !         num_rn1 = 1._wp - num_rn1
+    !         call random_number(num_rn2)
+    !         num_rn2 = 1._wp - num_rn2
+
+    !         f_random_normal = fdev*sqrt(-2._wp*log(num_rn1))*cos(2._wp*pi*num_rn2) + fmean
+
+    !         if (f_random_normal >= fmin .and. f_random_normal <= fmax) exit
+
+    !     end do
+
+    ! end function f_random_normal
 
     !> Adaptive time stepping routine for subgrid bubbles
         !!  (See Heirer, E. Hairer S.P.Nørsett G. Wanner, Solving Ordinary
@@ -538,9 +623,9 @@ contains
     subroutine s_advance_step(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
         fntait, fBtait, f_bub_adv_src, f_divu, &
         bub_id, fmass_v, fmass_n, fbeta_c, &
-        fbeta_t, fCson, fshell, fRbuck, fRrupt, &
-        fnoise_constant, flambda_c, fdk, floc, ftime, &!fPhase_rn, &
-        fQvis, fQth)
+        fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
+        fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
+        fQvis, fQth, fPrints)
 #ifdef _CRAYFTN
         !DIR$ INLINEALWAYS s_advance_step
 #else
@@ -550,10 +635,12 @@ contains
         real(wp), intent(in) :: fRho, fP, fR0, fpbdot, alf
         real(wp), intent(in) :: fntait, fBtait, f_bub_adv_src, f_divu
         integer, intent(in) :: bub_id
-        real(wp), intent(in) :: fmass_n, fbeta_c, fbeta_t, fCson, fRbuck, fRrupt
+        real(wp), intent(out) :: fAc
+        real(wp), intent(in) :: fmass_n, fbeta_c, fbeta_t, fCson, fInt, fRbuck, fRrupt, fRcell
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
         real(wp), intent(out) :: fQvis, fQth
+        real(wp), dimension(5), intent(inout) :: fPrints
 
         real(wp) :: tol
         real(wp) :: err1, err2, err3, err4, err5 !< Error estimates for adaptive time stepping
@@ -563,11 +650,12 @@ contains
         real(wp), dimension(4) :: myPb_tmp1, myMv_tmp1, myPb_tmp2, myMv_tmp2 !< Gas pressure and vapor mass for the inner loop (EL)
 
         real(wp) :: conc_v_h, R_m_h, gamma_m_h, T_bar_h, grad_T_h, heatflux_h
+        real(wp) :: fAc1, fAc21, fAc22
 
         tol = 1e-4_wp
 
         h = f_initial_substep_h(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
-                                fntait, fBtait, f_bub_adv_src, f_divu, fCson, fshell, fRbuck)
+                                fntait, fBtait, f_bub_adv_src, f_divu, fCson, fInt, fshell, fRbuck, fRcell)
 
         if (h/=h) then
             print*, 'Altering initial h (from/to)', bub_id, h, 0.1_wp*0.5_wp*dt
@@ -578,6 +666,7 @@ contains
         t_new = 0._wp
         fQvis = 0._wp
         fQth = 0._wp
+        fAc = 0._wp
         do while (.true.)
             if (t_new + h > 0.5_wp*dt) then
                 h = 0.5_wp*dt - t_new
@@ -591,8 +680,8 @@ contains
                        fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
-                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new, & !fPhase_rn&
-                       fCson, fshell, fRbuck, h, &
+                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new, fAc1, & !fPhase_rn&
+                       fCson, fInt, fshell, fRbuck, fRcell, fPrints, h, &
                        myR_tmp1, myV_tmp1, myPb_tmp1, myMv_tmp1)
 
                 ! Advance one sub-step by advancing two half steps
@@ -600,16 +689,16 @@ contains
                        fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
-                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new, & !fPhase_rn&
-                       fCson, fshell, fRbuck, 0.5_wp*h, &
+                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new, fAc21, & !fPhase_rn&
+                       fCson, fInt, fshell, fRbuck, fRcell, fPrints, 0.5_wp*h, &
                        myR_tmp2, myV_tmp2, myPb_tmp2, myMv_tmp2)
 
                 err3 = f_advance_substep( &
                        fRho, fP, myR_tmp2(4), myV_tmp2(4), fR0, myPb_tmp2(4), fpbdot, alf, &
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, myMv_tmp2(4), fmass_n, fbeta_c, fbeta_t, &
-                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new + 0.5_wp*h, & !fPhase_rn&
-                       fCson, fshell, fRbuck, 0.5_wp*h, &
+                       fnoise_constant, flambda_c, fdk, floc, ftime + t_new + 0.5_wp*h, fAc22, & !fPhase_rn&
+                       fCson, fInt, fshell, fRbuck, fRcell, fPrints, 0.5_wp*h, &
                        myR_tmp2, myV_tmp2, myPb_tmp2, myMv_tmp2)
 
                 err4 = abs((myR_tmp1(4) - myR_tmp2(4))/myR_tmp1(4))
@@ -631,7 +720,7 @@ contains
                     ! Update R and V
                     fR = myR_tmp1(4)
                     fV = myV_tmp1(4)
-
+                    fAc = 0.5_wp*fAc21 + 0.5_wp*fAc22
                     
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
@@ -643,7 +732,7 @@ contains
 
                             !> Mixture properties in the bubble
                             conc_v_h = 0._wp
-                            if (lag_params%massTransfer_model .or. lag_params%coatedBub_model) then
+                            if (lag_params%massTransfer_model .and. (fshell == 0._wp)) then
                                 conc_v_h = 1._wp/(1._wp + (R_v/R_n)*(fpb/pv - 1._wp))
                             end if
                             R_m_h = fmass_n*R_n + fmass_v*R_v
@@ -723,16 +812,17 @@ contains
         !!  @param fRbuck Buckling radius, Marmottant model (EL)
     function f_initial_substep_h(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                                  fntait, fBtait, f_bub_adv_src, f_divu, &
-                                 fCson, fshell, fRbuck)
+                                 fCson, fInt, fshell, fRbuck, fRcell)
         !$acc routine seq
         real(wp), intent(IN) :: fRho, fP, fR, fV, fR0, fpb, fpbdot, alf
         real(wp), intent(IN) :: fntait, fBtait, f_bub_adv_src, f_divu
-        real(wp), intent(IN) :: fCson, fshell, fRbuck
+        real(wp), intent(IN) :: fCson, fshell, fRbuck, fInt, fRcell
 
         real(wp) :: h0, h1 !< Time step size
         real(wp) :: d_0, d_1, d_2 !< norms
         real(wp), dimension(2) :: myR_tmp, myV_tmp, myA_tmp !< Bubble radius, radial velocity, and radial acceleration
         real(wp) :: f_initial_substep_h
+        real(wp), dimension(5) :: fPrints
 
         ! Determine the starting time step
         ! Evaluate f(x0,y0)
@@ -741,7 +831,7 @@ contains
         myA_tmp(1) = f_rddot(fRho, fP, myR_tmp(1), myV_tmp(1), fR0, &
                              fpb, fpbdot, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fshell, fRbuck)
+                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
 
         ! Compute d_0 = ||y0|| and d_1 = ||f(x0,y0)||
         d_0 = sqrt((myR_tmp(1)**2._wp + myV_tmp(1)**2._wp)/2._wp)
@@ -758,7 +848,7 @@ contains
         myA_tmp(2) = f_rddot(fRho, fP, myR_tmp(2), myV_tmp(2), fR0, &
                              fpb, fpbdot, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fshell, fRbuck)
+                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
 
         ! Compute d_2 = ||f(x0+h0,y0+h0*f(x0,y0))-f(x0,y0)||/h0
         d_2 = sqrt(((myV_tmp(2) - myV_tmp(1))**2._wp + (myA_tmp(2) - myA_tmp(1))**2._wp)/2._wp)/h0
@@ -804,17 +894,20 @@ contains
     function f_advance_substep(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                                 fntait, fBtait, f_bub_adv_src, f_divu, &
                                 bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
-                                fnoise_constant, flambda_c, fdk, floc, ftime, & !fPhase_rn &
-                                fCson, fshell, fRbuck, h, &
+                                fnoise_constant, flambda_c, fdk, floc, ftime, fAc, & !fPhase_rn &
+                                fCson, fInt, fshell, fRbuck, fRcell, fPrints, h, &
                                 myR_tmp, myV_tmp, myPb_tmp, myMv_tmp)
         !$acc routine seq
         real(wp), intent(IN) :: fRho, fP, fR, fV, fR0, fpb, fpbdot, alf
         real(wp), intent(IN) :: fntait, fBtait, f_bub_adv_src, f_divu, h
         integer, intent(IN) :: bub_id
-        real(wp), intent(IN) :: fmass_v, fmass_n, fbeta_c, fbeta_t, fCson, fshell, fRbuck
+        real(wp), intent(out) :: fAc
+        real(wp), intent(IN) :: fmass_v, fmass_n, fbeta_c, fbeta_t, fCson, fshell, fRbuck, fInt, fRcell
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
         real(wp), dimension(4), intent(OUT) :: myR_tmp, myV_tmp, myPb_tmp, myMv_tmp
+        real(wp), dimension(5), intent(inout) :: fPrints
+
         real(wp), dimension(4) :: myA_tmp, mydPbdt_tmp, mydMvdt_tmp
         real(wp) :: err_R, err_V, f_advance_substep
 
@@ -823,10 +916,10 @@ contains
         Pb_tmp = fpb
         Pbdot_tmp = fpbdot
         Pinf = fP
-        if (bubbles_lagrange .and. num_dims == 2) then
-            Pnoise_tmp = f_pres_stochastic(fP, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn)
-            Pinf = fP + Pnoise_tmp
-        end if
+        ! if (bubbles_lagrange .and. num_dims == 2) then
+        !     Pnoise_tmp = f_pres_stochastic(fP, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn)
+        !     Pinf = fP + Pnoise_tmp
+        ! end if
         
         ! Stage 0
         myR_tmp(1) = fR
@@ -844,7 +937,7 @@ contains
         myA_tmp(1) = f_rddot(fRho, Pinf, myR_tmp(1), myV_tmp(1), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fshell, fRbuck)
+                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
 
         ! Stage 1
         myR_tmp(2) = myR_tmp(1) + h*myV_tmp(1)
@@ -862,7 +955,7 @@ contains
         myA_tmp(2) = f_rddot(fRho, Pinf, myR_tmp(2), myV_tmp(2), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fshell, fRbuck)
+                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
 
         ! Stage 2
         myR_tmp(3) = myR_tmp(1) + (h/4._wp)*(myV_tmp(1) + myV_tmp(2))
@@ -880,7 +973,7 @@ contains
         myA_tmp(3) = f_rddot(fRho, Pinf, myR_tmp(3), myV_tmp(3), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fshell, fRbuck)
+                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
 
         ! Stage 3
         myR_tmp(4) = myR_tmp(1) + (h/6._wp)*(myV_tmp(1) + myV_tmp(2) + 4._wp*myV_tmp(3))
@@ -898,8 +991,9 @@ contains
         myA_tmp(4) = f_rddot(fRho, Pinf, myR_tmp(4), myV_tmp(4), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fshell, fRbuck)
+                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
 
+        fAc = (myA_tmp(1) + myA_tmp(2) + 4._wp*myA_tmp(3))/6._wp
         !> Estimate error
         err_R = (-5._wp*h/24._wp)*(myV_tmp(2) + myV_tmp(3) - 2._wp*myV_tmp(4)) &
                 /max(abs(myR_tmp(1)), abs(myR_tmp(4)))

@@ -30,8 +30,6 @@ module m_bubbles_EL
     !(nBub)
     integer, allocatable, dimension(:, :) :: lag_id          !< Global and local IDs
     real(wp), allocatable, dimension(:) :: bub_R0            !< Initial bubble radius
-    real(wp), allocatable, dimension(:) :: bub_lambda_c      !< Mean inter-bubble distance (p' white noise)
-    !real(wp), allocatable, dimension(:, :) :: bub_rnd_phase  !< Random phases (1:num_noise) per bubble (p' white noise)
     real(wp), allocatable, dimension(:) :: Rmax_stats        !< Maximum radius
     real(wp), allocatable, dimension(:) :: Rmin_stats        !< Minimum radius
     real(wp), allocatable, dimension(:) :: gas_mg            !< Bubble's gas mass
@@ -43,6 +41,7 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:, :) :: gas_mv         !< Vapor mass in the bubble
     real(wp), allocatable, dimension(:, :) :: intfc_rad      !< Bubble radius
     real(wp), allocatable, dimension(:, :) :: intfc_vel      !< Velocity of the bubble interface
+    real(wp), allocatable, dimension(:, :) :: intfc_ac       !< Acceleration of the bubble interface
     !(nBub, 1-> x or 2->y or 3 ->z, 1 -> actual or 2 -> temporal val)
     real(wp), allocatable, dimension(:, :, :) :: mtn_pos     !< Bubble's position
     real(wp), allocatable, dimension(:, :, :) :: mtn_posPrev !< Bubble's previous position
@@ -56,9 +55,17 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:, :, :) :: mtn_dposdt  !< Time derivative of the bubble's position
     real(wp), allocatable, dimension(:, :, :) :: mtn_dveldt  !< Time derivative of the bubble's velocity
 
-    !$acc declare create(lag_id, bub_R0, bub_lambda_c, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC, bub_dphidt, &
-    !$acc gas_p, gas_mv, intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel, mtn_s, intfc_draddt, intfc_dveldt, &
-    !$acc gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt)
+    real(wp), allocatable, dimension(:, :) :: bub_pout        !< Scattered pressure from each bubble
+    real(wp), allocatable, dimension(:, :) :: bub_int_ids     !< Ids of the neighboring bubbles for pout interaction
+    real(wp), allocatable, dimension(:) :: bub_lambda_c      !< Mean inter-bubble distance (p' white noise)
+    !real(wp), allocatable, dimension(:, :) :: bub_rnd_phase  !< Random phases (1:num_noise) per bubble (p' white noise)
+    real(wp), allocatable, dimension(:, :) :: bub_print
+
+    !$acc declare create(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC, bub_dphidt, &
+    !$acc gas_p, gas_mv, intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel, intfc_ac, mtn_s, intfc_draddt, &
+    !$acc intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt)
+
+    !$acc declare create(bub_pout, bub_int_ids, bub_lambda_c)
 
     real(wp), allocatable, dimension(:, :) :: lag_RKCKcoef  !< RKCK 4th-5th time stepper coefficients
     integer, private :: lag_num_ts                          !<  Number of time stages in the time-stepping scheme
@@ -126,8 +133,6 @@ contains
 
         @:ALLOCATE(lag_id(1:nBubs_glb, 1:2))
         @:ALLOCATE(bub_R0(1:nBubs_glb))
-        @:ALLOCATE(bub_lambda_c(1:nBubs_glb))
-        !@:ALLOCATE(bub_rnd_phase(1:nBubs_glb, 1:num_noise))
         @:ALLOCATE(Rmax_stats(1:nBubs_glb))
         @:ALLOCATE(Rmin_stats(1:nBubs_glb))
         @:ALLOCATE(gas_mg(1:nBubs_glb))
@@ -138,6 +143,7 @@ contains
         @:ALLOCATE(gas_mv(1:nBubs_glb, 1:2))
         @:ALLOCATE(intfc_rad(1:nBubs_glb, 1:2))
         @:ALLOCATE(intfc_vel(1:nBubs_glb, 1:2))
+        @:ALLOCATE(intfc_ac(1:nBubs_glb, 1:2))
         @:ALLOCATE(mtn_pos(1:nBubs_glb, 1:3, 1:2))
         @:ALLOCATE(mtn_posPrev(1:nBubs_glb, 1:3, 1:2))
         @:ALLOCATE(mtn_vel(1:nBubs_glb, 1:3, 1:2))
@@ -155,6 +161,14 @@ contains
         ! hifu
         @:ALLOCATE(bub_qvis(1:nBubs_glb))
         @:ALLOCATE(bub_qth(1:nBubs_glb))
+        ! Interbubble interaction
+         ! 1: emitted Pout, 2: sum of Pouts from volume of influence (self-inclusive)
+        @:ALLOCATE(bub_pout(1:nBubs_glb, 1:2))
+        ! 1: number of interacting bubbles (self-inclusive), 2:nBubs_glb+1: IDs in the volume of influence (self-inclusive)
+        @:ALLOCATE(bub_int_ids(1:nBubs_glb, 1:nBubs_glb+1))
+        @:ALLOCATE(bub_lambda_c(1:nBubs_glb))
+        !@:ALLOCATE(bub_rnd_phase(1:nBubs_glb, 1:num_noise))
+        @:ALLOCATE(bub_print(1:nBubs_glb, 1:5))
 
         if (time_stepper == 4) then
             !< Allocate space for the RKCK 4th/5th time stepper coefficients
@@ -296,12 +310,10 @@ contains
 
         print *, " Lagrange bubbles running, in proc", proc_rank, "number:", bub_id, "/", id
 
-        call s_compute_local_density_number
-
         !$acc update device(bubbles_lagrange, lag_params)
 
         !$acc update device(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
-        !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel,       &
+        !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
         !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt,       &
         !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, nBubs)
 
@@ -314,6 +326,7 @@ contains
         !Populate temporal variables
         transferShell = .true.
         call s_transfer_data_to_tmp(transferShell)
+        call s_start_bubble_interaction
         call s_smear_voidfraction()
 
         if (save_count == 0) then
@@ -353,11 +366,15 @@ contains
         bub_dphidt(bub_id) = 0._wp
         intfc_rad(bub_id, 1) = inputBubble(7)
         intfc_vel(bub_id, 1) = inputBubble(8)
+        intfc_ac(bub_id, 1) = 0._wp
         mtn_pos(bub_id, 1:3, 1) = inputBubble(1:3)
         mtn_posPrev(bub_id, 1:3, 1) = mtn_pos(bub_id, 1:3, 1)
         mtn_vel(bub_id, 1:3, 1) = inputBubble(4:6)
         bub_qvis(bub_id) = 0._wp
         bub_qth(bub_id) = 0._wp
+        bub_pout(bub_id, 1) = 0._wp
+        bub_pout(bub_id, 2) = 0._wp
+        bub_print(bub_id, 1:5) = 0._wp
 
         if (cyl_coord .and. p == 0) then
             mtn_pos(bub_id, 2, 1) = sqrt(mtn_pos(bub_id, 2, 1)**2._wp + &
@@ -390,7 +407,8 @@ contains
 
         ! Activate or deactivate the mass model
         massflag = 0._wp
-        if (lag_params%coatedBub_model .or. lag_params%massTransfer_model) then
+        !if (lag_params%coatedBub_model .or. lag_params%massTransfer_model) then
+        if (lag_params%massTransfer_model) then
             !Assume vapor and gas is present in bubble
             massflag = 1._wp
         end if
@@ -493,7 +511,7 @@ contains
 
                 ! Activate or deactivate the mass model
                 massflag = 0._wp
-                if (lag_params%coatedBub_model .or. lag_params%massTransfer_model) then
+                if (lag_params%massTransfer_model) then
                     !Assume vapor and gas is present in bubble
                     massflag = 1._wp
                 end if
@@ -567,7 +585,7 @@ contains
         character(LEN=path_len + 2*name_len) :: file_loc
 
 #ifdef MFC_MPI
-        real(wp), dimension(25) :: inputvals
+        real(wp), dimension(26) :: inputvals
         integer, dimension(MPI_STATUS_SIZE) :: status
         integer(kind=MPI_OFFSET_KIND) :: disp
         integer :: view
@@ -578,7 +596,7 @@ contains
         integer, dimension(2) :: gsizes, lsizes, start_idx_part
         integer :: ifile, ierr, tot_data, id
         integer :: i
-        integer :: varsExtra = 5
+        integer :: varsExtra = 6
 
         write (file_loc, '(a,i0,a)') 'lag_bubbles_mpi_io_', save_count, '.dat'
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
@@ -639,6 +657,7 @@ contains
                     mtn_vel(bub_id, 1:3, 1) = inputvals(7:9)
                     intfc_rad(bub_id, 1) = inputvals(10)
                     intfc_vel(bub_id, 1) = inputvals(11)
+                    
                     bub_R0(bub_id) = inputvals(12)
                     Rmax_stats(bub_id) = inputvals(13)
                     Rmin_stats(bub_id) = inputvals(14)
@@ -655,6 +674,11 @@ contains
                     ! hifu
                     bub_qvis(bub_id) = inputvals(24)
                     bub_qth(bub_id) = inputvals(25)
+                    intfc_ac(bub_id, 1) = inputvals(26)
+
+                    bub_pout(bub_id, 1) = 0._wp
+                    bub_pout(bub_id, 2) = 0._wp
+                    bub_print(bub_id, 1:5) = 0._wp
 
                     cell = -buff_size
                     call s_locate_cell(mtn_pos(bub_id, 1:3, 1), cell, mtn_s(bub_id, 1:3, 1))
@@ -667,25 +691,31 @@ contains
 
     end subroutine s_restart_bubbles
 
-    !>  Compute the local number density of each bubble for the p'_cell model as white noise (2D modeling).
+    !>  3D modeling of bubble interaction and 2D approximation.
+        !!      3D: Obtain the identifiers of the bubbles within the volume of influence. Assume that the bubbles 
+        !!      are smaller than the grid size always. (no need to re-run during simulation).
+        !!      2D: Compute the local number density of each bubble for the p'_cell model as white noise.
         !!      It is the number of bubbles per volume of mixture in the physical domain (not buffers).
-    subroutine s_compute_local_density_number
+    subroutine s_start_bubble_interaction()
 
         integer :: i, j, k
-        real(wp) :: nb_local
+        integer :: nb_local
         real(wp) :: xb_smear, xe_smear
         real(wp) :: yb_smear, ye_smear
+        real(wp) :: zb_smear, ze_smear
         real(wp), dimension(3) :: scoord
         integer, dimension(3) :: cell
         integer :: smear_idx
         real(wp) :: num_rn1, num_rn2, num_rn
         real(wp) :: st_dev_rn, mean_rn
 
-        if (num_dims == 3 .or. .not. lag_params%pressure_corrector) return
+        if (.not. lag_params%pressure_corrector) return
 
-        mean_rn = 0.5_wp*pi
-        st_dev_rn = 1._wp
+        if (proc_rank==0) print*, 'Influence volume (bubble interaction) in # of surrounding cells is', lag_params%influence
+        ! mean_rn = 0.5_wp*pi
+        ! st_dev_rn = 1._wp
 
+        !$acc parallel loop gang vector default(present) private(j, cell, scoord)
         do j = 1, nBubs
 
             ! Is the bubble in the physical domain?
@@ -694,15 +724,16 @@ contains
             ! Find the cell location
             scoord = mtn_s(j, 1:3, 1)
             cell(:) = int(scoord(:))
+            !$acc loop seq
             do i = 1, num_dims
                 if (scoord(i) < 0._wp) cell(i) = cell(i) - 1
             end do
 
             ! Define smearing boundaries
                 !   Assuming that the cell is always larger than the bubble, then
-                !   the smearing volume is constant (3+1+3)x(3+1+3).
+                !   the smearing volume is constant (influence+1+influence)x(3+1+3).
 
-            smear_idx = cell(1) - 3 - 1
+            smear_idx = cell(1) - lag_params%influence - 1
             if (smear_idx < -buff_size - 1) then
                 do while (smear_idx < -buff_size - 1)
                     smear_idx = smear_idx + 1
@@ -710,7 +741,7 @@ contains
             end if
             xb_smear = x_cb(smear_idx)
 
-            smear_idx = cell(1) + 3
+            smear_idx = cell(1) + lag_params%influence
             if (smear_idx > m + buff_size) then
                 do while (smear_idx > m + buff_size)
                     smear_idx = smear_idx - 1
@@ -718,7 +749,7 @@ contains
             end if
             xe_smear = x_cb(smear_idx)
 
-            smear_idx = cell(2) - 3 - 1
+            smear_idx = cell(2) - lag_params%influence - 1
             if (smear_idx < -buff_size - 1 .and. .not. cyl_coord) then
                 do while (smear_idx < -buff_size - 1)
                     smear_idx = smear_idx + 1
@@ -727,7 +758,7 @@ contains
             if (smear_idx < -1 .and. cyl_coord) smear_idx = -1
             yb_smear = y_cb(smear_idx)
 
-            smear_idx = cell(2) + 3
+            smear_idx = cell(2) + lag_params%influence
             if (smear_idx > n + buff_size) then
                 do while (smear_idx > n + buff_size)
                     smear_idx = smear_idx - 1
@@ -735,18 +766,76 @@ contains
             end if
             ye_smear = y_cb(smear_idx)
 
-            ! Find bubbles inside the boundaries
-            nb_local = 0._wp
-            do k = 1, nBubs
-                if ((mtn_pos(k, 1, 1) < xe_smear) .and. (mtn_pos(k, 1, 1) >= xb_smear) .and. &
-                    (mtn_pos(k, 2, 1) < ye_smear) .and. (mtn_pos(k, 2, 1) >= yb_smear)) then
-
-                        nb_local = nb_local + 1._wp
+            if (p>0) then 
+                smear_idx = cell(3) - lag_params%influence - 1
+                if (smear_idx < -buff_size - 1) then
+                    do while (smear_idx < -buff_size - 1)
+                        smear_idx = smear_idx + 1
+                    end do
                 end if
-            end do
+                zb_smear = z_cb(smear_idx)
 
-            ! Compute and update the mean inter-bubble distance lambda_c
-            bub_lambda_c(j) = 1._wp/(nb_local**(1._wp/3._wp))
+                smear_idx = cell(3) + lag_params%influence
+                if (smear_idx > p + buff_size) then
+                    do while (smear_idx > p + buff_size)
+                        smear_idx = smear_idx - 1
+                    end do
+                end if
+                ze_smear = z_cb(smear_idx)
+            end if
+
+            if (lag_params%interaction_model == 2 .and. p == 0) then
+
+                yb_smear = mtn_posPrev(j, 2, 1) - abs(xe_smear-xb_smear)
+                ye_smear = mtn_posPrev(j, 2, 1) + abs(xe_smear-xb_smear)
+
+                zb_smear = mtn_posPrev(j, 3, 1) - abs(xe_smear-xb_smear)
+                ze_smear = mtn_posPrev(j, 3, 1) + abs(xe_smear-xb_smear)
+
+            end if
+
+
+            ! Find bubbles inside the boundaries
+            nb_local = 0
+            if (lag_params%interaction_model == 2 ) then
+                !$acc loop seq
+                do k = 1, nBubs
+                    if ((mtn_posPrev(k, 1, 1) < xe_smear) .and. (mtn_posPrev(k, 1, 1) >= xb_smear) .and. &
+                        (mtn_posPrev(k, 2, 1) < ye_smear) .and. (mtn_posPrev(k, 2, 1) >= yb_smear) .and. &
+                        (mtn_posPrev(k, 3, 1) < ze_smear) .and. (mtn_posPrev(k, 3, 1) >= zb_smear)) then
+
+                            nb_local = nb_local + 1
+                            bub_int_ids(j, nb_local + 1) = k
+
+                    end if
+                end do
+            else
+                !$acc loop seq
+                do k = 1, nBubs
+                    if ((mtn_pos(k, 1, 1) < xe_smear) .and. (mtn_pos(k, 1, 1) >= xb_smear) .and. &
+                        (mtn_pos(k, 2, 1) < ye_smear) .and. (mtn_pos(k, 2, 1) >= yb_smear)) then
+
+                            if (p > 0) then
+                                if ((mtn_pos(k, 3, 1) < ze_smear) .and. (mtn_pos(k, 3, 1) >= zb_smear)) then
+                                    nb_local = nb_local + 1
+                                    bub_int_ids(j, nb_local + 1) = k
+                                end if
+                            else
+                                nb_local = nb_local + 1
+                            end if
+                    end if
+                end do
+            end if
+
+            if (p > 0 .or. lag_params%interaction_model == 2 ) then
+                ! Total number of interacting bubbles
+                bub_int_ids(j, 1) = nb_local
+                print*, proc_rank, 'Bub', j, 'interacts with', nb_local-1, 'bubbles'
+            else
+                ! Compute and update the mean inter-bubble distance lambda_c
+                bub_lambda_c(j) = 1._wp/(nb_local**(1._wp/3._wp))
+            end if
+            
 
             ! ! Populate random phases (1:num_noise)
             ! ! Should they remain constant at every calculation? or should they be replaced every t_step?
@@ -769,16 +858,17 @@ contains
             ! end do
 
 
-            if (lag_id(j, 1) == 1) then
-                print*, 'bub_lambda_c', bub_lambda_c(j)
-                ! print*, 'bub_rnd_phase', bub_rnd_phase(j, 1:num_noise)
-            end if
+            ! if (lag_id(j, 1) == 1) then
+            !     print*, 'bub_lambda_c', bub_lambda_c(j)
+            !     ! print*, 'bub_rnd_phase', bub_rnd_phase(j, 1:num_noise)
+            ! end if
 
         end do
 
-        !$acc update device(bub_lambda_c)
+        ! call s_mpi_barrier()
+        ! call s_mpi_abort('debugging s_start_bubble_interaction')
 
-    end subroutine s_compute_local_density_number
+    end subroutine s_start_bubble_interaction
 
     !>  Contains the two-way and one-way Euler-Lagrange coupled algorithm, including the bubble dynamics subroutines.
         !! @param q_cons_vf Conservative variables
@@ -795,14 +885,15 @@ contains
 
         real(wp) :: myVapFlux
         real(wp) :: preterm1, term2, paux, pint, Romega, term1_fac, Rb
-        real(wp) :: myConc_v, myR_m, mygamma_m, myPb, myMass_n, myMass_v
+        real(wp) :: myConc_v, myR_m, mygamma_m, myPb, myMass_n, myMass_v, myPout, myInt
         real(wp) :: myR, myV, myBeta_c, myBeta_t, myR0, myPbdot, myShell, myRbuck, myMvdot
-        real(wp) :: myPinf, aux1, aux2, myCson, myRho, myRrupt
-        real(wp) :: myQth, myQvis
+        real(wp) :: myPinf, aux1, aux2, myCson, myRho, myRrupt, myAc
+        real(wp) :: myQth, myQvis, myRcell
         real(wp) :: gamma, pi_inf, qv
         real(wp), dimension(contxe) :: myalpha_rho, myalpha
         real(wp), dimension(2) :: Re
         integer, dimension(3) :: cell
+        real(wp), dimension(5) :: myPrints
 
         real(wp) :: myTzPcell, myNoise_constant, myLambda_c, myloc, mydk, myPnoise, myLag_time
         real(wp), dimension(num_noise) :: myPhase
@@ -815,31 +906,17 @@ contains
 
         !< BUBBLE DYNAMICS
 
+        ! Needs MPI communication to update current bubble state in the buffer regions
+        ! myPb = gas_p(k, 2)
+        ! myMass_v = gas_mv(k, 2)
+        ! myR = intfc_rad(k, 2)
+        ! myV = intfc_vel(k, 2)
+        ! myA = intfc_vel(k, 2)
+        ! myShell = mrmtnt_shell(k, 2)
+
         ! Subgrid p_inf model based on Maeda and Colonius (2018).
-        if (lag_params%pressure_corrector .and. p > 0) then
-            ! Calculate velocity potentials (valid for one bubble per cell)
-            !$acc parallel loop gang vector default(present) private(k, cell)
-            do k = 1, nBubs
-                call s_get_pinf(k, q_prim_vf, 2, paux, cell, preterm1, term2, Romega)
-                myR0 = bub_R0(k)
-                myR = intfc_rad(k, 2)
-                myV = intfc_vel(k, 2)
-                myPb = gas_p(k, 2)
-                myShell = mrmtnt_shell(k, 2)
-                myRbuck = mrmtnt_Rbuck(k)
-                myRrupt = mrmtnt_Rrupt(k)
-                if (myR > myRrupt) myShell = 0._wp
-                pint = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
-                pint = pint + 0.5_wp*myV**2._wp
-                if (lag_params%cluster_type == 2 .and. p /= 0) then
-                    bub_dphidt(k) = (paux - pint) + term2
-                    ! Accounting for the potential induced by the bubble averaged over the control volume
-                    ! Note that this is based on the incompressible flow assumption near the bubble.
-                    Rb = intfc_rad(k, 2)
-                    term1_fac = 3._wp/2._wp*(Rb*(Romega**2._wp - Rb**2._wp))/(Romega**3._wp - Rb**3._wp)
-                    bub_dphidt(k) = bub_dphidt(k)/(1._wp - term1_fac)
-                end if
-            end do
+        if (lag_params%pressure_corrector) then
+            call s_calculate_scattered_pressure(q_prim_vf)
         end if
 
         ! Radial motion
@@ -860,6 +937,9 @@ contains
             myRrupt = mrmtnt_Rrupt(k)
             if (myR > myRrupt) myShell = 0._wp
             myLag_time = mytime - dt
+            ! myPout = bub_pout(k, 1) !Self-scaterred pressure
+            myInt = 0._wp !Interaction term from surrouding bubbles 
+            if (any(lag_params%interaction_model == (/2, 3/))) myInt = bub_pout(k, 2)
             
             ! Vapor and heat fluxes
             myVapFlux = f_vflux(myR, myV, myPb, myMass_v, k, myMass_n, myBeta_c, myR_m, mygamma_m, myShell)
@@ -867,34 +947,45 @@ contains
             myMvdot = 4._wp*pi*myR**2._wp*myVapFlux
 
             ! Retrieving driving pressure
-            call s_get_pinf(k, q_prim_vf, 1, myPinf, cell, aux1, aux2)
+            call s_get_pinf(k, q_prim_vf, 1, myPinf, cell, aux1, aux2, myRcell)
 
             ! Obtain liquid density and computing speed of sound from myPinf
             !$acc loop seq
-            do i = 1, contxe
-                myalpha_rho(i) = q_prim_vf(advxb + i - 1)%sf(cell(1), cell(2), cell(3))* &
-                                 q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
-                myalpha(i) = q_prim_vf(advxb + i - 1)%sf(cell(1), cell(2), cell(3))
+            do i = 1, num_fluids
+                myalpha_rho(i) = q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
+                myalpha(i) = q_prim_vf(E_idx + i)%sf(cell(1), cell(2), cell(3))
             end do
+            ! !$acc loop seq
+            ! do i = 1, contxe
+            !     myalpha_rho(i) = q_prim_vf(advxb + i - 1)%sf(cell(1), cell(2), cell(3))* &
+            !                      q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
+            !     myalpha(i) = q_prim_vf(advxb + i - 1)%sf(cell(1), cell(2), cell(3))
+            ! end do
             call s_convert_species_to_mixture_variables_acc(myRho, gamma, pi_inf, qv, myalpha, &
                                                             myalpha_rho, Re, cell(1), cell(2), cell(3))
+            ! if (lag_params%pressure_corrector) then
+            !     if (p==0) then
+            !         myPinf = myPinf + myPnoise*lag_params%pnoise_scale
+            !     else
+            !         if (any(lag_params%interaction_model == (/1, 3/))) then !Kazuki's model to adjust Pinf
+            !             myPinf = myPinf + myPout
+            !         end if
+            !     end if
+            ! end if
             call s_compute_cson_from_pinf(k, q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
 
-            if (p == 0 .and. lag_params%pressure_corrector) then
-                ! White noise for 2D reduced model (myTzPcell is myPinf)
-                myLambda_c = bub_lambda_c(k)
-                if (cyl_coord) then
-                    myloc = mtn_s(k, 3, 2) + pi ! from -pi to pi -> from 0 to 2pi
-                else
-                    myloc = mtn_s(k, 3, 2) + 0.5_wp*lag_params%charwidth
-                end if
-                !myPhase = bub_rnd_phase(k, 1:num_noise)
-                call s_white_noise_constants(k, myLambda_c, q_prim_vf, cell, myPinf, myNoise_constant, mydk)
-                call s_compute_cson_from_pinf(k, q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
-                myPnoise = f_pres_stochastic(myPinf, myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myCson)!, myPhase)
-                !if (k==1) print*, myPinf, myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myCson, myPnoise
-            end if
+            ! if (p == 0 .and. lag_params%pressure_corrector) then
+            !     ! White noise for 2D reduced model (myTzPcell is myPinf)
+            !     myLambda_c = bub_lambda_c(k)
+            !     myloc = mtn_s(k, 3, 2)
+            !     !myPhase = bub_rnd_phase(k, 1:num_noise)
+            !     call s_white_noise_constants(k, myLambda_c, q_prim_vf, cell, myPinf, myNoise_constant, mydk)
+            !     call s_compute_cson_from_pinf(k, q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
+            !     ! myPnoise = f_pres_stochastic(myPinf, myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myCson)
+            ! end if
 
+            ! myRho = 1._wp
+            ! myCson = 1._wp
 
             ! Adaptive time stepping
             if (adap_dt .and. .not. rkck_adap_dt) then
@@ -904,13 +995,14 @@ contains
                 call s_advance_step(myRho, myPinf, myR, myV, myR0, myPb, myPbdot, dmalf, &
                                     dmntait, dmBtait, dm_bub_adv_src, dm_divu, &
                                     k, myMass_v, myMass_n, myBeta_c, &
-                                    myBeta_t, myCson, myShell, myRbuck, myRrupt, &
-                                    myNoise_constant, myLambda_c, mydk, myloc, myLag_time, & !myPhase, &
-                                    myQvis, myQth)
+                                    myBeta_t, myCson, myInt, myShell, myRbuck, myRrupt, myRcell,&
+                                    myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myAc, & !myPhase, &
+                                    myQvis, myQth, myPrints)
 
                 ! Update bubble state
                 intfc_rad(k, 1) = myR
                 intfc_vel(k, 1) = myV
+                intfc_ac(k,1) = myAc
                 gas_p(k, 1) = myPb
                 gas_mv(k, 1) = myMass_v
                 mrmtnt_shell(k, 1) = myShell
@@ -919,21 +1011,20 @@ contains
                     bub_qvis(k) = bub_qvis(k) + myQvis  !> Viscous damping of the bubble (Watts)
                     bub_qth(k) = bub_qth(k) + myQth     !> Thermal damping of the bubble (Watts)
                 end if
+                bub_print(k, 1:5) = myPrints
 
             else
-
-                if (lag_id(k, 1) == 1 .and. p == 0) print*, myPinf, myPnoise, myPinf + myPnoise, proc_rank
-                if (p == 0 .and. lag_params%pressure_corrector) myPinf = myPinf + myPnoise
 
                 ! Radial acceleration from bubble models
                 intfc_dveldt(k, stage) = f_rddot(myRho, myPinf, myR, myV, myR0, &
                                                  myPb, myPbdot, dmalf, dmntait, dmBtait, &
                                                  dm_bub_adv_src, dm_divu, &
-                                                 myCson, myShell, myRbuck)
+                                                 myCson, myInt, myShell, myRbuck, myRcell, myPrints)
                 intfc_draddt(k, stage) = myV
                 gas_dmvdt(k, stage) = myMvdot
                 gas_dpdt(k, stage) = myPbdot
                 mrmtnt_shell(k, 2) = myShell
+                bub_print(k, 1:5) = myPrints
 
                 ! Bubble translation
                 !$acc loop seq
@@ -1121,133 +1212,261 @@ contains
 
     end subroutine s_smear_voidfraction
 
-    !> The purpose of this procedure is obtain the pressure from the Eulerian field
-        !! @param bub_id Particle identifier
-        !! @param q_prim_vf  Primitive variables
-    subroutine s_white_noise_constants(bub_id, l_c, q_prim_vf, cell, TzPcell, noise_constant, dk)
-#ifdef _CRAYFTN
-        !DIR$ INLINEALWAYS s_white_noise_constants
-#else
-        !$acc routine seq
-#endif
-        integer, intent(in) :: bub_id
-        real(wp), intent(in) :: l_c
+!     !> The purpose of this procedure is obtain the pressure from the Eulerian field
+!         !! @param bub_id Particle identifier
+!         !! @param q_prim_vf  Primitive variables
+!     subroutine s_white_noise_constants(bub_id, l_c, q_prim_vf, cell, TzPcell, noise_constant, dk)
+! #ifdef _CRAYFTN
+!         !DIR$ INLINEALWAYS s_white_noise_constants
+! #else
+!         !$acc routine seq
+! #endif
+!         integer, intent(in) :: bub_id
+!         real(wp), intent(in) :: l_c
+!         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
+!         integer, dimension(3), intent(in) :: cell
+!         real(wp), intent(out) :: TzPcell, noise_constant, dk
+
+!         real(wp) :: vol
+!         real(wp) :: denom
+!         real(wp) :: charvol, charpres, charvol2, charpres2, charbeta
+!         real(wp) :: charpres_sqrd, charpres2_sqrd, cell_count, c_t
+!         real(wp) :: chardist, k
+!         integer, dimension(3) :: cellaux
+!         integer :: i, j
+!         integer :: smearGrid
+!         logical :: celloutside
+
+!         if (lag_params%cluster_type == 2) then
+!             ! Stochastic closure from Maeda and Colonius (2018)
+!             ! Only valid for 2D reduced model
+
+!             ! Conditions:
+!             if (lag_params%smooth_type /= 1) stop "lag_params%cluster_type: 2 requires lag_params%smooth_type: 1."
+
+!             ! Include the cell that contains the bubble (mapCells+1+mapCells)
+!             ! Assume that the bubble radius is always smaller than the characteristic cell size.
+
+!             smearGrid = mapCells - (-mapCells)
+
+!             vol = 0._wp
+!             charvol = 0._wp
+!             charpres = 0._wp
+!             charpres_sqrd = 0._wp
+!             charvol2 = 0._wp
+!             charpres2 = 0._wp
+!             charpres2_sqrd = 0._wp
+!             cell_count = 0._wp
+
+!             !$acc loop seq
+!             do i = 0, smearGrid
+!                 !$acc loop seq
+!                 do j = 0, smearGrid
+!                     cellaux(1) = cell(1) + i - mapCells
+!                     cellaux(2) = cell(2) + j - mapCells
+!                     cellaux(3) = 0
+
+!                     !< check if the current cell is outside the computational domain or not (including ghost cells)
+!                     celloutside = .false.
+!                     if ((cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
+!                         celloutside = .true.
+!                     end if
+!                     if ((cellaux(2) > n + buff_size) .or. (cellaux(1) > m + buff_size)) then
+!                         celloutside = .true.
+!                     end if
+!                     if (.not. celloutside .and. cyl_coord) then
+!                         if (cellaux(2) < 0) celloutside = .true.
+!                     end if
+
+!                     if (.not. celloutside) then
+!                         !< Obtaining the cell volulme
+!                         if (cyl_coord) then
+!                             vol = dx(cellaux(1))*dy(cellaux(2))*y_cc(cellaux(2))*2._wp*pi
+!                         else
+!                             vol = dx(cellaux(1))*dy(cellaux(2))*lag_params%charwidth
+!                         end if
+!                         !< Update values
+!                         cell_count = cell_count + 1._wp
+!                         charvol = charvol + vol
+!                         charpres = charpres + vol*q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3))
+!                         charpres_sqrd = charpres_sqrd + vol*(q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)))**2._wp
+!                         charvol2 = charvol2 + vol*q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
+!                         charpres2 = charpres2 + vol*q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+!                                                    *q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
+!                         charpres2_sqrd = charpres2_sqrd + vol*(q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+!                                                    *q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)))**2._wp
+!                     end if
+!                 end do
+!             end do
+
+!             TzPcell = charpres2/charvol2
+!             noise_constant = 0._wp
+
+!             if (lag_params%pressure_corrector) then
+!                 ! find noise_constant: C_A
+
+!                 if (cyl_coord) then
+!                     c_t = ceiling(2._wp*pi*y_cc(cell(2))/(y_cb(cell(2)) - y_cb(cell(2) - 1)))
+!                 else
+!                     c_t = ceiling(lag_params%charwidth/(y_cb(cell(2)) - y_cb(cell(2) - 1)))
+!                 end if
+!                 c_t = c_t / cell_count
+
+!                 chardist = sqrt(dx(cell(1))*dy(cell(2)))
+!                 dk = pi/(num_noise*chardist)
+
+!                 k = 0._wp
+!                 denom = 0._wp
+!                 !$acc loop seq
+!                 do i = 1, num_noise
+!                     denom = denom + dk * exp(-0.5_wp*((2_wp*pi/k - l_c)/(0.5_wp*l_c))**2._wp)
+!                     k = k + dk
+!                 end do
+
+!                 noise_constant = (0.5_wp*l_c) * sqrt(2._wp*pi) * c_t * ((charpres_sqrd/charvol)-(charpres/charvol)**2_wp) / denom
+!                 !noise_constant = (0.5_wp*l_c) * sqrt(2._wp*pi) * c_t * ((charpres2_sqrd/charvol2)-(charpres2/charvol2)**2_wp) / denom
+
+!                 !if (noise_constant == 0._wp) stop "noise_constant si zero. Exiting."
+!                 if (lag_id(bub_id, 1) ==1) print*, noise_constant, c_t, ((charpres_sqrd/charvol)-(charpres/charvol)**2_wp), ((charpres2_sqrd/charvol2)-(charpres2/charvol2)**2_wp)
+    
+!                 !if (noise_constant <= 0._wp) noise_constant = 0._wp
+!             end if
+
+!         else
+
+!             stop "Check white noise. Exiting."
+
+!         end if
+
+!     end subroutine s_white_noise_constants
+
+    subroutine s_calculate_scattered_pressure(q_prim_vf)
+
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
-        integer, dimension(3), intent(in) :: cell
-        real(wp), intent(out) :: TzPcell, noise_constant, dk
 
-        real(wp) :: vol
-        real(wp) :: denom
-        real(wp) :: charvol, charpres, charvol2, charpres2, charbeta
-        real(wp) :: charpres_sqrd, charpres2_sqrd, cell_count, c_t
-        real(wp) :: chardist, k
-        integer, dimension(3) :: cellaux
-        integer :: i, j
-        integer :: smearGrid
-        logical :: celloutside
+        integer, dimension(3) :: cell
+        real(wp) :: myR0, myR, myV, myPb, myShell, myRbuck, myRrupt, myDist, myA
 
-        if (lag_params%cluster_type == 2) then
-            ! Stochastic closure from Maeda and Colonius (2018)
-            ! Only valid for 2D reduced model
+        real(wp) :: Pcell, Rcell, Pn, myRho, myPout, sumPout
+        real(wp) :: preterm1, term2, aux, denom, c1, c2
+        integer :: bub_idx, total_ids
+        integer :: i, k
 
-            ! Conditions:
-            if (lag_params%smooth_type /= 1) stop "lag_params%cluster_type: 2 requires lag_params%smooth_type: 1."
+        if (any(lag_params%interaction_model == (/1, 3/)) .and. p > 0) then !Kazuki's model
+            !$acc parallel loop gang vector default(present) private(k, cell)
+            do k = 1, nBubs
+                ! Current bubble state
+                myR0 = bub_R0(k)
+                myR = intfc_rad(k, 2)
+                myV = intfc_vel(k, 2)
+                myPb = gas_p(k, 2)
+                myShell = mrmtnt_shell(k, 2)
+                myRbuck = mrmtnt_Rbuck(k)
+                myRrupt = mrmtnt_Rrupt(k)
+                if (myR > myRrupt) myShell = 0._wp
 
-            ! Include the cell that contains the bubble (mapCells+1+mapCells)
-            ! Assume that the bubble radius is always smaller than the characteristic cell size.
+                ! Calculate velocity potentials (valid for one bubble per cell)
+                call s_get_pinf(k, q_prim_vf, 2, Pcell, cell, preterm1, term2, Rcell)
 
-            smearGrid = mapCells - (-mapCells)
-
-            vol = 0._wp
-            charvol = 0._wp
-            charpres = 0._wp
-            charpres_sqrd = 0._wp
-            charvol2 = 0._wp
-            charpres2 = 0._wp
-            charpres2_sqrd = 0._wp
-            cell_count = 0._wp
-
-            !$acc loop seq
-            do i = 0, smearGrid
+                ! Obtain liquid density and computing speed of sound from myPinf
+                myRho = 0._wp
                 !$acc loop seq
-                do j = 0, smearGrid
-                    cellaux(1) = cell(1) + i - mapCells
-                    cellaux(2) = cell(2) + j - mapCells
-                    cellaux(3) = 0
-
-                    !< check if the current cell is outside the computational domain or not (including ghost cells)
-                    celloutside = .false.
-                    if ((cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
-                        celloutside = .true.
-                    end if
-                    if ((cellaux(2) > n + buff_size) .or. (cellaux(1) > m + buff_size)) then
-                        celloutside = .true.
-                    end if
-                    if (.not. celloutside .and. cyl_coord) then
-                        if (cellaux(2) < 0) celloutside = .true.
-                    end if
-
-                    if (.not. celloutside) then
-                        !< Obtaining the cell volulme
-                        if (cyl_coord) then
-                            vol = dx(cellaux(1))*dy(cellaux(2))*y_cc(cellaux(2))*2._wp*pi
-                        else
-                            vol = dx(cellaux(1))*dy(cellaux(2))*lag_params%charwidth
-                        end if
-                        !< Update values
-                        cell_count = cell_count + 1._wp
-                        charvol = charvol + vol
-                        charpres = charpres + vol*q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3))
-                        charpres_sqrd = charpres_sqrd + vol*(q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)))**2._wp
-                        charvol2 = charvol2 + vol*q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
-                        charpres2 = charpres2 + vol*q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-                                                   *q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
-                        charpres2_sqrd = charpres2_sqrd + vol*(q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-                                                   *q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)))**2._wp
-                    end if
+                do i = 1, num_fluids
+                    myRho = myRho + q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
                 end do
+
+                aux = Rcell**3._wp - myR**3._wp
+                c2 = (3._wp/2._wp)*(myR**3._wp)*(1._wp - myR/Rcell)/aux
+                c1 = (3._wp/2._wp)*(myR*(Rcell**2._wp - myR**2._wp))/aux
+
+                Pn = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
+                Pn = Pn/myRho - 0.5_wp*myV**2._wp
+                bub_dphidt(k) = (Pcell/myRho - Pn) - c2*myV**2._wp
+                ! Accounting for the potential induced by the bubble averaged over the control volume
+                ! Note that this is based on the incompressible flow assumption near the bubble.
+                bub_dphidt(k) = bub_dphidt(k)/(1._wp - c1)
+
+                ! Scattered pressure
+                myPout = myRho*(c1*bub_dphidt(k) - c2*myV**2._wp)
+
+                !Update emitted Pout
+                bub_pout(k, 1) = myPout
+                !print*, 'myPout matching:', myPout
+
             end do
 
-            TzPcell = charpres2/charvol2
-            noise_constant = 0._wp
+            ! The one that passes old Test files
+            ! !$acc parallel loop gang vector default(present) private(k, cell)
+            ! do k = 1, nBubs
+            !     ! Current bubble state
+            !     myR0 = bub_R0(k)
+            !     myR = intfc_rad(k, 2)
+            !     myV = intfc_vel(k, 2)
+            !     myPb = gas_p(k, 2)
+            !     myShell = mrmtnt_shell(k, 2)
+            !     myRbuck = mrmtnt_Rbuck(k)
+            !     myRrupt = mrmtnt_Rrupt(k)
+            !     if (myR > myRrupt) myShell = 0._wp
 
-            if (lag_params%pressure_corrector) then
-                ! find noise_constant: C_A
+            !     ! Calculate velocity potentials (valid for one bubble per cell)
+            !     call s_get_pinf(k, q_prim_vf, 2, Pcell, cell, preterm1, term2, Rcell)
+            !     aux = Rcell**3._wp - myR**3._wp
+            !     term2 = 3._wp/2._wp*myV**2._wp*myR**3._wp*(1._wp - myR/Rcell)/aux
+            !     preterm1 = 3._wp/2._wp*myR*(Rcell**2._wp - myR**2._wp)/(aux*myR**2._wp)
 
-                if (cyl_coord) then
-                    c_t = ceiling(2._wp*pi*y_cc(cell(2))/(y_cb(cell(2)) - y_cb(cell(2) - 1)))
-                else
-                    c_t = ceiling(lag_params%charwidth/(y_cb(cell(2)) - y_cb(cell(2) - 1)))
-                end if
-                c_t = c_t / cell_count
+            !     Pn = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
+            !     Pn = Pn + 0.5_wp*myV**2._wp
+            !     bub_dphidt(k) = (Pcell - Pn) + term2
+            !     ! Accounting for the potential induced by the bubble averaged over the control volume
+            !     ! Note that this is based on the incompressible flow assumption near the bubble.
+            !     c1 = 3._wp/2._wp*(myR*(Rcell**2._wp - myR**2._wp))/(Rcell**3._wp - myR**3._wp)
+            !     bub_dphidt(k) = bub_dphidt(k)/(1._wp - c1)
 
-                chardist = sqrt(dx(cell(1))*dy(cell(2)))
-                dk = pi/(num_noise*chardist)
+            !     ! Scattered pressure
+            !     myPout = preterm1*bub_dphidt(k)*myR**2._wp + term2
 
-                k = 0._wp
-                denom = 0._wp
+            !     !Update emitted Pout
+            !     bub_pout(k, 1) = myPout
+            !     print*, 'myPout matching:', myPout
+
+            ! end do
+        end if
+
+        if (any(lag_params%interaction_model == (/2, 3/))) then !Aditya's model, Pout is going to be I term from eqn 3.19
+
+            !$acc parallel loop gang vector default(present) private(k, cell)
+            do k = 1, nBubs
+
+                ! Number of the bubbles in the smearing volume (Self-inclusive)
+                total_ids = int(bub_int_ids(k, 1)) 
+
+                sumPout = 0._wp
                 !$acc loop seq
-                do i = 1, num_noise
-                    denom = denom + dk * exp(-0.5_wp*((2_wp*pi/k - l_c)/(0.5_wp*l_c))**2._wp)
-                    k = k + dk
-                end do
+                do i = 2, total_ids + 1
+                    bub_idx = bub_int_ids(k, i)
+                    ! Current interacting bubble state
+                    myR = intfc_rad(bub_idx, 2)
+                    myV = intfc_vel(bub_idx, 2)
+                    myA = intfc_ac(bub_idx, 2)
+                    myDist = (mtn_posPrev(bub_idx, 1, 2) - mtn_posPrev(k, 1, 2))**2._wp + &
+                                (mtn_posPrev(bub_idx, 2, 2) - mtn_posPrev(k, 2, 2))**2._wp + &
+                                (mtn_posPrev(bub_idx, 3, 2) - mtn_posPrev(k, 3, 2))**2._wp
+                    myDist = sqrt(myDist)
+                    
+                    if (bub_idx /= k) then  ! non-inclusive for Aditya's model
+                            sumPout = sumPout - (2._wp*myR*myV**2._wp + myA*myR**2._wp)/myDist
+                    end if
+                end do  
 
-                noise_constant = (0.5_wp*l_c) * sqrt(2._wp*pi) * c_t * ((charpres_sqrd/charvol)-(charpres/charvol)**2_wp) / denom
-                !noise_constant = (0.5_wp*l_c) * sqrt(2._wp*pi) * c_t * ((charpres2_sqrd/charvol2)-(charpres2/charvol2)**2_wp) / denom
+                ! I term: sum over bubbles
+                bub_pout(k, 2) = sumPout
+                !print*, 'sum Pout:', bub_pout(k, 2)
 
-                !if (noise_constant == 0._wp) stop "noise_constant si zero. Exiting."
-                if (lag_id(bub_id, 1) ==1) print*, noise_constant, c_t, ((charpres_sqrd/charvol)-(charpres/charvol)**2_wp), ((charpres2_sqrd/charvol2)-(charpres2/charvol2)**2_wp)
-    
-                !if (noise_constant <= 0._wp) noise_constant = 0._wp
-            end if
-
-        else
-
-            stop "Check white noise. Exiting."
+            end do
 
         end if
 
-    end subroutine s_white_noise_constants
+    end subroutine s_calculate_scattered_pressure
 
     !> The purpose of this procedure is obtain the bubble driving pressure p_inf (OLD VERSION)
         !! @param bub_id Particle identifier
@@ -1269,13 +1488,13 @@ contains
         real(wp), intent(out), optional :: preterm1, term2, Romega
 
         real(wp), dimension(3) :: scoord, psi
-        real(wp) :: dc, vol, aux
+        real(wp) :: dc, vol, aux, chardist, dist_cc
         real(wp) :: volgas, term1, Rbeq, denom
         real(wp) :: charvol, charpres, charvol2, charpres2, charbeta
         integer, dimension(3) :: cellaux
         integer :: i, j, k
         integer :: mapCells_pinf, smearGrid, smearGridz
-        logical :: celloutside
+        logical :: celloutside, condition
 
         scoord = mtn_s(bub_id, 1:3, 2)
         f_pinfl = 0._wp
@@ -1411,6 +1630,30 @@ contains
                             end if
                         end if
 
+                        if (lag_params%interaction_model==2) then
+                            ! Liquid pressure from the cells around a virtual sphere of radius K*chardist that surrounds the bubble
+                            if (p > 0) then
+                                chardist = sqrt(dx(cell(1))*dy(cell(2))*dz(cell(3)))
+                                dist_cc = sqrt((x_cc(cell(1)) - x_cc(cellaux(1)))**2._wp + &
+                                               (y_cc(cell(2)) - y_cc(cellaux(2)))**2._wp + &
+                                               (z_cc(cell(3)) - z_cc(cellaux(3)))**2._wp)
+                                ! condition = abs(dist_cc-lag_params%scaleVirtualSphere*chardist) < 1.8_wp*chardist
+                                condition = (cellaux(1) == cell(1) - mapCells .or. cellaux(1) == cell(1) + mapCells .or. &
+                                             cellaux(2) == cell(2) - mapCells .or. cellaux(2) == cell(2) + mapCells .or. &
+                                             cellaux(3) == cell(3) - mapCells .or. cellaux(3) == cell(3) + mapCells)
+                                if (.not. condition) celloutside = .true.
+                            else
+                                chardist = sqrt(dx(cell(1))*dy(cell(2)))
+                                dist_cc = sqrt((x_cc(cell(1)) - x_cc(cellaux(1)))**2._wp + &
+                                               (y_cc(cell(2)) - y_cc(cellaux(2)))**2._wp)
+                                ! condition = abs(dist_cc-lag_params%scaleVirtualSphere*chardist) < 1.5_wp*chardist
+                                condition = (cellaux(1) == cell(1) - mapCells .or. cellaux(1) == cell(1) + mapCells .or. &
+                                             cellaux(2) == cell(2) - mapCells .or. cellaux(2) == cell(2) + mapCells)
+                                if (.not. condition) celloutside = .true.
+                            end if
+
+                        end if
+
                         if (.not. celloutside) then
                             !< Obtaining the cell volulme
                             if (p > 0) then
@@ -1422,13 +1665,15 @@ contains
                                     vol = dx(cellaux(1))*dy(cellaux(2))*lag_params%charwidth
                                 end if
                             end if
+
                             !< Update values
                             charvol = charvol + vol
+                            charbeta = charbeta + q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
                             charpres = charpres + q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3))*vol
                             charvol2 = charvol2 + vol*q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
                             charpres2 = charpres2 + q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
                                         *vol*q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
-                            charbeta = charbeta + q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
+                            
                         end if
 
                     end do
@@ -1436,38 +1681,40 @@ contains
             end do
 
             f_pinfl = charpres2/charvol2
+            if (lag_params%interaction_model==2) f_pinfl = charpres/charvol
             vol = charvol
             dc = (3._wp*abs(vol)/(4._wp*pi))**(1._wp/3._wp)
-
         else
-
             stop "Check clusterflag. Exiting."
-
         end if
 
-        if (lag_params%pressure_corrector .and. p > 0) then
+        !Control volume radius
+        Romega = dc
 
-            !Valid if only one bubble exists per cell
-            volgas = intfc_rad(bub_id, 2)**3._wp
-            denom = intfc_rad(bub_id, 2)**2._wp
-            term1 = bub_dphidt(bub_id)*intfc_rad(bub_id, 2)**2._wp
-            term2 = intfc_vel(bub_id, 2)*intfc_rad(bub_id, 2)**2._wp
+        ! if (lag_params%pressure_corrector .and. p > 0) then
 
-            Rbeq = volgas**(1._wp/3._wp) !surrogate bubble radius
-            aux = dc**3._wp - Rbeq**3._wp
-            term2 = term2/denom
-            term2 = 3._wp/2._wp*term2**2._wp*Rbeq**3._wp*(1._wp - Rbeq/dc)/aux
-            preterm1 = 3._wp/2._wp*Rbeq*(dc**2._wp - Rbeq**2._wp)/(aux*denom)
+        !     !Valid if only one bubble exists per cell
+        !     volgas = intfc_rad(bub_id, 2)**3._wp
+        !     denom = intfc_rad(bub_id, 2)**2._wp
+        !     term1 = bub_dphidt(bub_id)*intfc_rad(bub_id, 2)**2._wp
+        !     term2 = intfc_vel(bub_id, 2)*intfc_rad(bub_id, 2)**2._wp
 
-            !Control volume radius
-            if (ptype == 2) Romega = dc
+        !     Rbeq = volgas**(1._wp/3._wp) !surrogate bubble radius
+        !     aux = dc**3._wp - Rbeq**3._wp
+        !     term2 = term2/denom
+        !     term2 = 3._wp/2._wp*term2**2._wp*Rbeq**3._wp*(1._wp - Rbeq/dc)/aux
+        !     preterm1 = 3._wp/2._wp*Rbeq*(dc**2._wp - Rbeq**2._wp)/(aux*denom)
 
-            ! Getting p_inf
-            if (ptype == 1) then
-                f_pinfl = f_pinfl + preterm1*term1 + term2
-            end if
+        !     !Control volume radius
+        !     if (ptype == 2) Romega = dc
 
-        end if
+        !     ! Getting p_inf
+        !     if (ptype == 1) then
+        !         print*, 'P_inf subr:', preterm1*term1 + term2, f_pinfl + preterm1*term1 + term2
+        !         f_pinfl = f_pinfl + preterm1*term1 + term2
+        !     end if
+
+        ! end if
 
     end subroutine s_get_pinf
 
@@ -1497,7 +1744,7 @@ contains
 
             ! Mixture properties in the bubble
             conc_v_h = 0._wp
-            if (lag_params%massTransfer_model .or. lag_params%coatedBub_model) then
+            if (lag_params%massTransfer_model .and. (fshell_h == 0._wp)) then
                 conc_v_h = 1._wp/(1._wp + (R_v/R_n)*(fpb_h/pv - 1._wp))
             end if
             R_m_h = fmass_n_h*R_n + fmass_v_h*R_v
@@ -1555,6 +1802,7 @@ contains
                 gas_mv(k, 1) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
                 if (intfc_rad(k, 1) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
                 mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
+                intfc_ac(k, 1) = intfc_dveldt(k, 1)
             end do
 
             call s_transfer_data_to_tmp(transferShell)
@@ -1577,6 +1825,7 @@ contains
                     gas_p(k, 2) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
                     if (intfc_rad(k, 2) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
+                    !intfc_ac(k, 2) = intfc_dveldt(k, 1)
                 end do
 
             elseif (stage == 2) then
@@ -1594,6 +1843,7 @@ contains
                         if (intfc_rad(k, 1) < mrmtnt_Rrupt(k)) mrmtnt_shell(k, 2) = 1._wp ! No actual rupture happened during dt
                     end if
                     mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
+                    intfc_ac(k, 1) = (intfc_dveldt(k, 1) + intfc_dveldt(k, 2))/2._wp
                 end do
 
                 call s_transfer_data_to_tmp(transferShell)
@@ -1618,6 +1868,7 @@ contains
                     gas_p(k, 2) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
                     if (intfc_rad(k, 2) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
+                    !intfc_ac(k, 2) = intfc_dveldt(k, 1)
                 end do
 
             elseif (stage == 2) then
@@ -1631,6 +1882,7 @@ contains
                     gas_p(k, 2) = gas_p(k, 1) + dt*(gas_dpdt(k, 1) + gas_dpdt(k, 2))/4._wp
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*(gas_dmvdt(k, 1) + gas_dmvdt(k, 2))/4._wp
                     if (intfc_rad(k, 2) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
+                    !intfc_ac(k, 2) = (intfc_dveldt(k, 1) + intfc_dveldt(k, 2))/4._wp
                 end do
             elseif (stage == 3) then
                 !$acc parallel loop gang vector default(present) private(k)
@@ -1647,6 +1899,7 @@ contains
                         if (intfc_rad(k, 1) < mrmtnt_Rrupt(k)) mrmtnt_shell(k, 2) = 1._wp ! No actual rupture happened during dt
                     end if
                     mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
+                    intfc_ac(k, 1) = (2._wp/3._wp)*(intfc_dveldt(k, 1)/4._wp + intfc_dveldt(k, 2)/4._wp + intfc_dveldt(k, 3))
                 end do
 
                 call s_transfer_data_to_tmp(transferShell)
@@ -2002,6 +2255,7 @@ contains
             gas_mv(k, 2) = gas_mv(k, 1)
             intfc_rad(k, 2) = intfc_rad(k, 1)
             intfc_vel(k, 2) = intfc_vel(k, 1)
+            intfc_ac(k, 2) = intfc_ac(k, 1)
             mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 1)
             mtn_posPrev(k, 1:3, 2) = mtn_posPrev(k, 1:3, 1)
             mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1)
@@ -2194,34 +2448,15 @@ contains
             open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
             write (11, *) 'currentTime, particleID, x, y, z, ', &
                 'coreVaporMass, coreVaporConcentration, radius, interfaceVelocity, ', &
-                'corePressure, qvis, qth, shell'
+                'corePressure, pout, qvis, qth, shell'
         end if
 
         if (lag_params%write_only_bub_id == dflt_int) then
             ! Cycle through list
             do k = 1, nBubs
-                write (11, '(6X,f12.6,I12.6,11e24.8)') &
-                    qtime, &
-                    lag_id(k, 1), &
-                    mtn_pos(k, 1, 1), &
-                    mtn_pos(k, 2, 1), &
-                    mtn_pos(k, 3, 1), &
-                    gas_mv(k, 1), &
-                    gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
-                    intfc_rad(k, 1), &
-                    intfc_vel(k, 1), &
-                    gas_p(k, 1), &
-                    bub_qvis(k), &
-                    bub_qth(k), &
-                    mrmtnt_shell(k, 1)
-            end do
 
-        elseif (nBubs > 0) then
-            ! One specified bubble id only
-            k = lag_params%write_only_bub_id
-
-            if (k == lag_id(k, 1)) then
-                write (11, '(6X,f12.6,I12.6,11e24.8)') &
+                if (particle_in_domain_physical(mtn_pos(k, 1:3, 1))) then
+                    write (11, '(6X,f12.6,I12.6,18e24.8)') &
                         qtime, &
                         lag_id(k, 1), &
                         mtn_pos(k, 1, 1), &
@@ -2232,9 +2467,37 @@ contains
                         intfc_rad(k, 1), &
                         intfc_vel(k, 1), &
                         gas_p(k, 1), &
+                        bub_pout(k, 1), &
                         bub_qvis(k), &
                         bub_qth(k), &
-                        mrmtnt_shell(k, 1)
+                        mrmtnt_shell(k, 1), &
+                        mrmtnt_Rrupt(k), &
+                        bub_print(k, 1:5)
+                end if
+            end do
+
+        elseif (nBubs > 0) then
+            ! One specified bubble id only
+            k = lag_params%write_only_bub_id
+
+            if (k == lag_id(k, 1)) then
+                if (particle_in_domain_physical(mtn_pos(k, 1:3, 1))) then
+                    write (11, '(6X,f12.6,I12.6,12e24.8)') &
+                            qtime, &
+                            lag_id(k, 1), &
+                            mtn_pos(k, 1, 1), &
+                            mtn_pos(k, 2, 1), &
+                            mtn_pos(k, 3, 1), &
+                            gas_mv(k, 1), &
+                            gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
+                            intfc_rad(k, 1), &
+                            intfc_vel(k, 1), &
+                            gas_p(k, 1), &
+                            bub_pout(k, 1), &
+                            bub_qvis(k), &
+                            bub_qth(k), &
+                            mrmtnt_shell(k, 1)
+                end if
 
             end if
         end if
@@ -2319,13 +2582,13 @@ contains
         if (lag_vol > 0._wp) lag_void_avg = lag_void_avg/lag_vol
 
         if (proc_rank == 0) then
-            write (12, '(6X,6e24.8)') &
+            write (12, '(6X,4e24.8)') &
                 qtime, &
                 lag_void_avg, &
                 lag_void_max, &
-                voltot, &
-                Rmax_glb, &
-                Rmin_glb
+                voltot!, &
+                ! Rmax_glb, &
+                ! Rmin_glb
             close (12)
         end if
 
@@ -2351,7 +2614,7 @@ contains
         integer :: view
         integer, dimension(2) :: gsizes, lsizes, start_idx_part
         integer, dimension(num_procs) :: part_order, part_ord_mpi
-        integer :: varsExtra = 5
+        integer :: varsExtra = 6
 
         bub_id = 0._wp
         if (nBubs /= 0) then
@@ -2458,6 +2721,8 @@ contains
                     ! hifu
                     MPI_IO_DATA_lag_bubbles(i, 25) = bub_qvis(k)
                     MPI_IO_DATA_lag_bubbles(i, 26) = bub_qth(k)
+                    MPI_IO_DATA_lag_bubbles(i, 27) = intfc_ac(k, 1)
+                    
 
                     !print*, k, proc_rank, MPI_IO_DATA_lag_bubbles(i, 1:26)
 
@@ -2561,6 +2826,7 @@ contains
             gas_mv(i, 1:2) = gas_mv(i + 1, 1:2)
             intfc_rad(i, 1:2) = intfc_rad(i + 1, 1:2)
             intfc_vel(i, 1:2) = intfc_vel(i + 1, 1:2)
+            intfc_ac(i, 1:2) = intfc_ac(i + 1, 1:2)
             mtn_pos(i, 1:3, 1:2) = mtn_pos(i + 1, 1:3, 1:2)
             mtn_posPrev(i, 1:3, 1:2) = mtn_posPrev(i + 1, 1:3, 1:2)
             mtn_vel(i, 1:3, 1:2) = mtn_vel(i + 1, 1:3, 1:2)
@@ -2604,8 +2870,6 @@ contains
         end if
         @:DEALLOCATE(lag_id)
         @:DEALLOCATE(bub_R0)
-        @:DEALLOCATE(bub_lambda_c)
-        !@:DEALLOCATE(bub_rnd_phase)
         @:DEALLOCATE(Rmax_stats)
         @:DEALLOCATE(Rmin_stats)
         @:DEALLOCATE(gas_mg)
@@ -2616,6 +2880,7 @@ contains
         @:DEALLOCATE(gas_mv)
         @:DEALLOCATE(intfc_rad)
         @:DEALLOCATE(intfc_vel)
+        @:DEALLOCATE(intfc_ac)
         @:DEALLOCATE(mtn_pos)
         @:DEALLOCATE(mtn_posPrev)
         @:DEALLOCATE(mtn_vel)
@@ -2633,7 +2898,13 @@ contains
         ! hifu
         @:DEALLOCATE(bub_qvis)
         @:DEALLOCATE(bub_qth)
-
+        ! bubble interaction
+        @:DEALLOCATE(bub_pout)
+        @:DEALLOCATE(bub_int_ids)
+        @:DEALLOCATE(bub_lambda_c)
+        !@:DEALLOCATE(bub_rnd_phase)
+        @:DEALLOCATE(bub_print)
+        
     end subroutine s_finalize_lagrangian_solver
 
 end module m_bubbles_EL
