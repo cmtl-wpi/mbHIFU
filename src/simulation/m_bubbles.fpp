@@ -40,12 +40,11 @@ contains
         !!  @param fCson Speed of sound from fP (EL)
         !!  @param fshell Shell switch, Marmottant model (EL)
         !!  @param fRbuck Buckling radius, Marmottant model (EL)
-    function f_rddot(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, fntait, fBtait, f_bub_adv_src, f_divu, fCson, fInt, fshell, fRbuck, fRcell, fPrints)
+    function f_rddot(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, fntait, fBtait, f_bub_adv_src, f_divu, fCson, fInt, fshell, fRbuck, fRcell)
         !$acc routine seq
         real(wp), intent(in) :: fRho, fP, fR, fV, fR0, fpb, fpbdot, alf
         real(wp), intent(in) :: fntait, fBtait, f_bub_adv_src, f_divu
         real(wp), intent(in) :: fshell, fRbuck, fCson, fInt, fRcell
-        real(wp), dimension(5), intent(inout) :: fPrints
 
         real(wp) :: fCpbw, fCpinf, fCpinf_dot, fH, fHdot, c_gas, c_liquid
         real(wp) :: pout
@@ -71,7 +70,7 @@ contains
                 fCpinf = fCpinf - pout
                 c_liquid = fCson
             end if
-            f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid, fInt, fshell, fRbuck, fPrints)
+            f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid, fInt, fshell, fRbuck)
         else if (bubble_model == 3) then
             ! Rayleigh-Plesset bubbles
             fCpbw = f_cpbw_KM(fR0, fR, fV, fpb)
@@ -299,11 +298,10 @@ contains
         !!  @param fV Current bubble velocity
         !!  @param fR0 Equilibrium bubble radius
         !!  @param fC Current sound speed
-    function f_rddot_KM(fpbdot, fCp, fCpbw, fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck, fPrints)
+    function f_rddot_KM(fpbdot, fCp, fCpbw, fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck)
         !$acc routine seq
         real(wp), intent(in) :: fpbdot, fCp, fCpbw
         real(wp), intent(in) :: fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck
-        real(wp), dimension(5), intent(inout) :: fPrints
 
         real(wp) :: tmp1, tmp2, denom, cdot_star, ss_mod
         real(wp) :: f_rddot_KM
@@ -344,13 +342,7 @@ contains
         if (.not. f_is_default(Re_inv)) denom = denom + 4._wp*Re_inv/(fRho*fC)
 
         f_rddot_KM = tmp2/denom
-
-        fPrints(1) = 1.5_wp*(fV**2._wp)*(tmp1/3._wp - 1._wp) + (1._wp + tmp1)*(fCpbw - fCp)/fRho
-        fPrints(2) = cdot_star*fR/(fRho*fC)
-        fPrints(3) = fR/(fRho*fC)
-        fPrints(4) = fCp
-        fPrints(5) = fInt
-        
+       
     end function f_rddot_KM
 
     !>  Subroutine that computes bubble wall properties for vapor bubbles
@@ -625,7 +617,7 @@ contains
         bub_id, fmass_v, fmass_n, fbeta_c, &
         fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
         fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
-        fQvis, fQth, fPrints)
+        fQvis, fQth)
 #ifdef _CRAYFTN
         !DIR$ INLINEALWAYS s_advance_step
 #else
@@ -640,7 +632,6 @@ contains
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
         real(wp), intent(out) :: fQvis, fQth
-        real(wp), dimension(5), intent(inout) :: fPrints
 
         real(wp) :: tol
         real(wp) :: err1, err2, err3, err4, err5 !< Error estimates for adaptive time stepping
@@ -681,7 +672,7 @@ contains
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
                        fnoise_constant, flambda_c, fdk, floc, ftime + t_new, fAc1, & !fPhase_rn&
-                       fCson, fInt, fshell, fRbuck, fRcell, fPrints, h, &
+                       fCson, fInt, fshell, fRbuck, fRcell, h, &
                        myR_tmp1, myV_tmp1, myPb_tmp1, myMv_tmp1)
 
                 ! Advance one sub-step by advancing two half steps
@@ -690,7 +681,7 @@ contains
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
                        fnoise_constant, flambda_c, fdk, floc, ftime + t_new, fAc21, & !fPhase_rn&
-                       fCson, fInt, fshell, fRbuck, fRcell, fPrints, 0.5_wp*h, &
+                       fCson, fInt, fshell, fRbuck, fRcell, 0.5_wp*h, &
                        myR_tmp2, myV_tmp2, myPb_tmp2, myMv_tmp2)
 
                 err3 = f_advance_substep( &
@@ -698,7 +689,7 @@ contains
                        fntait, fBtait, f_bub_adv_src, f_divu, &
                        bub_id, myMv_tmp2(4), fmass_n, fbeta_c, fbeta_t, &
                        fnoise_constant, flambda_c, fdk, floc, ftime + t_new + 0.5_wp*h, fAc22, & !fPhase_rn&
-                       fCson, fInt, fshell, fRbuck, fRcell, fPrints, 0.5_wp*h, &
+                       fCson, fInt, fshell, fRbuck, fRcell, 0.5_wp*h, &
                        myR_tmp2, myV_tmp2, myPb_tmp2, myMv_tmp2)
 
                 err4 = abs((myR_tmp1(4) - myR_tmp2(4))/myR_tmp1(4))
@@ -822,7 +813,6 @@ contains
         real(wp) :: d_0, d_1, d_2 !< norms
         real(wp), dimension(2) :: myR_tmp, myV_tmp, myA_tmp !< Bubble radius, radial velocity, and radial acceleration
         real(wp) :: f_initial_substep_h
-        real(wp), dimension(5) :: fPrints
 
         ! Determine the starting time step
         ! Evaluate f(x0,y0)
@@ -831,7 +821,7 @@ contains
         myA_tmp(1) = f_rddot(fRho, fP, myR_tmp(1), myV_tmp(1), fR0, &
                              fpb, fpbdot, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
+                             fCson, fInt, fshell, fRbuck, fRcell)
 
         ! Compute d_0 = ||y0|| and d_1 = ||f(x0,y0)||
         d_0 = sqrt((myR_tmp(1)**2._wp + myV_tmp(1)**2._wp)/2._wp)
@@ -848,7 +838,7 @@ contains
         myA_tmp(2) = f_rddot(fRho, fP, myR_tmp(2), myV_tmp(2), fR0, &
                              fpb, fpbdot, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
+                             fCson, fInt, fshell, fRbuck, fRcell)
 
         ! Compute d_2 = ||f(x0+h0,y0+h0*f(x0,y0))-f(x0,y0)||/h0
         d_2 = sqrt(((myV_tmp(2) - myV_tmp(1))**2._wp + (myA_tmp(2) - myA_tmp(1))**2._wp)/2._wp)/h0
@@ -895,7 +885,7 @@ contains
                                 fntait, fBtait, f_bub_adv_src, f_divu, &
                                 bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
                                 fnoise_constant, flambda_c, fdk, floc, ftime, fAc, & !fPhase_rn &
-                                fCson, fInt, fshell, fRbuck, fRcell, fPrints, h, &
+                                fCson, fInt, fshell, fRbuck, fRcell, h, &
                                 myR_tmp, myV_tmp, myPb_tmp, myMv_tmp)
         !$acc routine seq
         real(wp), intent(IN) :: fRho, fP, fR, fV, fR0, fpb, fpbdot, alf
@@ -906,7 +896,6 @@ contains
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
         real(wp), dimension(4), intent(OUT) :: myR_tmp, myV_tmp, myPb_tmp, myMv_tmp
-        real(wp), dimension(5), intent(inout) :: fPrints
 
         real(wp), dimension(4) :: myA_tmp, mydPbdt_tmp, mydMvdt_tmp
         real(wp) :: err_R, err_V, f_advance_substep
@@ -937,7 +926,7 @@ contains
         myA_tmp(1) = f_rddot(fRho, Pinf, myR_tmp(1), myV_tmp(1), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
+                             fCson, fInt, fshell, fRbuck, fRcell)
 
         ! Stage 1
         myR_tmp(2) = myR_tmp(1) + h*myV_tmp(1)
@@ -955,7 +944,7 @@ contains
         myA_tmp(2) = f_rddot(fRho, Pinf, myR_tmp(2), myV_tmp(2), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
+                             fCson, fInt, fshell, fRbuck, fRcell)
 
         ! Stage 2
         myR_tmp(3) = myR_tmp(1) + (h/4._wp)*(myV_tmp(1) + myV_tmp(2))
@@ -973,7 +962,7 @@ contains
         myA_tmp(3) = f_rddot(fRho, Pinf, myR_tmp(3), myV_tmp(3), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
+                             fCson, fInt, fshell, fRbuck, fRcell)
 
         ! Stage 3
         myR_tmp(4) = myR_tmp(1) + (h/6._wp)*(myV_tmp(1) + myV_tmp(2) + 4._wp*myV_tmp(3))
@@ -991,7 +980,7 @@ contains
         myA_tmp(4) = f_rddot(fRho, Pinf, myR_tmp(4), myV_tmp(4), fR0, &
                              Pb_tmp, Pbdot_tmp, alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
-                             fCson, fInt, fshell, fRbuck, fRcell, fPrints)
+                             fCson, fInt, fshell, fRbuck, fRcell)
 
         fAc = (myA_tmp(1) + myA_tmp(2) + 4._wp*myA_tmp(3))/6._wp
         !> Estimate error

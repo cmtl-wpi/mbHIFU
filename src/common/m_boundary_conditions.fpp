@@ -226,7 +226,7 @@ contains
         real(wp), optional, dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
         integer :: j, k, l, q, i
-        real(wp) :: tau, gFun, rc, rbeta
+        real(wp) :: tau, gFun, rc, rbeta, radial_cc
 
         !< x-direction =========================================================
         if (bc_dir == 1) then !< x-direction
@@ -265,9 +265,11 @@ contains
                                                                                      (acoustic_bc_params%focLen + acoustic_bc_params%focCal))**2._wp)
                                 rbeta = sqrt(1._wp + ((0.5_wp*acoustic_bc_params%apert)/ &
                                                       (acoustic_bc_params%focLen + acoustic_bc_params%focCal))**2._wp)
+                                radial_cc = y_cc(k)
+                                if (p>0) radial_cc = sqrt(y_cc(k)**2._wp + z_cc(l)**2._wp)
 
-                                if (y_cc(k) < rc) then
-                                    tau = mytime + y_cc(k)**2._wp/(2._wp*acoustic_bc_params%cson* &
+                                if (radial_cc < rc) then
+                                    tau = mytime + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
                                                                    (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
                                     gFun = (1._wp/rbeta)
 

@@ -174,8 +174,6 @@ contains
         integer :: dmBub_id !< Dummy variables for unified subgrid bubble subroutines
         real(wp) :: dmMass_v, dmMass_n, dmBeta_c, dmBeta_t, dmCson, dmshell, dmRbuck, dmRrupt, dmQvis, dmQth
         real(wp) :: dmNoise_constant, dmLambda_c, dmdk, dmLoc, dmTime, dmInt, dmA, dmRcell
-        real(wp), dimension(5) :: dmPrints
-        ! real(wp), dimension(num_noise) :: dmPhase_rn
 
         !$acc parallel loop collapse(3) gang vector default(present)
         do l = 0, p
@@ -293,7 +291,7 @@ contains
                                                 dmBub_id, dmMass_v, dmMass_n, dmBeta_c, &
                                                 dmBeta_t, dmCson, dmInt, dmshell, dmRbuck, dmRrupt,dmRcell, &
                                                 dmNoise_constant, dmLambda_c, dmdk, dmLoc, dmTime, dmA, &!dmPhase_rn, &
-                                                dmQvis, dmQth, dmPrints)
+                                                dmQvis, dmQth)
 
                             q_cons_vf(rs(q))%sf(j, k, l) = nbub*myR
                             q_cons_vf(vs(q))%sf(j, k, l) = nbub*myV
@@ -302,7 +300,7 @@ contains
                             rddot = f_rddot(myRho, myP, myR, myV, R0(q), &
                                             pb, pbdot, alf, n_tait, B_tait, &
                                             bub_adv_src(j, k, l), divu%sf(j, k, l), &
-                                            dmCson, dmInt, dmshell, dmRbuck, dmRcell, dmPrints)
+                                            dmCson, dmInt, dmshell, dmRbuck, dmRcell)
                             bub_v_src(j, k, l, q) = nbub*rddot
                             bub_r_src(j, k, l, q) = q_cons_vf(vs(q))%sf(j, k, l)
                         end if

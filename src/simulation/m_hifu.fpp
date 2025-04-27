@@ -668,6 +668,9 @@ contains
             sys_size_HIFU = hifu_params%qth_idx
             !$acc update device(m_hf, n_hf, p_hf, num_dims, grid_geometry, cyl_coord, sys_size_HIFU)
 
+            !Deallocate variables to free memory
+            if (bubbles_lagrange) call s_free_memory_stg3()
+
             !> all bc are assumed to be ghost cell extrapolation
             if (proc_rank==0) then
                 bc_x%beg = -6; bc_x%end = -6
@@ -1158,14 +1161,14 @@ contains
         do while(.true.)
             if( x_cc(cell2D_xb) >= x_cb_hf(j-1)) exit
             cell2D_xb = cell2D_xb + 1
-            if (cell2D_xb > m + buff_size) stop "cell2D_xb > m + buff_size"
+            if (cell2D_xb > m + buff_size) return 
         end do
         !x-dir-end
-        cell2D_xe = 0
+        cell2D_xe = -buff_size
         do while(.true.)
             if( x_cc(cell2D_xe) >= x_cb_hf(j)) exit
             cell2D_xe = cell2D_xe + 1
-            if (cell2D_xe > m + buff_size) stop "cell2D_xe > m + buff_size"
+            if (cell2D_xe > m + buff_size) return
         end do
         cell2D_xe = cell2D_xe - 1
 
@@ -1174,17 +1177,14 @@ contains
         do while(.true.)
             if( y_cc(cell2D_rb) >= r_cb_1) exit
             cell2D_rb = cell2D_rb + 1
-            if (cell2D_rb > n + buff_size) stop "cell2D_rb > n + buff_size"
+            if (cell2D_rb > n + buff_size) return
         end do
         !r-dir-end
         cell2D_re = 0
         do while(.true.)
             if( y_cc(cell2D_re) >= r_cb_2) exit
             cell2D_re = cell2D_re + 1
-            if (cell2D_re > n + buff_size) then
-                print*, r_cb_2, y_cc(0), y_cc(n + buff_size)
-                stop "cell2D_re > n + buff_size"
-            end if
+            if (cell2D_re > n + buff_size) return
         end do
         cell2D_re = cell2D_re - 1
 
@@ -1208,7 +1208,7 @@ contains
             do while(.true.)
                 if (x_cc_hf(j) >= x_cb(cell2D_x-1) .and. x_cc_hf(j) < x_cb(cell2D_x)) exit
                 cell2D_x = cell2D_x + 1
-                if (cell2D_x > m + buff_size) stop "cell2D_x > m + buff_size"
+                if (cell2D_x > m + buff_size) return
             end do
 
             !r-dir
@@ -1216,7 +1216,7 @@ contains
             do while(.true.)
                 if (r_cc >= y_cb(cell2D_r-1) .and. r_cc < y_cb(cell2D_r)) exit
                 cell2D_r = cell2D_r + 1
-                if (cell2D_r > n + buff_size) stop "cell2D_r > n + buff_size"
+                if (cell2D_r > n + buff_size) return
             end do
 
             f_interpolate_qus = q_hifu(hifu_params%qus_idx)%sf(cell2D_x, cell2D_r, 0)
@@ -1424,11 +1424,23 @@ contains
             max_qvis = max(max_qvis, bub_qvis(i)/q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(0,0,0))
         end do
 
+        if (num_procs>1) then
+            tmp_local = max_qvis
+            call s_mpi_allreduce_max(tmp_local, tmp_global)
+            max_qvis = tmp_global
+
+            tmp_local = max_qvis_smooth
+            call s_mpi_allreduce_max(tmp_local, tmp_global)
+            max_qvis_smooth = tmp_global
+        end if
+
         ! Report general stats
-        print*, 'Max avg q_vis (lagrange):', max_qvis
-        print*, 'Max avg q_vis (euler):', max_qvis_smooth
-        print*, 'Sampled time:', sampledTime
-        print*, 'Host viscosity:', mul0
+        if (proc_rank==0) then
+            print*, 'Max avg q_vis (lagrange):', max_qvis
+            print*, 'Max avg q_vis (euler):', max_qvis_smooth
+            print*, 'Sampled time:', sampledTime
+            print*, 'Host viscosity:', mul0
+        end if
 
         if (proc_rank == 0) print*, 'Printing avg viscous and thermal intensities in W for all bubbles in ./D/ file'
 
