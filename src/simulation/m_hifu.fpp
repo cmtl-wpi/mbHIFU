@@ -274,8 +274,10 @@ contains
                         "on CPUs"
 #endif
                     end if
-                else
+                else if (p == 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (2D)'
+                else if (p > 0) then
+                    if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
@@ -319,8 +321,10 @@ contains
                         "on CPUs"
 #endif
                     end if
-                else
+                else if (p == 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (2D)'
+                else if (p > 0) then
+                    if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
@@ -434,14 +438,15 @@ contains
         logical :: axialCondition, radialCondition, condition
         real(wp) :: shearVisc, bulkVisc, absCoef
         real(wp) :: varA, varB
-        real(wp) :: duxdx, duxdr, durdx, durdr, ep11, ep22, ep33, ep13
+        real(wp) :: duxdx, duxdr, durdx, durdr, ep11, ep22, ep33, ep12, ep13, ep23
+        real(wp), dimension(3) :: duxdn, duydn, duzdn
         real(wp) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac, intensity_ac_prms
         real(wp) :: focalIntensity_th, sumIntensity_th
         real(wp) :: sumIntensity_vis, focalIntensity_vis, focalIntensity_ac_prms
         real(wp) :: focal_u, focal_v
 
-        integer :: i, j, k, l, s
-        logical :: abortFlag
+        integer :: i, j, k, l, s, mtd_idx
+        integer :: abortFlag, abortFlag_max
 
         focalIntensity_ac = 0._wp
         focalIntensity_ac_prms = 0._wp
@@ -449,17 +454,20 @@ contains
 
         if (bubbles_lagrange .and. .not. adap_dt) call s_compute_bubble_heat_sources_HIFU(hdid)
 
+        abortFlag_max = 0
+
         if (cyl_coord .and. p == 0) then  !Axysimetric
 
-            if (proc_rank==0) print*, 'Computing acoustic damping', mytime, hdid
+            if (proc_rank==0) print*, 'Computing axysimetric acoustic damping', mytime, hdid
 
             !$acc parallel loop collapse(3) gang vector default(present) reduction(+: sumIntensity_ac) &
-            !$acc reduction(MAX: focalIntensity_ac, focalIntensity_ac_prms) private(myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h) &
-            !$acc  copy(sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms)
+            !$acc reduction(MAX: focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max) &
+            !$acc private(myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h) &
+            !$acc copy(sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max)
             do l = 0, p
-                do j = 0, m
-                    do k = 0, n
-                        abortFlag = .false.
+                do k = 0, n
+                    do j = 0, m
+                        abortFlag = 0
 
                         !Get viscosities (and absorption coeff.) which are user inputs
                         shearVisc = 0._wp
@@ -475,7 +483,10 @@ contains
                         shearVisc = 1._wp/shearVisc
                         bulkVisc = 1._wp/bulkVisc
 
-                        if (f_is_default(absCoef)) stop "HIFU: Check absCoef values!"
+                        if (f_is_default(absCoef)) then
+                            print*, "HIFU: Check absCoef values!"
+                            abortFlag = 1
+                        end if
 
                         !>> Get the strain rate tensor (using central finite difference)
                         varA = 0._wp
@@ -551,17 +562,17 @@ contains
                             print*, 'viscosities (bulk & shear)', bulkVisc, shearVisc
                             print*, 'var: A, B', varA, varB, ep11, ep22, ep33, ep13
                             print*, 'ep22:', vel_h(2), y_cc(k), rho_h
-                            abortFlag = .true.
+                            abortFlag = 1
                         end if
 
                         if (q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l)) then
                             print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms
                             print*, 'absCoef*(Pres - atmPres)**2/(rho_h*cson_h)', absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
                                                                                                     hifu_params%atmPres, rho_h, cson_h
-                            abortFlag = .true.
+                            abortFlag = 1
                         end if
 
-                        if (abortFlag) stop "NaNs in Acoustic intensity (prms)"
+                        abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
                         q_hifu(hifu_params%u_idx)%sf(j, k, l) = q_hifu(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
@@ -583,6 +594,8 @@ contains
                 end do
             end do
 
+            if (abortFlag_max > 0) stop "NaNs in Acoustic intensity (prms)"
+
             if (num_procs > 1) then
                 tmp = sumIntensity_ac
                 call s_mpi_allreduce_sum(tmp, sumIntensity_ac)
@@ -602,11 +615,227 @@ contains
                                         focalIntensity_ac, &
                                         focalIntensity_ac_prms, &
                                         sumIntensity_ac
+
+        else if (.not. cyl_coord .and. p > 0) then !Cartesian 3D
+
+            if (proc_rank==0) print*, 'Computing cartesian 3D acoustic damping', mytime, hdid
+
+            !$acc parallel loop collapse(3) gang vector default(present) reduction(+: sumIntensity_ac) &
+            !$acc reduction(MAX: focalIntensity_ac, focalIntensity_ac_prms) &
+            !$acc private(myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn) &
+            !$acc copy(sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms)
+            do l = 0, p
+                do k = 0, n
+                    do j = 0, m
+                        abortFlag = 0
+
+                        !Get viscosities (and absorption coeff.) which are user inputs
+                        shearVisc = 0._wp
+                        bulkVisc = 0._wp
+                        absCoef = 0._wp
+
+                        !$acc loop seq
+                        do i = 1, num_fluids
+                            shearVisc = shearVisc + q_prim_vf(E_idx + i)%sf(j, k, l) * shear_viscous_fluids(i)
+                            bulkVisc = bulkVisc + q_prim_vf(E_idx + i)%sf(j, k, l) * bulk_viscous_fluids(i)
+                            absCoef = absCoef + q_prim_vf(E_idx + i)%sf(j, k, l) * abs_coef_fluids(i)
+                        end do
+                        shearVisc = 1._wp/shearVisc
+                        bulkVisc = 1._wp/bulkVisc
+
+                        if (f_is_default(absCoef)) then
+                            abortFlag = 1
+                            print*, "HIFU: Check absCoef values!"
+                        end if
+
+                        !>> Get the strain rate tensor (using central finite difference)
+                        varA = 0._wp
+                        varB = 0._wp
+
+                        ! Only for axysimmetric assumption
+                        if (cyl_coord .and. p == 0) then
+                            duxdx = (q_prim_vf(contxe + 1)%sf(j + 1, k, 0) - q_prim_vf(contxe + 1)%sf(j - 1, k, 0))/(x_cc(j + 1) - x_cc(j - 1))
+                            duxdr = (q_prim_vf(contxe + 1)%sf(j, k + 1, 0) - q_prim_vf(contxe + 1)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
+
+                            durdx = (q_prim_vf(contxe + 2)%sf(j + 1, k, 0) - q_prim_vf(contxe + 2)%sf(j - 1, k, 0))/(x_cc(j + 1) - x_cc(j - 1))
+                            durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
+                        
+                        else if (.not. cyl_coord .and. p > 0) then
+                            mtd_idx = 2
+                            call s_space_derivative(q_prim_vf(contxe + 1), i, j, k, duxdn, mtd_idx)
+                            call s_space_derivative(q_prim_vf(contxe + 2), i, j, k, duydn, mtd_idx)
+                            call s_space_derivative(q_prim_vf(contxe + 3), i, j, k, duzdn, mtd_idx)
+                        end if
+
+                        !>> Get pressure, density and speed of sound
+                        do i = 1, num_fluids
+                            myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
+                            myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
+                        end do
+                        call s_convert_species_to_mixture_variables_acc(rho_h, gamma_h, pi_inf_h, qv_h, myalpha, &
+                                                                myalpha_rho, Re_h, j, k, l)
+
+                        !$acc loop seq
+                        do s = 1, num_dims
+                            vel_h(s) = q_cons_vf(s + contxe)%sf(j, k, l)/rho_h
+                        end do
+                        call s_compute_pressure(q_cons_vf(E_idx)%sf(j, k, l), 0._wp, 0.5_wp*rho_h*dot_product(vel_h, vel_h), &
+                                                                        pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
+                        
+                        !Obtaining Pmax and Pmin fields
+                        q_hifu(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu(hifu_params%P_idx)%sf(j, k, l), pres_h)
+                        q_hifu(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
+
+                        !>> Compute intensity form acoustic damping
+
+                        ! PRMS method (calculate only during the last time step in stage2 -> need developed Pmax field)
+                        intensity_ac_prms = 0._wp
+                        if (cfl_dt) then
+                            if (mytime >= t_stop) then
+                                intensity_ac_prms = absCoef*(q_hifu(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                            end if
+                        else
+                            if (t_step == t_step_stop - 1) then
+                                intensity_ac_prms = absCoef*(q_hifu(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                            end if
+                        end if
+
+                        ! Shear stress method
+                        ! Intensity is "q_us_ac"
+                        intensity_ac = 0._wp
+                        if (cyl_coord .and. p == 0) then !Axisymmetric
+                            ep11 = durdr
+                            ep22 = vel_h(2)/y_cc(k)
+                            ep33 = duxdx
+                            ep13 = 0.5_wp*(durdx + duxdr)
+                            varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                            varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
+                            intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
+
+                        else if (.not. cyl_coord .and. p > 0) then !Cartesian 3D
+                            ep11 = duxdn(1)
+                            ep22 = duydn(2)
+                            ep33 = duzdn(3)
+                            ep12 = 0.5_wp*(duxdn(2) + duydn(1))
+                            ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
+                            ep23 = 0.5_wp*(duydn(3) + duzdn(2))
+                            varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                            varB = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
+                            varB = varB + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                            intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
+
+                        end if
+
+                        q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) &
+                                                                                                        + hdid      ! Update total sampling time
+                        q_hifu(hifu_params%qus_idx)%sf(j, k, l) = q_hifu(hifu_params%qus_idx)%sf(j, k, l) &
+                                                                                            + intensity_ac*hdid     ! Sampling acoustic intensity
+                        q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) = intensity_ac_prms * &
+                                                                       q_hifu(hifu_params%tsamp_idx)%sf(j, k, l)    ! Sampling acoustic intensity (prms)
+                        
+                        ! Checking for NaNs
+                        if (q_hifu(hifu_params%qus_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_idx)%sf(j, k, l)) then
+                            print*, 'Acoustic intensity is NaN', j, k, l, hdid, intensity_ac
+                            print*, 'viscosities (bulk & shear)', bulkVisc, shearVisc
+                            print*, 'var: A, B', varA, varB, ep11, ep22, ep33, ep13
+                            print*, 'ep22:', vel_h(2), y_cc(k), rho_h
+                            abortFlag = 1
+                        end if
+
+                        if (q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l)) then
+                            print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms
+                            print*, 'absCoef*(Pres - atmPres)**2/(rho_h*cson_h)', absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
+                                                                                                    hifu_params%atmPres, rho_h, cson_h
+                            abortFlag = 1
+                        end if
+
+                        abortFlag_max = max(abortFlag_max, abortFlag)
+
+                        !Update average velocities for streaming
+                        q_hifu(hifu_params%u_idx)%sf(j, k, l) = q_hifu(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                        q_hifu(hifu_params%v_idx)%sf(j, k, l) = q_hifu(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+
+                        !Get focal intensity and velocities
+                        axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
+                        if (p>0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
+                        radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
+                        condition = (axialCondition .and. radialCondition)
+                        if (condition) then
+                            focalIntensity_ac = max(focalIntensity_ac, q_hifu(hifu_params%qus_idx)%sf(j, k, l))
+                            focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l))
+                        end if
+
+                        !Intensity summation through the domain
+                        sumIntensity_ac = sumIntensity_ac + q_hifu(hifu_params%qus_idx)%sf(j, k, l)
+
+                    end do
+                end do
+            end do
+
+            if (abortFlag_max > 0) stop "NaNs in Acoustic intensity"
+
+            if (num_procs > 1) then
+                tmp = sumIntensity_ac
+                call s_mpi_allreduce_sum(tmp, sumIntensity_ac)
+
+                tmp = focalIntensity_ac
+                call s_mpi_allreduce_max(tmp, focalIntensity_ac)
+
+                tmp = focalIntensity_ac_prms
+                call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
+            end if
+
+            !$acc update host(q_hifu(hifu_params%tsamp_idx)%sf)
+
+            if (proc_rank == 0) write (99, '(6x,5E24.8)') &
+                                        mytime, &
+                                        q_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0), &
+                                        focalIntensity_ac, &
+                                        focalIntensity_ac_prms, &
+                                        sumIntensity_ac
+
         else
             call s_mpi_abort('Getting HIFU samples (stage 2) works only with axisymmetric assumption so far!')
         end if
 
     end subroutine s_update_HIFU_vars_sampling
+
+
+    subroutine s_space_derivative(q_var, i, j, k, dumdn, mtd_idx)
+        !$acc routine seq
+
+        type(scalar_field), intent(in) :: q_var
+        integer, intent(in) :: i, j, k, mtd_idx
+        real(wp), dimension(3), intent(out) :: dumdn
+
+        if (mtd_idx == 1) then 
+            !> First order centered difference approximation
+            dumdn(1) = (q_var%sf(i + 1, j, k) - q_var%sf(i - 1, j, k))/ &
+                                                                (x_cc(i + 1) - x_cc(i - 1))
+            dumdn(2) = (q_var%sf(i, j + 1, k) - q_var%sf(i, j - 1, k))/ &
+                                                                (y_cc(j + 1) - y_cc(j - 1))
+            if (p > 0) dumdn(3) = (q_var%sf(i, j, k + 1) - q_var%sf(i, j, k - 1))/ &
+                                                                (z_cc(k + 1) - z_cc(k - 1))
+        else if (mtd_idx == 2) then 
+            !> Second order centered difference approximation
+            dumdn(1) = q_var%sf(i, j, k)*(dx(i + 1) - dx(i - 1)) &
+                                    + q_var%sf(i + 1, j, k)*(dx(i) + dx(i - 1)) &
+                                    - q_var%sf(i - 1, j, k)*(dx(i) + dx(i + 1))
+            dumdn(1) = dumdn(1) / ((dx(i) + dx(i - 1))*(dx(i) + dx(i + 1)))
+
+            dumdn(2) = q_var%sf(i, j, k)*(dy(j + 1) - dy(j - 1)) &
+                                    + q_var%sf(i, j + 1, k)*(dy(j) + dy(j - 1)) &
+                                    - q_var%sf(i, j - 1, k)*(dy(j) + dy(j + 1))
+            dumdn(2) = dumdn(2) / ((dy(j) + dy(j - 1))*(dy(j) + dy(j + 1)))
+            if (p > 0) then 
+                dumdn(3) = q_var%sf(i, j, k)*(dz(k + 1) - dz(k - 1)) &
+                                        + q_var%sf(i, j, k + 1)*(dz(k) + dz(k - 1)) &
+                                        - q_var%sf(i, j, k - 1)*(dz(k) + dz(k + 1))
+                dumdn(3) = dumdn(3) / ((dz(k) + dz(k - 1))*(dz(k) + dz(k + 1)))
+            end if
+        end if
+
+    end subroutine s_space_derivative
 
     !> The purpose of this procedure is to write the maximum and minimum pressure through time
         !!      along the axisymmetric and radial axes
