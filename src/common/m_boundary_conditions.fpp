@@ -44,6 +44,8 @@ contains
             call s_symmetry(q_prim_vf, pb, mv, 1, -1)
         case (-1)     ! Periodic BC at beginning
             call s_periodic(q_prim_vf, pb, mv, 1, -1)
+        case (-22)    ! Periodic BC at beginning (translational)
+            call s_periodic_rotational(q_prim_vf, pb, mv, 1, -1)
         case (-15)    ! Slip wall BC at beginning
             call s_slip_wall(q_prim_vf, pb, mv, 1, -1)
         case (-16)    ! No-slip wall BC at beginning
@@ -62,6 +64,8 @@ contains
             call s_symmetry(q_prim_vf, pb, mv, 1, 1)
         case (-1)     ! Periodic BC at end
             call s_periodic(q_prim_vf, pb, mv, 1, 1)
+        case (-22)    ! Periodic BC at beginning (translational)
+            call s_periodic_rotational(q_prim_vf, pb, mv, 1, 1)
         case (-15)    ! Slip wall BC at end
             call s_slip_wall(q_prim_vf, pb, mv, 1, 1)
         case (-16)    ! No-slip wall bc at end
@@ -106,6 +110,8 @@ contains
             call s_symmetry(q_prim_vf, pb, mv, 2, -1)
         case (-1)     ! Periodic BC at beginning
             call s_periodic(q_prim_vf, pb, mv, 2, -1)
+        case (-22)    ! Periodic BC at beginning (translational)
+            call s_periodic_rotational(q_prim_vf, pb, mv, 2, -1)
         case (-15)    ! Slip wall BC at beginning
             call s_slip_wall(q_prim_vf, pb, mv, 2, -1)
         case (-16)    ! No-slip wall BC at beginning
@@ -126,6 +132,8 @@ contains
             call s_symmetry(q_prim_vf, pb, mv, 2, 1)
         case (-1)     ! Periodic BC at end
             call s_periodic(q_prim_vf, pb, mv, 2, 1)
+        case (-22)    ! Periodic BC at beginning (translational)
+            call s_periodic_rotational(q_prim_vf, pb, mv, 2, 1)
         case (-15)    ! Slip wall BC at end
             call s_slip_wall(q_prim_vf, pb, mv, 2, 1)
         case (-16)    ! No-slip wall BC at end
@@ -168,6 +176,8 @@ contains
             call s_symmetry(q_prim_vf, pb, mv, 3, -1)
         case (-1)     ! Periodic BC at beginning
             call s_periodic(q_prim_vf, pb, mv, 3, -1)
+        case (-22)    ! Periodic BC at beginning (translational)
+            call s_periodic_rotational(q_prim_vf, pb, mv, 3, -1)
         case (-15)    ! Slip wall BC at beginning
             call s_slip_wall(q_prim_vf, pb, mv, 3, -1)
         case (-16)    ! No-slip wall BC at beginning
@@ -186,6 +196,8 @@ contains
             call s_symmetry(q_prim_vf, pb, mv, 3, 1)
         case (-1)     ! Periodic BC at end
             call s_periodic(q_prim_vf, pb, mv, 3, 1)
+        case (-22)    ! Periodic BC at beginning (translational)
+            call s_periodic_rotational(q_prim_vf, pb, mv, 3, 1)
         case (-15)    ! Slip wall BC at end
             call s_slip_wall(q_prim_vf, pb, mv, 3, 1)
         case (-16)    ! No-slip wall BC at end
@@ -380,7 +392,29 @@ contains
 
                             elseif (acoustic_bc_params%iwave == 2) then
                                 ! Single hemispherical transdurer
-                                stop "Axisymmetric spherical transducer only valid with bc_x%beg."
+                                rc = (0.5_wp*acoustic_bc_params%apert)/sqrt(1._wp - ((0.5_wp*acoustic_bc_params%apert)/ &
+                                                                                     (acoustic_bc_params%focLen + acoustic_bc_params%focCal))**2._wp)
+                                rbeta = sqrt(1._wp + ((0.5_wp*acoustic_bc_params%apert)/ &
+                                                      (acoustic_bc_params%focLen + acoustic_bc_params%focCal))**2._wp)
+                                radial_cc = sqrt(y_cc(k)**2._wp + x_cc(l)**2._wp)
+
+                                if (radial_cc < rc) then
+                                    tau = mytime + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
+                                                                   (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
+                                    gFun = (1._wp/rbeta)
+
+                                    if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
+                                        q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase + &
+                                                                            acoustic_bc_params%Pamp* &
+                                                                            sin(2._wp*pi*acoustic_bc_params%freq*tau)
+                                        q_prim_vf(1)%sf(k, l, -j) = acoustic_bc_params%rho
+                                    else
+                                        q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase
+                                    end if
+                                else
+                                    q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase
+                                end if
+
                             else
                                 stop "acoustic_bc_params%iwave incorrect value (1: planar wave, 2: axisymmetric spherical transducer)."
                             end if
@@ -1041,6 +1075,574 @@ contains
         end if
 
     end subroutine s_periodic
+
+    subroutine s_periodic_pair(bc_dir, bc_dir_pair, bc_loc_pair)
+
+        integer, intent(in) :: bc_dir
+        integer, intent(out) :: bc_dir_pair, bc_loc_pair
+
+        if (bc_dir == 1) then
+            if (bc_y%beg == -22) then; bc_dir_pair = 2; bc_loc_pair = -1; end if
+            if (bc_y%end == -22) then; bc_dir_pair = 2; bc_loc_pair = 1; end if
+            if (bc_z%beg == -22) then; bc_dir_pair = 3; bc_loc_pair = -1; end if
+            if (bc_z%end == -22) then; bc_dir_pair = 3; bc_loc_pair = 1; end if
+        elseif (bc_dir == 2) then
+            if (bc_x%beg == -22) then; bc_dir_pair = 1; bc_loc_pair = -1; end if
+            if (bc_x%end == -22) then; bc_dir_pair = 1; bc_loc_pair = 1; end if
+            if (bc_z%beg == -22) then; bc_dir_pair = 3; bc_loc_pair = -1; end if
+            if (bc_z%end == -22) then; bc_dir_pair = 3; bc_loc_pair = 1; end if
+        else
+            if (bc_x%beg == -22) then; bc_dir_pair = 1; bc_loc_pair = -1; end if
+            if (bc_x%end == -22) then; bc_dir_pair = 1; bc_loc_pair = 1; end if
+            if (bc_y%beg == -22) then; bc_dir_pair = 2; bc_loc_pair = -1; end if
+            if (bc_y%end == -22) then; bc_dir_pair = 2; bc_loc_pair = 1; end if
+        end if
+
+    end subroutine s_periodic_pair
+
+    ! Rotate the velocity vector usinf Rodrigues' formula
+    subroutine s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
+        !$acc routine seq
+        real(wp), dimension(3), intent(in) :: vel_vect, axis_rot
+        real(wp), intent(in) :: theta
+        real(wp), dimension(3), intent(out) :: vel_rot
+        real(wp) :: cos_theta, sin_theta, dot_kv
+        real(wp), dimension(3) :: cross_kv
+
+        cos_theta = cos(theta)
+        sin_theta = sin(theta)
+
+        if (f_approx_equal(cos_theta, 0._wp)) cos_theta = 0._wp
+        if (f_approx_equal(sin_theta, 0._wp)) sin_theta = 0._wp
+        if (f_approx_equal(cos_theta, 1._wp)) cos_theta = 1._wp
+        if (f_approx_equal(sin_theta, 1._wp)) sin_theta = 1._wp
+
+        ! Compute cross product k × v
+        cross_kv(1) = axis_rot(2)*vel_vect(3) - axis_rot(3)*vel_vect(2)
+        cross_kv(2) = axis_rot(3)*vel_vect(1) - axis_rot(1)*vel_vect(3)
+        cross_kv(3) = axis_rot(1)*vel_vect(2) - axis_rot(2)*vel_vect(1)
+
+        ! Compute dot product k · v
+        dot_kv = axis_rot(1)*vel_vect(1) + axis_rot(2)*vel_vect(2) + &
+                                                        axis_rot(3)*vel_vect(3)
+
+        ! Apply Rodrigues' formula
+        vel_rot(1) = vel_vect(1)*cos_theta + cross_kv(1)*sin_theta + &
+                                        axis_rot(1)*dot_kv*(1._wp - cos_theta)
+        vel_rot(2) = vel_vect(2)*cos_theta + cross_kv(2)*sin_theta + &
+                                        axis_rot(2)*dot_kv*(1._wp - cos_theta)
+        vel_rot(3) = vel_vect(3)*cos_theta + cross_kv(3)*sin_theta + &
+                                        axis_rot(3)*dot_kv*(1._wp - cos_theta)
+
+    end subroutine s_rotate_velocity
+
+    function f_rotation_angle(pos, pos_rot)
+        !$acc routine seq
+        real(wp), dimension(3), intent(in):: pos, pos_rot
+        real(wp) :: dot_pr, norm_pos, norm_rot, cos_theta
+        real(wp) :: f_rotation_angle
+
+        ! Compute dot product
+        dot_pr = pos(1)*pos_rot(1) + pos(2)*pos_rot(2) + pos(3)*pos_rot(3)
+
+        ! Compute magnitudes
+        norm_pos = sqrt(pos(1)**2._wp + pos(2)**2._wp + pos(3)**2._wp)
+        norm_rot = sqrt(pos_rot(1)**2._wp + pos_rot(2)**2._wp + pos_rot(3)**2._wp)
+
+        ! Prevent divide by zero
+        if (f_approx_equal(norm_pos, 0._wp) .or. f_approx_equal(norm_rot, 0._wp)) then
+            f_rotation_angle = 0._wp  ! or return -1 to indicate invalid input
+            print*, 'Division by zero in f_rotation_angle: Rotationally periodic BC'
+            return
+        end if
+
+        ! Compute cosine of angle
+        cos_theta = dot_pr / (norm_pos * norm_rot)
+
+        ! Clamp the value to [-1, 1] to avoid domain error in acos
+        ! cos_theta = max(-1._wp, min(1._wp, cos_theta))
+
+        ! Compute angle in radians
+        f_rotation_angle = acos(cos_theta)
+
+    end function f_rotation_angle
+
+    subroutine s_periodic_rotational(q_prim_vf, pb, mv, bc_dir, bc_loc)
+
+        type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
+        real(wp), optional, dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), intent(inout) :: pb, mv
+        integer, intent(in) :: bc_dir, bc_loc
+
+        integer :: bc_dir_pair, bc_loc_pair
+        integer :: j, k, l, q, i
+        real(wp) :: theta
+        real(wp), dimension(3) :: vel_vect, axis_rot, vel_rot, pos, pos_rot
+
+        call s_periodic_pair(bc_dir, bc_dir_pair, bc_loc_pair)
+
+        !< x-direction
+        if (bc_dir == 1) then
+
+            if (bc_loc == -1) then !< bc_x%beg
+
+                if (bc_dir_pair == 2) then
+
+                    if (bc_loc_pair == -1) then !< bc_y%beg -> pair
+
+                        !call s_mpi_abort('xbeg <- ybeg need to be implemented (periodic rotational)')
+                        !$acc parallel loop collapse(3) gang vector default(present) private(vel_vect)
+                        do l = 0, p
+                            do k = 0, n
+                                do j = 1, buff_size
+
+                                    !$acc loop seq
+                                    do i = 1, contxe
+                                        q_prim_vf(i)%sf(-j, k, l) = &
+                                                q_prim_vf(i)%sf(k, j - 1, l)
+                                    end do
+
+                                    !> Unit vector of the rotation axis
+                                    axis_rot(1) = 0._wp
+                                    axis_rot(2) = 0._wp
+                                    axis_rot(3) = 1._wp
+
+                                    !> Rotation angle
+                                    pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
+                                    pos(1) = x_cc(-j); pos_rot(1) = x_cc(k)
+                                    pos(2) = y_cc(k); pos_rot(2) = y_cc(j - 1)
+                                    if (p /= 0 ) pos(3) = z_cc(l)
+                                    if (p /= 0 ) pos_rot(3) = z_cc(l)
+                                    theta = f_rotation_angle(pos, pos_rot)
+
+                                    vel_vect(1:3) = 0._wp
+                                    vel_vect(1) = q_prim_vf(momxb)%sf(k, j - 1, l)
+                                    vel_vect(2) = q_prim_vf(momxb + 1)%sf(k, j - 1, l)
+                                    if (p /= 0 ) vel_vect(3) = q_prim_vf(momxb + 2)%sf(k, j - 1, l)
+
+                                    call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
+
+                                    !> Rotate velocty
+                                    !$acc loop seq
+                                    do i = momxb, momxe
+                                        q_prim_vf(i)%sf(-j, k, l) = vel_rot(i - momxb + 1)
+                                    end do
+
+                                    !$acc loop seq
+                                    do i = E_idx, sys_size
+                                        q_prim_vf(i)%sf(-j, k, l) = &
+                                                q_prim_vf(i)%sf(k, j - 1, l)
+                                    end do
+
+                                end do
+                            end do
+                        end do
+
+                    else !< bc_y%end -> pair
+
+                        call s_mpi_abort('xbeg <- yend need to be implemented (periodic rotational)')
+
+                    end if
+
+                else
+
+                    if (bc_loc_pair == -1) then !< bc_z%beg -> pair
+
+                        call s_mpi_abort('xbeg <- zbeg need to be implemented (periodic rotational)')
+
+                    else !< bc_z%end -> pair
+
+                        call s_mpi_abort('xbeg <- zend need to be implemented (periodic rotational)')
+
+                    end if
+
+                end if
+
+            else !< bc_x%end
+
+                if (bc_dir_pair == 2) then
+
+                    if (bc_loc_pair == -1) then !< bc_y%beg -> pair
+
+                        call s_mpi_abort('xend <- ybeg need to be implemented (periodic rotational)')
+
+                    else !< bc_y%end -> pair
+
+                        call s_mpi_abort('xend <- yend need to be implemented (periodic rotational)')
+
+                    end if
+
+                else
+
+                    if (bc_loc_pair == -1) then !< bc_z%beg -> pair
+
+                        call s_mpi_abort('xend <- zbeg need to be implemented (periodic rotational)')
+
+                    else !< bc_z%end -> pair
+
+                        call s_mpi_abort('xend <- zend need to be implemented (periodic rotational)')
+
+                    end if
+
+                end if
+
+            end if
+
+        ! y-direction
+        elseif(bc_dir == 2) then 
+
+            if (bc_loc == -1) then !< bc_y%beg
+
+                if (bc_dir_pair == 1) then
+
+                    if (bc_loc_pair == -1) then !< bc_x%beg -> pair
+
+                        ! call s_mpi_abort('ybeg <- xbeg need to be implemented (periodic rotational)')
+                        !$acc parallel loop collapse(3) gang vector default(present)
+                        do l = 0, p
+                            do j = 1, buff_size
+                                do k = 0, m
+
+                                    !$acc loop seq
+                                    do i = 1, contxe
+                                        q_prim_vf(i)%sf(k, -j, l) = &
+                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                    end do
+
+                                    !> Unit vector of the rotation axis
+                                    axis_rot(1) = 0._wp
+                                    axis_rot(2) = 0._wp
+                                    axis_rot(3) = -1._wp
+
+                                    !> Rotation angle
+                                    pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
+                                    pos(1) = x_cc(k); pos_rot(1) = x_cc(j - 1)
+                                    pos(2) = y_cc(-j); pos_rot(2) = y_cc(k)
+                                    if (p /= 0 ) pos(3) = z_cc(l)
+                                    if (p /= 0 ) pos_rot(3) = z_cc(l)
+                                    theta = abs(f_rotation_angle(pos, pos_rot))
+
+                                    vel_vect(1:3) = 0._wp
+                                    vel_vect(1) = q_prim_vf(momxb)%sf(j - 1, k, l)
+                                    vel_vect(2) = q_prim_vf(momxb + 1)%sf(j - 1, k, l)
+                                    if (p /= 0 ) vel_vect(3) = q_prim_vf(momxb + 2)%sf(j - 1, k, l)
+
+                                    call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
+
+                                    !> Rotate velocty
+                                    !$acc loop seq
+                                    do i = momxb, momxe
+                                        q_prim_vf(i)%sf(k, -j, l) = vel_rot(i - momxb + 1)
+                                    end do
+
+                                    !$acc loop seq
+                                    do i = E_idx, sys_size
+                                        q_prim_vf(i)%sf(k, -j, l) = &
+                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                    end do
+
+                                end do
+                            end do
+                        end do
+
+                        !$acc parallel loop collapse(3) gang vector default(present)
+                        do l = 0, p
+                            do j = 1, buff_size
+                                do k = -buff_size, -1
+                                    
+                                    !$acc loop seq
+                                    do i = 1, contxe
+                                        q_prim_vf(i)%sf(k, -j, l) = &
+                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                    end do
+
+                                    !> Unit vector of the rotation axis
+                                    axis_rot(1) = 0._wp
+                                    axis_rot(2) = 0._wp
+                                    axis_rot(3) = -1._wp
+
+                                    !> Rotation angle
+                                    pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
+                                    pos(1) = x_cc(k); pos_rot(1) = x_cc(j - 1)
+                                    pos(2) = y_cc(-j); pos_rot(2) = y_cc(k)
+                                    if (p /= 0 ) pos(3) = z_cc(l)
+                                    if (p /= 0 ) pos_rot(3) = z_cc(l)
+                                    theta = abs(f_rotation_angle(pos, pos_rot))
+
+                                    vel_vect(1:3) = 0._wp
+                                    vel_vect(1) = q_prim_vf(momxb)%sf(j - 1, k, l)
+                                    vel_vect(2) = q_prim_vf(momxb + 1)%sf(j - 1, k, l)
+                                    if (p /= 0 ) vel_vect(3) = q_prim_vf(momxb + 2)%sf(j - 1, k, l)
+
+                                    call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
+
+                                    !> Rotate velocty
+                                    !$acc loop seq
+                                    do i = momxb, momxe
+                                        q_prim_vf(i)%sf(k, -j, l) = vel_rot(i - momxb + 1)
+                                    end do
+
+                                    !$acc loop seq
+                                    do i = E_idx, sys_size
+                                        q_prim_vf(i)%sf(k, -j, l) = &
+                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                    end do
+
+                                end do
+                            end do
+                        end do
+
+                        !$acc parallel loop collapse(4) gang vector default(present)
+                        do i = 1, sys_size
+                            do k = 0, p
+                                do j = 1, buff_size
+                                    do l = m + 1, m + buff_size
+                                        q_prim_vf(i)%sf(l, -j, k) = &
+                                            q_prim_vf(i)%sf(m, -j, k)
+                                    end do
+                                end do
+                            end do
+                        end do
+
+                    else !< bc_x%end -> pair
+
+                        call s_mpi_abort('ybeg <- xend need to be implemented (periodic rotational)')
+
+                    end if
+
+                else
+
+                    if (bc_loc_pair == -1) then !< bc_z%beg -> pair
+
+                        call s_mpi_abort('ybeg <- zbeg need to be implemented (periodic rotational)')
+                        ! !$acc parallel loop collapse(3) gang vector default(present)
+                        ! do k = 0, p
+                        !     do j = 1, buff_size
+                        !         do l = -buff_size, m + buff_size
+
+                        !             !$acc loop seq
+                        !             do i = 1, contxe
+                        !                 q_prim_vf(i)%sf(l, -j, k) = &
+                        !                         q_prim_vf(i)%sf(l, k, j - 1)
+                        !             end do
+
+                        !             !> Unit vector of the rotation axis
+                        !             axis_rot(1) = 1._wp
+                        !             axis_rot(2) = 0._wp
+                        !             axis_rot(3) = 0._wp
+
+                        !             !> Rotation angle
+                        !             pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
+                        !             pos(1) = x_cc(l); pos_rot(1) = x_cc(l)
+                        !             pos(2) = y_cc(-j); pos_rot(2) = y_cc(k)
+                        !             if (p /= 0 ) pos(3) = z_cc(k)
+                        !             if (p /= 0 ) pos_rot(3) = z_cc(j - 1)
+                        !             theta = abs(f_rotation_angle(pos, pos_rot))
+
+                        !             vel_vect(1:3) = 0._wp
+                        !             vel_vect(1) = q_prim_vf(1)%sf(l, k, j - 1)
+                        !             vel_vect(2) = q_prim_vf(2)%sf(l, k, j - 1)
+                        !             if (p /= 0 ) vel_vect(3) = q_prim_vf(3)%sf(l, k, j - 1)
+
+                        !             call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
+
+                        !             !> Rotate velocty
+                        !             !$acc loop seq
+                        !             do i = momxb, momxe
+                        !                 q_prim_vf(i)%sf(l, -j, k) = vel_rot(i - momxb + 1)
+                        !             end do
+
+                        !             !$acc loop seq
+                        !             do i = E_idx, sys_size
+                        !                 q_prim_vf(i)%sf(l, -j, k) = &
+                        !                         q_prim_vf(i)%sf(l, k, j - 1)
+                        !             end do
+
+                        !         end do
+                        !     end do
+                        ! end do
+
+                    else !< bc_z%end -> pair
+
+                        call s_mpi_abort('ybeg <- zend need to be implemented (periodic rotational)')
+                        ! !$acc parallel loop collapse(3) gang vector default(present)
+                        ! do k = 0, p
+                        !     do j = 1, buff_size
+                        !         do l = -buff_size, m + buff_size
+
+                        !             !$acc loop seq
+                        !             do i = 1, contxe
+                        !                 q_prim_vf(i)%sf(l, -j, k) = &
+                        !                         q_prim_vf(i)%sf(l, k, p - (j - 1))
+                        !             end do
+
+                        !             !> Unit vector of the rotation axis and rotation angle
+                        !             a1 = -1._wp
+                        !             a2 = 0._wp
+                        !             a3 = 0._wp
+                        !             theta = pi/4._wp
+                        !             vel_vect(1) = q_prim_vf(1)%sf(l, k, p - (j - 1))
+                        !             vel_vect(2) = q_prim_vf(2)%sf(l, k, p - (j - 1))
+                        !             if (p /= 0 ) vel_vect(3) = q_prim_vf(3)%sf(l, k, p - (j - 1))
+
+                        !             !> Rotate velocty
+                        !             !$acc loop seq
+                        !             do i = momxb, momxe
+                        !                 q_prim_vf(i)%sf(l, -j, k) = f_rotate_velocity(vel_vect, a1, a2, a3, theta, i)
+                        !             end do
+
+                        !             !$acc loop seq
+                        !             do i = E_idx, sys_size
+                        !                 q_prim_vf(i)%sf(l, -j, k) = &
+                        !                         q_prim_vf(i)%sf(l, k, p - (j - 1))
+                        !             end do
+
+                        !         end do
+                        !     end do
+                        ! end do
+
+                    end if
+
+                end if
+
+            else !< bc_y%end
+
+                if (bc_dir_pair == 1) then
+
+                    if (bc_loc_pair == -1) then !< bc_x%beg -> pair
+
+                        call s_mpi_abort('yend <- xbeg need to be implemented (periodic rotational)')
+
+                    else !< bc_x%end -> pair
+
+                        call s_mpi_abort('yend <- xend need to be implemented (periodic rotational)')
+
+                    end if
+
+                else
+
+                    if (bc_loc_pair == -1) then !< bc_z%beg -> pair
+
+                        call s_mpi_abort('yend <- zbeg need to be implemented (periodic rotational)')
+
+                    else !< bc_z%end -> pair
+
+                        call s_mpi_abort('yend <- zend need to be implemented (periodic rotational)')
+
+                    end if
+
+                end if
+
+            end if
+
+        ! z-direction
+        else
+
+            if (bc_loc == -1) then !< bc_z%beg
+
+                if (bc_dir_pair == 1) then
+
+                    if (bc_loc_pair == -1) then !< bc_x%beg -> pair
+
+                        call s_mpi_abort('zbeg <- xbeg need to be implemented (periodic rotational)')
+
+                    else !< bc_x%end -> pair
+
+                        call s_mpi_abort('zbeg <- xend need to be implemented (periodic rotational)')
+
+                    end if
+
+                else
+
+                    if (bc_loc_pair == -1) then !< bc_y%beg -> pair
+
+                        call s_mpi_abort('zbeg <- ybeg need to be implemented (periodic rotational)') !!!NEEEDEEED!!
+                        ! !$acc parallel loop collapse(3) gang vector default(present)
+                        ! do j = 1, buff_size
+                        !     do l = -buff_size, n + buff_size
+                        !         do k = -buff_size, m + buff_size
+                        !             !$acc loop seq
+                        !             do i = 1, contxe
+                        !                 q_prim_vf(i)%sf(k, l, -j) = &
+                        !                         q_prim_vf(i)%sf(k, j - 1, l)
+                        !             end do
+
+                        !             !> Unit vector of the rotation axis
+                        !             axis_rot(1) = -1._wp
+                        !             axis_rot(2) = 0._wp
+                        !             axis_rot(3) = 0._wp
+
+                        !             !> Rotation angle
+                        !             pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
+                        !             pos(1) = x_cc(k); pos_rot(1) = x_cc(k)
+                        !             pos(2) = y_cc(l); pos_rot(2) = y_cc(j - 1)
+                        !             if (p /= 0 ) pos(3) = z_cc(-j)
+                        !             if (p /= 0 ) pos_rot(3) = z_cc(l)
+                        !             theta = abs(f_rotation_angle(pos, pos_rot))
+                                    
+                        !             vel_vect(1:3) = 0._wp
+                        !             vel_vect(1) = q_prim_vf(1)%sf(k, j - 1, l)
+                        !             vel_vect(2) = q_prim_vf(2)%sf(k, j - 1, l)
+                        !             if (p /= 0 ) vel_vect(3) = q_prim_vf(3)%sf(k, j - 1, l)
+
+                        !             call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
+
+                        !             !> Rotate velocty
+                        !             !$acc loop seq
+                        !             do i = momxb, momxe
+                        !                 q_prim_vf(i)%sf(k, l, -j) = vel_rot(i - momxb + 1)
+                        !             end do
+
+                        !             !$acc loop seq
+                        !             do i = E_idx, sys_size
+                        !                 q_prim_vf(i)%sf(k, l, -j) = &
+                        !                         q_prim_vf(i)%sf(k, j - 1, l)
+                        !             end do
+                                    
+                        !         end do
+                        !     end do
+                        ! end do
+
+                    else !< bc_z%end -> pair
+
+                        call s_mpi_abort('zbeg <- yend need to be implemented (periodic rotational)')
+
+                    end if
+
+                end if
+
+            else !< bc_z%end
+
+                if (bc_dir_pair == 1) then
+
+                    if (bc_loc_pair == -1) then !< bc_x%beg -> pair
+
+                        call s_mpi_abort('zend <- xbeg need to be implemented (periodic rotational)')
+
+                    else !< bc_x%end -> pair
+
+                        call s_mpi_abort('zend <- xend need to be implemented (periodic rotational)')
+
+                    end if
+
+                else
+
+                    if (bc_loc_pair == -1) then !< bc_y%beg -> pair
+
+                        call s_mpi_abort('zend <- ybeg need to be implemented (periodic rotational)')
+
+                    else !< bc_z%end -> pair
+
+                        call s_mpi_abort('zend <- yend need to be implemented (periodic rotational)')
+
+                    end if
+
+                end if
+
+            end if
+
+        end if
+
+    end subroutine s_periodic_rotational
 
     subroutine s_axis(q_prim_vf, pb, mv, bc_dir, bc_loc)
 

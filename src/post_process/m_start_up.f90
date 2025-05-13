@@ -176,6 +176,11 @@ contains
             ! Populating the buffer regions of the grid variables
             if (buff_size > 0) call s_populate_grid_variables_buffer_regions()
 
+            ! Populating the buffer regions of the conservative variables
+            if (buff_size > 0) then
+                call s_populate_conservative_variables_buffer_regions()
+            end if
+
         else
 
             ! Populating the grid and conservative variables
@@ -824,9 +829,9 @@ contains
         ! parallel computational domain decomposition. Neither procedure has to be
         ! carried out if the simulation is in fact not truly executed in parallel.
         call s_mpi_bcast_user_inputs()
+        if (hifu) call s_HIFU_indexes()
         call s_initialize_parallel_io()
         call s_mpi_decompose_computational_domain()
-        if (hifu) call s_HIFU_indexes()
 
     end subroutine s_initialize_mpi_domain
 

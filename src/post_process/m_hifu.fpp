@@ -83,6 +83,13 @@ contains
                     bc_z%beg = -1; bc_z%end = -1        ! Assume entire cylindrical ring is taking care by one processor
                     if (bc_y%beg == -2) bc_y%beg = -21    !   from -2: reflective boundary
                 end if
+            else
+
+                if (p > 0) then ! Full 3D 
+                    if (bc_x%beg == -22) bc_x%beg = -6
+                    if (bc_y%beg == -22) bc_y%beg = -6
+                    if (bc_z%beg == -20) bc_z%beg = -6 
+                end if
             end if
         end if
 
@@ -101,6 +108,7 @@ contains
         hifu_params%P_idx = 10
         hifu_params%u_idx = 12
         hifu_params%v_idx = 14
+        !sys_size = hifu_params%v_idx
 
     end subroutine s_HIFU_indexes
 

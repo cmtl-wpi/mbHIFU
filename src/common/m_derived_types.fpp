@@ -450,7 +450,7 @@ module m_derived_types
         integer :: t_step_stop_stg1, t_step_stop_stg2       !> Time step to stop stages  (*)
         integer :: t_step_stop_stg3, t_step_save_stg3
         real(wp) :: t_stop_stg1, t_stop_stg2                !> Stop time at diff stages (adapt dt)  (*)
-        real(wp) :: dt_stg2, dt_stg3                        !< dt in stage 3 (heat solver)  (*)
+        real(wp) :: dt_stg2, dt_stg3, cfl_stg3               !< dt in stage 3 (heat solver)  (*)
         real(wp) :: z_max       !< 3D domain, azumital goes from 0 to z_max (must be max 2*pi) (cylindrical)
         integer :: p_cyl            !< number of cells in the azimutal direction within 0 and z_max (cylindrical)
         

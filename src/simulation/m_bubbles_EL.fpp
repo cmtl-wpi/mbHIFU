@@ -1672,12 +1672,17 @@ contains
         real(wp) :: fpb_h, fmass_n_h, fmass_v_h, fR_h, fV_h, fbeta_t_h, fshell_h
         real(wp) :: conc_v_h, R_m_h, gamma_m_h, T_bar_h, grad_T_h, heatflux_h
         integer :: k
+        integer :: abortFlag, abortFlag_max
 
+#ifdef MFC_DEBUG
         if (proc_rank == 0) print *, 'Computing bubble heat sources', mytime, hdid
-
-        !$acc parallel loop gang vector default(present) private(k)
+#endif
+        abortFlag_max = 0
+        !$acc parallel loop gang vector default(present) private(k) &
+        !$acc reduction(MAX: abortFlag_max) copy(abortFlag_max)
         do k = 1, nBubs
 
+            abortFlag = 0
             !> Current bubble state (no temporal values)
             fpb_h = gas_p(k, 1)
             fmass_n_h = gas_mg(k)
@@ -1714,12 +1719,13 @@ contains
                 print*, 'Bubble intensity is NaN', k, bub_qvis(k), bub_qth(k), hdid
                 print*, 'Viscous damping', fR_h, mul0, fV_h
                 print*, 'Thermal damping', heatflux_h, fR_h
-                
-                stop "NaNs in viscous (or thermal) damping of the bubbles"
-
+                abortFlag = 1
             end if
 
+            abortFlag_max = max(abortFlag_max, abortFlag)
         end do
+
+        if (abortFlag_max>0) stop "NaNs in viscous (or thermal) damping of the bubbles"
 
     end subroutine s_compute_bubble_heat_sources_HIFU
 

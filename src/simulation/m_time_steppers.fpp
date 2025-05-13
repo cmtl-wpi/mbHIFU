@@ -316,8 +316,7 @@ contains
         integer, intent(IN) :: t_step
 
         integer :: i, j, k, l, q!< Generic loop iterator
-        real(wp) :: rhs_heat, temp_max, temp_min
-        logical :: stopFlag
+        real(wp) :: rhs_heat, temp_max, temp_min, val_tmp
 
         ! Stage 1 of 1 =====================================================
 
@@ -327,12 +326,12 @@ contains
 
         if (t_step == t_step_stop) return
 
-        if (hifu_params%cartesian) then
+        temp_max = -abs(dflt_real)
+        temp_min = abs(dflt_real)
+
+        if (hifu_params%cartesian) then 
 
             if (proc_rank == 0) then
-
-                temp_max = -abs(dflt_real)
-                temp_min = abs(dflt_real)
 
                 !$acc parallel loop collapse(3) gang vector default(present) reduction(MAX: temp_max) reduction(MIN: temp_min) copy(temp_max, temp_min)
                 do l = 0, p_hf
@@ -350,14 +349,12 @@ contains
                             if (abs(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) > 10._wp) then
                                 print *, 'Temp > 10', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l, m_hf, n_hf, p_hf, &
                                                                                     x_cc_hf(j), y_cc_hf(k), z_cc_hf(l), proc_rank
-                                stop "Temperature value > 10!!"
+                                print *, "Temperature value > 10!!"
                             end if
 
                         end do
                     end do
                 end do
-
-                print*, 'Temp max and min:', temp_max, temp_min
 
             end if
 
@@ -367,7 +364,7 @@ contains
 
             if (hifu_params%stg3_3d) then   ! Cylindrical coord
 
-                !$acc parallel loop collapse(3) gang vector default(present) copyin(t_step)
+                !$acc parallel loop collapse(3) gang vector default(present) copyin(t_step) reduction(MAX: temp_max) reduction(MIN: temp_min) copy(temp_max, temp_min)
                 do l = 0, p
                     do j = hifu_params%mb, hifu_params%me
                         do k = 0, hifu_params%ne
@@ -381,35 +378,53 @@ contains
                             !Forward euler time scheme, explicit
                             q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
                                                                         + dt*rhs_heat
+                            ! Max and min
+                            temp_max = max(temp_max, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
+                            temp_min = min(temp_min, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
 
                             !if (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) then
                             if (abs(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) > 10) then
                                 print *, 'Temp > 10', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l, m, n, p, x_cc(j), y_cc(k), proc_rank
-                                stop "Temperature value > 10!!"
+                                print *, "Temperature value > 10!!"
                             end if
 
                         end do
                     end do
                 end do
 
-            else                            ! Axisymmetric coord
+            else                            ! Axisymmetric coord and full 3D
 
-                !$acc parallel loop collapse(3) gang vector default(present)
+                !$acc parallel loop collapse(3) gang vector default(present) reduction(MAX: temp_max) reduction(MIN: temp_min) copy(temp_max, temp_min)
                 do l = 0, p
-                    do j = 0, m
-                        do k = 0, n
+                    do k = 0, n
+                        do j = 0, m
                             !Forward euler time scheme, explicit
                             q_hifu(hifu_params%T_idx)%sf(j, k, l) = q_hifu(hifu_params%T_idx)%sf(j, k, l) &
                                                                     + dt*q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)
+                            ! Max and min
+                            temp_max = max(temp_max, q_hifu(hifu_params%T_idx)%sf(j, k, l))
+                            temp_min = min(temp_min, q_hifu(hifu_params%T_idx)%sf(j, k, l))
+
+                            if (temp_max>15000._wp) print*, temp_max, j, k, l
+
                             if (q_hifu(hifu_params%T_idx)%sf(j, k, l) /= q_hifu(hifu_params%T_idx)%sf(j, k, l)) then
                                 print *, 'NaNs in q hifu temp', q_hifu(hifu_params%T_idx)%sf(j, k, l), j, k, l
-                                stop "Temperature value is NaN!!"
                             end if
                         end do
                     end do
                 end do
+
             end if
         end if
+
+        if (num_procs > 1) then
+            val_tmp = temp_max
+            call s_mpi_allreduce_max(val_tmp, temp_max)
+            val_tmp = temp_min
+            call s_mpi_allreduce_min(val_tmp, temp_min)
+        end if
+
+        if (proc_rank==0) print*, 'Temp max:', temp_max, 'Temp min:', temp_min
 
         call nvtxEndRange
 

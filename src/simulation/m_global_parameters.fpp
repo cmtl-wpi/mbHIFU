@@ -782,6 +782,7 @@ contains
         hifu_params%t_stop_stg2 = dflt_real
         hifu_params%dt_stg2 = dflt_real
         hifu_params%dt_stg3 = dflt_real
+        hifu_params%cfl_stg3 = dflt_real
         hifu_params%t_step_save_stg3 = dflt_int
         hifu_params%z_max = dflt_real
         hifu_params%p_cyl = dflt_int

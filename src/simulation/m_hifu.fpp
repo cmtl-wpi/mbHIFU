@@ -165,7 +165,13 @@ contains
 
             hifu_params%sampling = .false.
             hifu_params%heatSolver = .true.
-            dt = hifu_params%dt_stg3
+            if (.not. f_is_default(hifu_params%dt_stg3)) then
+                dt = hifu_params%dt_stg3
+            else if (.not. f_is_default(hifu_params%cfl_stg3)) then
+                dt = f_dt_from_CFL(hifu_params%cfl_stg3)
+            else
+                stop 'Define dt_stg3 or cfl_stg3'
+            end if
 
             cfl_dt = .false.
             t_step_save = hifu_params%t_step_save_stg3
@@ -186,6 +192,48 @@ contains
         end if
 
     end subroutine s_restart_hifu_stages
+
+    function f_dt_from_CFL(cfl_heat)
+
+        real(wp), intent(in) :: cfl_heat
+        real(wp) :: f_dt_from_CFL, ds, tdiff, val_tmp
+
+        integer :: i, j, k, l
+
+        ds = abs(dflt_real)
+        tdiff = abs(dflt_real)
+
+        if (hifu_params%stg3_3d) then
+            stop 'Need to be implemented f_dt_from_CFL'
+        else
+
+            do j = 0, m
+                ds = min(ds, dx(j)) 
+            end do
+            do k = 0, n
+                ds = min(ds, dy(k)) 
+            end do
+            if (p>0) then
+                do l = 0, p
+                    ds = min(ds, dz(l)) 
+                end do
+            end if
+
+            do i = 1, num_fluids
+                tdiff = min(tdiff, tdiff_fluids(i))
+            end do
+
+            f_dt_from_CFL = cfl_heat*(ds**2._wp)/tdiff
+            if (p > 0) f_dt_from_CFL = f_dt_from_CFL
+
+        end if
+
+        if (num_procs > 1) then
+            val_tmp = f_dt_from_CFL
+            call s_mpi_allreduce_sum(val_tmp, f_dt_from_CFL)            
+        end if
+
+    end function f_dt_from_CFL
 
     !> The idea is to jump form one stage into the other with this procedure
     subroutine s_HIFU_stages(t_step, hifu_write_output, exitFlag)
@@ -251,7 +299,13 @@ contains
                 mytime = 0._wp
                 t_step_start = 0
                 t_step = 0
-                dt = hifu_params%dt_stg3
+                if (.not. f_is_default(hifu_params%dt_stg3)) then
+                    dt = hifu_params%dt_stg3
+                else if (.not. f_is_default(hifu_params%cfl_stg3)) then
+                    dt = f_dt_from_CFL(hifu_params%cfl_stg3)
+                else
+                    stop 'Define dt_stg3 or cfl_stg3'
+                end if
                 t_step_save = hifu_params%t_step_save_stg3
                 t_step_stop = hifu_params%t_step_stop_stg3
                 finaltime = t_step_stop*dt
@@ -278,6 +332,8 @@ contains
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (2D)'
                 else if (p > 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
+                    if (bc_x%beg == -20) bc_x%beg = -6
+                    !$acc update device(bc_x)
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
@@ -298,7 +354,15 @@ contains
                 mytime = 0._wp
                 t_step_start = 0
                 t_step = 0
-                dt = hifu_params%dt_stg3
+
+                if (.not. f_is_default(hifu_params%dt_stg3)) then
+                    dt = hifu_params%dt_stg3
+                else if (.not. f_is_default(hifu_params%cfl_stg3)) then
+                    dt = f_dt_from_CFL(hifu_params%cfl_stg3)
+                else
+                    stop 'Define dt_stg3 or cfl_stg3'
+                end if
+
                 t_step_save = hifu_params%t_step_save_stg3
                 t_step_stop = hifu_params%t_step_stop_stg3
                 finaltime = t_step_stop*dt
@@ -325,6 +389,8 @@ contains
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (2D)'
                 else if (p > 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
+                    if (bc_x%beg == -20) bc_x%beg = -6
+                    !$acc update device(bc_x)
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
@@ -458,7 +524,9 @@ contains
 
         if (cyl_coord .and. p == 0) then  !Axysimetric
 
+#ifdef MFC_DEBUG
             if (proc_rank==0) print*, 'Computing axysimetric acoustic damping', mytime, hdid
+#endif
 
             !$acc parallel loop collapse(3) gang vector default(present) reduction(+: sumIntensity_ac) &
             !$acc reduction(MAX: focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max) &
@@ -566,9 +634,9 @@ contains
                         end if
 
                         if (q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l)) then
-                            print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms
-                            print*, 'absCoef*(Pres - atmPres)**2/(rho_h*cson_h)', absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
-                                                                                                    hifu_params%atmPres, rho_h, cson_h
+                            print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms, &
+                                                        absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
+                                                        hifu_params%atmPres, rho_h, cson_h
                             abortFlag = 1
                         end if
 
@@ -618,8 +686,9 @@ contains
 
         else if (.not. cyl_coord .and. p > 0) then !Cartesian 3D
 
+#ifdef MFC_DEBUG
             if (proc_rank==0) print*, 'Computing cartesian 3D acoustic damping', mytime, hdid
-
+#endif
             !$acc parallel loop collapse(3) gang vector default(present) reduction(+: sumIntensity_ac) &
             !$acc reduction(MAX: focalIntensity_ac, focalIntensity_ac_prms) &
             !$acc private(myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn) &
@@ -662,9 +731,9 @@ contains
                         
                         else if (.not. cyl_coord .and. p > 0) then
                             mtd_idx = 2
-                            call s_space_derivative(q_prim_vf(contxe + 1), i, j, k, duxdn, mtd_idx)
-                            call s_space_derivative(q_prim_vf(contxe + 2), i, j, k, duydn, mtd_idx)
-                            call s_space_derivative(q_prim_vf(contxe + 3), i, j, k, duzdn, mtd_idx)
+                            call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
+                            call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
+                            call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
                         end if
 
                         !>> Get pressure, density and speed of sound
@@ -680,8 +749,10 @@ contains
                             vel_h(s) = q_cons_vf(s + contxe)%sf(j, k, l)/rho_h
                         end do
                         call s_compute_pressure(q_cons_vf(E_idx)%sf(j, k, l), 0._wp, 0.5_wp*rho_h*dot_product(vel_h, vel_h), &
-                                                                        pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
-                        
+                                                pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
+                        call s_compute_speed_of_sound(pres_h, rho_h, gamma_h, pi_inf_h, &
+                                                ((gamma_h + 1._wp)*pres_h + pi_inf_h)/rho_h, myalpha, 0._wp, c_c_h, cson_h)
+
                         !Obtaining Pmax and Pmin fields
                         q_hifu(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu(hifu_params%P_idx)%sf(j, k, l), pres_h)
                         q_hifu(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
@@ -743,9 +814,9 @@ contains
                         end if
 
                         if (q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l)) then
-                            print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms
-                            print*, 'absCoef*(Pres - atmPres)**2/(rho_h*cson_h)', absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
-                                                                                                    hifu_params%atmPres, rho_h, cson_h
+                            print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms, &
+                                                        absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
+                                                        hifu_params%atmPres, rho_h, cson_h
                             abortFlag = 1
                         end if
 
@@ -847,25 +918,38 @@ contains
         integer :: j, k, l
         logical :: axialCondition, radialCondition, condition
 
-        if (cyl_coord .and. p == 0) then
-            l = 0
-            do j = 0, m
-                do k = 0, n
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
                     ! Specify enough conditions for axial and radial probe lines
-                    axialCondition = (dy(k) > y_cc(k) .and. y_cc(k) > 0._wp)
+                    axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
+                    if (p > 0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
                     radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
+                    if (p > 0) radialCondition = radialCondition .and. l==0
                     condition = (axialCondition .or. radialCondition)
                     if (condition) then
-                        write (100, '(6x,5E24.8)') &
-                            mytime, &
-                            x_cc(j), &
-                            y_cc(k), &
-                            q_hifu(hifu_params%P_idx)%sf(j, k, l), &
-                            q_hifu(hifu_params%P_idx + 1)%sf(j, k, l)
+                        if (p>0) then
+                            write (100, '(6x,6E24.8)') &
+                                mytime, &
+                                x_cc(j), &
+                                y_cc(k), &
+                                z_cc(l), &
+                                q_hifu(hifu_params%P_idx)%sf(j, k, l), &
+                                q_hifu(hifu_params%P_idx + 1)%sf(j, k, l)
+
+                        else
+                            write (100, '(6x,5E24.8)') &
+                                mytime, &
+                                x_cc(j), &
+                                y_cc(k), &
+                                q_hifu(hifu_params%P_idx)%sf(j, k, l), &
+                                q_hifu(hifu_params%P_idx + 1)%sf(j, k, l)
+                        end if
+                        
                     end if
                 end do
             end do
-        end if
+        end do
 
     end subroutine s_write_Pmax
 
@@ -1121,6 +1205,10 @@ contains
         end if
 
     end subroutine s_initialize_from_2d_to_3d
+
+    subroutine s_initialize_3d
+
+    end subroutine
 
     !> Identifies the correct angle to rotate the bubble cloud to obtain the maximum, minimum or average temperature profiles.
     !>      Every hifu_params%z_max rads, it calculates the summation of the viscous dissipation of each bubble weighted with the distance
@@ -1695,58 +1783,66 @@ contains
     end subroutine s_compare_interpolation
 
     !Finalize 3d cylindrical domain to solve heat equation.
-    subroutine s_finalize_from_2d_to_3d()
+    subroutine s_restore_initial_setup()
 
         integer :: i
 
         if ((.not. hifu_params%stg1) .and. (.not. hifu_params%stg2)) return
 
-        if (hifu_params%cartesian) then
+        if (hifu_params%stg3_3d) then !From 2D to 3D
 
-            !Deallocate vars
-            @:DEALLOCATE(x_cb_hf, x_cc_hf, dx_hf)
-            @:DEALLOCATE(y_cb_hf, y_cc_hf, dy_hf)
-            @:DEALLOCATE(z_cb_hf, z_cc_hf, dz_hf)
+            if (hifu_params%cartesian) then
 
-            do i = 1, sys_size_hifu
-                @:DEALLOCATE(q_hifu_3d%vf(i)%sf)
-            end do
-            @:DEALLOCATE(q_hifu_3d%vf)
+                !Deallocate vars
+                @:DEALLOCATE(x_cb_hf, x_cc_hf, dx_hf)
+                @:DEALLOCATE(y_cb_hf, y_cc_hf, dy_hf)
+                @:DEALLOCATE(z_cb_hf, z_cc_hf, dz_hf)
 
-            ! Restore 2D params
-            num_dims = 2
-            grid_geometry = 2
-            !$acc update device(num_dims, grid_geometry)
-            if (proc_rank==0) then
-                bc_x%beg = -20; bc_x%end = 10
-                bc_y%beg = -2; bc_y%end = 10
-                bc_z%beg = dflt_int; bc_z%end = dflt_int
-                !$acc update device(bc_x, bc_y, bc_z)
+                do i = 1, sys_size_hifu
+                    @:DEALLOCATE(q_hifu_3d%vf(i)%sf)
+                end do
+                @:DEALLOCATE(q_hifu_3d%vf)
+
+                ! Restore 2D params
+                num_dims = 2
+                grid_geometry = 2
+                !$acc update device(num_dims, grid_geometry)
+                if (proc_rank==0) then
+                    bc_x%beg = -20; bc_x%end = 10
+                    bc_y%beg = -2; bc_y%end = 10
+                    bc_z%beg = dflt_int; bc_z%end = dflt_int
+                    !$acc update device(bc_x, bc_y, bc_z)
+                end if
+
+            else
+
+                !Deallocate vars
+                @:DEALLOCATE(z_cb, z_cc, dz)
+
+                do i = 1, sys_size_hifu
+                    @:DEALLOCATE(q_hifu_3d%vf(i)%sf)
+                end do
+                @:DEALLOCATE(q_hifu_3d%vf)
+
+                ! Restore 2D params
+                p = 0
+                p_glb = p
+                num_dims = 2
+                if (bc_x%beg == -6) bc_x%beg = -20                      ! from -20: acoustic bc
+                bc_z%beg = dflt_int; bc_z%end = dflt_int                ! Assume entire cylindrical ring is taking care by one processor
+                if (bc_y%beg == -14 .or. bc_y%beg == -21) bc_y%beg = -2 ! from -2: reflective boundary
+                grid_geometry = 2
+
+                !$acc update device(p, num_dims, bc_x, bc_y, bc_z, grid_geometry)
             end if
 
-        else
+        else !full 2D or 3D
 
-            !Deallocate vars
-            @:DEALLOCATE(z_cb, z_cc, dz)
+            if (bc_x%beg == -6) bc_x%beg = -20
 
-            do i = 1, sys_size_hifu
-                @:DEALLOCATE(q_hifu_3d%vf(i)%sf)
-            end do
-            @:DEALLOCATE(q_hifu_3d%vf)
-
-            ! Restore 2D params
-            p = 0
-            p_glb = p
-            num_dims = 2
-            if (bc_x%beg == -6) bc_x%beg = -20                      ! from -20: acoustic bc
-            bc_z%beg = dflt_int; bc_z%end = dflt_int                ! Assume entire cylindrical ring is taking care by one processor
-            if (bc_y%beg == -14 .or. bc_y%beg == -21) bc_y%beg = -2 ! from -2: reflective boundary
-            grid_geometry = 2
-
-            !$acc update device(p, num_dims, bc_x, bc_y, bc_z, grid_geometry)
         end if
 
-    end subroutine s_finalize_from_2d_to_3d
+    end subroutine s_restore_initial_setup
 
     !Calculate the rhs value from heat transfer eqn discretized with finite volumes.
     subroutine s_rhs_heatEqn(q_cons_vf, pb, mv, t_step)
@@ -1755,7 +1851,7 @@ contains
         real(wp), optional, dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: t_step
 
-        real(wp) :: CFL_heat, val_tmp, CFL_heat_old, CFL_heat_2, CFL_heat_3, CFL_heat_4
+        real(wp) :: CFL_heat, val_tmp, CFL_heat_old, CFL_heat_2, CFL_heat_3, CFL_heat_4, CFL_heat_max
         real(wp) :: dTdx_L, dTdx_R, dTdr_L, dTdr_R
         real(wp) :: dTdx, dTdr, dTdz
         real(wp) :: Tx_L, Tx_R, Tr_L, Tr_R
@@ -1763,6 +1859,7 @@ contains
         real(wp) :: Ux_L, Ux_R, Ur_L, Ur_R
         real(wp) :: rho_cp, tdiff, alpha
         integer :: i, j, k, l, qus_hifu_idx_ht
+        real(wp) :: abortFlag, abortFlag_max
 
         if (hifu_params%intPrms) then
             qus_hifu_idx_ht = hifu_params%qus_prms_idx
@@ -1770,11 +1867,10 @@ contains
             qus_hifu_idx_ht = hifu_params%qus_idx
         end if
 
-        CFL_heat = -100._wp
+        CFL_heat_max = -100_wp
+        abortFlag_max = 0._wp
 
-        !< 3D cartesian
-
-        if (hifu_params%cartesian) then
+        if (hifu_params%cartesian) then !< From axisymmetric to 3D cartesian
 
             if (proc_rank == 0) then
 
@@ -1782,10 +1878,14 @@ contains
                 ! Assume boundaries are far away from the heating and that do not undergo any heating up.
                 ! Buffers are equal to Tref as set in the initial condition
 
-                !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step)
+                !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
+                !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
                 do l = 0, p_hf
                     do k = 0, n_hf
                         do j = 0, m_hf
+
+                            abortFlag = 0._wp
+                            CFL_heat = -100._wp
 
                             !<  Zeroing RHS_heat
                             q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
@@ -1818,7 +1918,8 @@ contains
 
                             if (f_is_default(rho_cp) .or. f_is_default(tdiff)) then
                                 print *, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
-                                stop "HIFU: Check thermal properties!"
+                                print*, "HIFU: Check thermal properties!"
+                                abortFlag = 1._wp
                             end if
 
                             !> Obtain rhs (see notes)
@@ -1839,7 +1940,8 @@ contains
 
                                 if (hifu_params%streaming) then
                                     !> Convected heat flux
-                                    stop "HIFU: No streaming valid for 3D heat solver!"
+                                    print*, "HIFU: No streaming valid for 3D heat solver!"
+                                    abortFlag = 1._wp
                                 end if
                             end if
 
@@ -1850,17 +1952,19 @@ contains
                                 print*, 'x, y, z', x_cc_hf(j), y_cc_hf(k), z_cc_hf(l)
                                 print*, 'Heat sources: ', q_hifu_3d%vf(qus_hifu_idx_ht)%sf(j, k, l), q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l), &
                                                             q_hifu_3d%vf(hifu_params%qth_idx)%sf(j, k, l)
-                                stop "Reduce dt!!"
+                                print*, "Reduce dt!!"
+                                abortFlag = 1._wp
                             end if
 
                             ! Calculate min CFL
-                            if (t_step == 0 .and. j==0 .and. k==0 .and. l==0) then
-                                CFL_heat = -100._wp
+                            if (t_step == 0) then
                                 CFL_heat = max(CFL_heat, tdiff*dt/(dx_hf(j)**2_wp))
                                 CFL_heat = max(CFL_heat, tdiff*dt/(dy_hf(k)**2_wp))
                                 CFL_heat = max(CFL_heat, tdiff*dt/(dz_hf(l)**2_wp))
-                                print*, 'Max CFL:', CFL_heat
+                                CFL_heat_max = max(CFL_heat_max, CFL_heat)
                             end if
+
+                            abortFlag_max = max(abortFlag_max, abortFlag)
 
                         end do
                     end do
@@ -1870,16 +1974,19 @@ contains
 
         else
 
-            !< Axisymmetric rhs
-            if (p == 0) then
+            if (p == 0 .and. cyl_coord) then !< Axisymmetric rhs
 
                 ! call s_populate_HIFU_variables_buffers(q_hifu)
                 call s_populate_variables_buffers(q_hifu, pb, mv)
 
-                !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step)
+                !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
+                !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
                 do l = 0, p
                     do j = 0, m
                         do k = 0, n
+
+                            abortFlag = 0._wp
+                            CFL_heat = -100._wp
 
                             !<  Zeroing RHS_heat
                             q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
@@ -1914,7 +2021,8 @@ contains
 
                             if (f_is_default(rho_cp) .or. f_is_default(tdiff)) then
                                 print *, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
-                                stop "HIFU: Check thermal properties!"
+                                print*, "HIFU: Check thermal properties!"
+                                abortFlag = 1._wp
                             end if
 
                             !> Obtain rhs (see notes)
@@ -1943,15 +2051,18 @@ contains
                                 print*, 'NaNs in q hifu rhs', q_hifu(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
                                 print*, 'Current courant number', dx(j), dy(k), dz(l)
                                 print*, 'Therm. properties', tdiff, rho_cp, dt
-                                stop "NaNs in q hifu rhs"
+                                print*, "NaNs in q hifu rhs"
+                                abortFlag = 1._wp
                             end if
 
                             ! Calculate max CFL
                             if (t_step == 0) then
-                                CFL_heat = -100._wp
                                 CFL_heat = max(CFL_heat, tdiff*dt/(dx(j)**2_wp))
                                 CFL_heat = max(CFL_heat, tdiff*dt/(dy(k)**2_wp))
+                                CFL_heat_max = max(CFL_heat_max, CFL_heat)
                             end if
+
+                            abortFlag_max = max(abortFlag_max, abortFlag)
 
                         end do
                     end do
@@ -1959,146 +2070,276 @@ contains
 
                 if (proc_rank==0 .and. t_step == 0) print*, 'Max CFL:', CFL_heat
 
-                !< 3D Cylindrical rhs
-            else
+            else 
 
-                call s_populate_variables_buffers(q_hifu_3d%vf, pb, mv)
+                if (cyl_coord) then !< from axisymmetric to 3D Cylindrical
 
-                !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step)
-                do l = 0, p
-                    do j = hifu_params%mb, hifu_params%me
-                        do k = 0, hifu_params%ne
+                    call s_populate_variables_buffers(q_hifu_3d%vf, pb, mv)
 
-                            !<  Zeroing RHS_heat
-                            q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
+                    !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
+                    !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
+                    do l = 0, p
+                        do j = hifu_params%mb, hifu_params%me
+                            do k = 0, hifu_params%ne
 
-                            !> Temperature derivatives at the cell center. METHOD: Second order centered difference approximation
-                            dTdx = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j - 1, k, l))/(x_cc(j + 1) - x_cc(j - 1))
-                            dTdx_L = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j - 2, k, l))/(x_cc(j) - x_cc(j - 2))
-                            dTdx_R = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j + 2, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))/(x_cc(j + 2) - x_cc(j))
+                                abortFlag = 0._wp
+                                CFL_heat = -100._wp
 
-                            dTdr = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k - 1, l))/(y_cc(k + 1) - y_cc(k - 1))
-                            dTdr_L = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k - 2, l))/(y_cc(k) - y_cc(k - 2))
-                            dTdr_R = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k + 2, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))/(y_cc(k + 2) - y_cc(k))
+                                !<  Zeroing RHS_heat
+                                q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
 
-                            dTdz = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + 1) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l - 1))/(z_cc(l + 1) - z_cc(l - 1))
-                            dTdz_L = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l - 2))/(z_cc(l) - z_cc(l - 2))
-                            dTdz_R = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + 2) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))/(z_cc(l + 2) - z_cc(l))
+                                !> Temperature derivatives at the cell center. METHOD: Second order centered difference approximation
+                                dTdx = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j - 1, k, l))/(x_cc(j + 1) - x_cc(j - 1))
+                                dTdx_L = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j - 2, k, l))/(x_cc(j) - x_cc(j - 2))
+                                dTdx_R = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j + 2, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))/(x_cc(j + 2) - x_cc(j))
 
-                            !> Find temperature derivatives at the faces of the cell
-                            dTdx_L = (dTdx*(x_cc(j) - x_cb(j - 1)) + dTdx_L*(x_cb(j-1) - x_cc(j-1)))/(x_cc(j) - x_cc(j-1))
-                            dTdr_L = (dTdr*(y_cc(k) - y_cb(k - 1)) + dTdr_L*(y_cb(k-1) - y_cc(k-1)))/(y_cc(k) - y_cc(k-1))
-                            dTdz_L = (dTdz*(z_cc(l) - z_cb(l - 1)) + dTdz_L*(z_cb(l-1) - z_cc(l-1)))/(z_cc(l) - z_cc(l-1))
+                                dTdr = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k - 1, l))/(y_cc(k + 1) - y_cc(k - 1))
+                                dTdr_L = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k - 2, l))/(y_cc(k) - y_cc(k - 2))
+                                dTdr_R = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k + 2, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))/(y_cc(k + 2) - y_cc(k))
 
-                            dTdx_R = (dTdx*(x_cb(j) - x_cc(j)) + dTdx_R*(x_cc(j+1) - x_cb(j)))/(x_cc(j+1) - x_cc(j))
-                            dTdr_R = (dTdr*(y_cb(k) - y_cc(k)) + dTdr_R*(y_cc(k+1) - y_cb(k)))/(y_cc(k+1) - y_cc(k))
-                            dTdz_R = (dTdz*(z_cb(l) - z_cc(l)) + dTdz_R*(z_cc(l+1) - z_cb(l)))/(z_cc(l+1) - z_cc(l))
+                                dTdz = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + 1) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l - 1))/(z_cc(l + 1) - z_cc(l - 1))
+                                dTdz_L = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l - 2))/(z_cc(l) - z_cc(l - 2))
+                                dTdz_R = (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + 2) - q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))/(z_cc(l + 2) - z_cc(l))
 
-                            !> Get thermal properties
-                            alpha = 0._wp
-                            rho_cp = 0._wp
-                            tdiff = 0._wp
+                                !> Find temperature derivatives at the faces of the cell
+                                dTdx_L = (dTdx*(x_cc(j) - x_cb(j - 1)) + dTdx_L*(x_cb(j-1) - x_cc(j-1)))/(x_cc(j) - x_cc(j-1))
+                                dTdr_L = (dTdr*(y_cc(k) - y_cb(k - 1)) + dTdr_L*(y_cb(k-1) - y_cc(k-1)))/(y_cc(k) - y_cc(k-1))
+                                dTdz_L = (dTdz*(z_cc(l) - z_cb(l - 1)) + dTdz_L*(z_cb(l-1) - z_cc(l-1)))/(z_cc(l) - z_cc(l-1))
 
-                            !$acc loop seq
-                            do i = 1, num_fluids
-                                alpha = q_cons_vf(advxb + i - 1)%sf(j, k, 0) !From 2D solution
-                                rho_cp = rho_cp + alpha * rho_cp_fluids(i)
-                                tdiff = tdiff + alpha * tdiff_fluids(i)
+                                dTdx_R = (dTdx*(x_cb(j) - x_cc(j)) + dTdx_R*(x_cc(j+1) - x_cb(j)))/(x_cc(j+1) - x_cc(j))
+                                dTdr_R = (dTdr*(y_cb(k) - y_cc(k)) + dTdr_R*(y_cc(k+1) - y_cb(k)))/(y_cc(k+1) - y_cc(k))
+                                dTdz_R = (dTdz*(z_cb(l) - z_cc(l)) + dTdz_R*(z_cc(l+1) - z_cb(l)))/(z_cc(l+1) - z_cc(l))
+
+                                !> Get thermal properties
+                                alpha = 0._wp
+                                rho_cp = 0._wp
+                                tdiff = 0._wp
+
+                                !$acc loop seq
+                                do i = 1, num_fluids
+                                    alpha = q_cons_vf(advxb + i - 1)%sf(j, k, 0) !From 2D solution
+                                    rho_cp = rho_cp + alpha * rho_cp_fluids(i)
+                                    tdiff = tdiff + alpha * tdiff_fluids(i)
+                                end do
+
+                                if (f_is_default(rho_cp) .or. f_is_default(tdiff)) then
+                                    print *, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
+                                    print*, "HIFU: Check thermal properties!"
+                                    abortFlag = 1._wp
+                                end if
+
+                                !> Obtain rhs (see notes)
+                                q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) + tdiff*( &
+                                                                                (1._wp/dx(j))*(dTdx_R - dTdx_L) + &
+                                                                                (1._wp/(y_cc(k)*dy(k)))*((y_cc(k) + 0.5_wp*dy(k))*dTdr_R - &
+                                                                                                        (y_cc(k) - 0.5_wp*dy(k))*dTdr_L) + &
+                                                                                (1._wp/(dz(l)*y_cc(k)**2._wp))*(dTdz_R - dTdz_L))
+
+
+                                if ((q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(j, k, l) > 0._wp) .and. (t_step < hifu_params%stepStopSource)) then
+                                    !> Adding the heat source terms
+                                    q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) + &
+                                                                                    (1._wp/(rho_cp*q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(j, k, l)))*( &
+                                                                                    q_hifu_3d%vf(qus_hifu_idx_ht)%sf(j, k, l) + &         !Acoustic intensity
+                                                                                    q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
+                                                                                    q_hifu_3d%vf(hifu_params%qth_idx)%sf(j, k, l))        !Thermal intensity
+
+
+                                    if (hifu_params%streaming) then
+                                        !> Convected heat flux
+                                        stop "HIFU: No streaming valid for 3D heat solver!"
+                                    end if
+                                end if
+
+                                !Checking NaNs
+                                if (q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)) then
+                                    print*, 'NaNs in q hifu rhs', q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l, proc_rank
+                                    print*, 'dx, dy, dz', dx(j), dy(k), dz(l)
+                                    print*, 'x, y, z', x_cc(j), y_cc(k), z_cc(l)
+                                    print*, 'Heat sources: ', q_hifu_3d%vf(qus_hifu_idx_ht)%sf(j, k, l), q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l), &
+                                                                q_hifu_3d%vf(hifu_params%qth_idx)%sf(j, k, l)
+                                    print*, 'Diff components:', (1._wp/dx(j))*(dTdx_R - dTdx_L), (1._wp/(y_cc(k)*dy(k)))*((y_cc(k) + 0.5_wp*dy(k))*dTdr_R - &
+                                                                        (y_cc(k) - 0.5_wp*dy(k))*dTdr_L), (1._wp/(dz(l)*y_cc(k)**2._wp))*(dTdz_R - dTdz_L)
+                                    print*, 'T flux:', dTdx_L, dTdx_R, dTdr_L, dTdr_R, dTdz_L, dTdz_R
+                                    print*, 'T field:', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l - 1), &
+                                                                                                    q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + 1), &
+                                                                                                    q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k - 1, l), &
+                                                                                                    q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k + 1, l), &
+                                                                                                    q_hifu_3d%vf(hifu_params%T_idx)%sf(j - 1, k, l), &
+                                                                                                    q_hifu_3d%vf(hifu_params%T_idx)%sf(j + 1, k, l)
+
+                                    print*, "Apply s_pole_correction merging more cells at the pole or reduce dt!!"
+                                    abortFlag = 1._wp
+                                end if
+
+                                ! Calculate min CFL
+                                if (t_step == 0) then
+                                    CFL_heat_old = CFL_heat
+                                    CFL_heat = max(CFL_heat, tdiff*dt/(dx(j)**2_wp))
+                                    CFL_heat = max(CFL_heat, tdiff*dt/(dy(k)**2_wp))
+                                    CFL_heat = max(CFL_heat, tdiff*dt/((y_cc(k)*dz(l))**2_wp))
+                                    if (CFL_heat_old /= CFL_heat) then ! Find second layers azimuthal Courant number
+                                        CFL_heat_2 = tdiff*dt/((y_cc(1)*dz(l))**2_wp)
+                                        CFL_heat_3 = tdiff*dt/((y_cc(2)*dz(l))**2_wp)
+                                        CFL_heat_4 = tdiff*dt/((y_cc(3)*dz(l))**2_wp)
+                                    end if
+                                    CFL_heat_max = max(CFL_heat_max, CFL_heat)
+                                end if
+
+                                abortFlag_max = max(abortFlag_max, abortFlag)
+
                             end do
-
-                            if (f_is_default(rho_cp) .or. f_is_default(tdiff)) then
-                                print *, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
-                                stop "HIFU: Check thermal properties!"
-                            end if
-
-                            !> Obtain rhs (see notes)
-                            q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) + tdiff*( &
-                                                                            (1._wp/dx(j))*(dTdx_R - dTdx_L) + &
-                                                                            (1._wp/(y_cc(k)*dy(k)))*((y_cc(k) + 0.5_wp*dy(k))*dTdr_R - &
-                                                                                                    (y_cc(k) - 0.5_wp*dy(k))*dTdr_L) + &
-                                                                            (1._wp/(dz(l)*y_cc(k)**2._wp))*(dTdz_R - dTdz_L))
-
-
-                            if ((q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(j, k, l) > 0._wp) .and. (t_step < hifu_params%stepStopSource)) then
-                                !> Adding the heat source terms
-                                q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) + &
-                                                                                (1._wp/(rho_cp*q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(j, k, l)))*( &
-                                                                                q_hifu_3d%vf(qus_hifu_idx_ht)%sf(j, k, l) + &         !Acoustic intensity
-                                                                                q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
-                                                                                q_hifu_3d%vf(hifu_params%qth_idx)%sf(j, k, l))        !Thermal intensity
-
-
-                                if (hifu_params%streaming) then
-                                    !> Convected heat flux
-                                    stop "HIFU: No streaming valid for 3D heat solver!"
-                                end if
-                            end if
-
-                            !Checking NaNs
-                            if (q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)) then
-                                print*, 'NaNs in q hifu rhs', q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l, proc_rank
-                                print*, 'dx, dy, dz', dx(j), dy(k), dz(l)
-                                print*, 'x, y, z', x_cc(j), y_cc(k), z_cc(l)
-                                print*, 'Heat sources: ', q_hifu_3d%vf(qus_hifu_idx_ht)%sf(j, k, l), q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l), &
-                                                            q_hifu_3d%vf(hifu_params%qth_idx)%sf(j, k, l)
-                                print*, 'Diff components:', (1._wp/dx(j))*(dTdx_R - dTdx_L), (1._wp/(y_cc(k)*dy(k)))*((y_cc(k) + 0.5_wp*dy(k))*dTdr_R - &
-                                                                    (y_cc(k) - 0.5_wp*dy(k))*dTdr_L), (1._wp/(dz(l)*y_cc(k)**2._wp))*(dTdz_R - dTdz_L)
-                                print*, 'T flux:', dTdx_L, dTdx_R, dTdr_L, dTdr_R, dTdz_L, dTdz_R
-                                print*, 'T field:', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l - 1), &
-                                                                                                q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + 1), &
-                                                                                                q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k - 1, l), &
-                                                                                                q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k + 1, l), &
-                                                                                                q_hifu_3d%vf(hifu_params%T_idx)%sf(j - 1, k, l), &
-                                                                                                q_hifu_3d%vf(hifu_params%T_idx)%sf(j + 1, k, l)
-
-                                stop "Apply s_pole_correction merging more cells at the pole or reduce dt!!"
-                            end if
-
-                            ! Calculate min CFL
-                            if (t_step == 0) then
-                                CFL_heat_old = CFL_heat
-                                CFL_heat = max(CFL_heat, tdiff*dt/(dx(j)**2_wp))
-                                CFL_heat = max(CFL_heat, tdiff*dt/(dy(k)**2_wp))
-                                CFL_heat = max(CFL_heat, tdiff*dt/((y_cc(k)*dz(l))**2_wp))
-                                if (CFL_heat_old /= CFL_heat) then ! Find second layers azimuthal Courant number
-                                    CFL_heat_2 = tdiff*dt/((y_cc(1)*dz(l))**2_wp)
-                                    CFL_heat_3 = tdiff*dt/((y_cc(2)*dz(l))**2_wp)
-                                    CFL_heat_4 = tdiff*dt/((y_cc(3)*dz(l))**2_wp)
-                                end if
-                            end if
-
                         end do
                     end do
-                end do
 
 
-                if (t_step == 0) then
-                    if (num_procs > 1) then
-                        val_tmp = CFL_heat
-                        call s_mpi_allreduce_max(val_tmp, CFL_heat)
-                        val_tmp = CFL_heat_2
-                        call s_mpi_allreduce_max(val_tmp, CFL_heat_2)
-                        val_tmp = CFL_heat_3
-                        call s_mpi_allreduce_max(val_tmp, CFL_heat_3)
-                        val_tmp = CFL_heat_4
-                        call s_mpi_allreduce_max(val_tmp, CFL_heat_4)
+                    if (t_step == 0) then
+                        if (num_procs > 1) then
+                            val_tmp = CFL_heat
+                            call s_mpi_allreduce_max(val_tmp, CFL_heat)
+                            val_tmp = CFL_heat_2
+                            call s_mpi_allreduce_max(val_tmp, CFL_heat_2)
+                            val_tmp = CFL_heat_3
+                            call s_mpi_allreduce_max(val_tmp, CFL_heat_3)
+                            val_tmp = CFL_heat_4
+                            call s_mpi_allreduce_max(val_tmp, CFL_heat_4)
+                        end if
+                        if (proc_rank == 0) print*, 'max. CFL. First layer:', CFL_heat, CFL_heat/4._wp, &
+                                                                                                CFL_heat/16._wp, CFL_heat/64._wp, CFL_heat/128._wp 
+                        ! singe cell at the pole
+                        ! merging 2 cells at the pole
+                        ! merging 4 cells at the pole
+                        ! merging 8 cells at the pole
+            
+                        if (proc_rank == 0) print*, 'max. CFL. Secod layer:', CFL_heat_2, CFL_heat_2/4._wp, &
+                                                                            CFL_heat_2/16._wp, CFL_heat_2/64._wp, CFL_heat_2/128._wp
+                        if (proc_rank == 0) print*, 'max. CFL. Third layer:', CFL_heat_3, CFL_heat_3/4._wp, &
+                                                                            CFL_heat_3/16._wp, CFL_heat_3/64._wp, CFL_heat_3/128._wp
+                        if (proc_rank == 0) print*, 'max. CFL. Fourth layer:', CFL_heat_4, CFL_heat_4/4._wp, &
+                                                                            CFL_heat_4/16._wp, CFL_heat_4/64._wp, CFL_heat_4/128._wp
                     end if
-                    if (proc_rank == 0) print*, 'max. CFL. First layer:', CFL_heat, CFL_heat/4._wp, &
-                                                                                            CFL_heat/16._wp, CFL_heat/64._wp, CFL_heat/128._wp 
-                    ! singe cell at the pole
-                    ! merging 2 cells at the pole
-                    ! merging 4 cells at the pole
-                    ! merging 8 cells at the pole
-        
-                    if (proc_rank == 0) print*, 'max. CFL. Secod layer:', CFL_heat_2, CFL_heat_2/4._wp, &
-                                                                        CFL_heat_2/16._wp, CFL_heat_2/64._wp, CFL_heat_2/128._wp
-                    if (proc_rank == 0) print*, 'max. CFL. Third layer:', CFL_heat_3, CFL_heat_3/4._wp, &
-                                                                        CFL_heat_3/16._wp, CFL_heat_3/64._wp, CFL_heat_3/128._wp
-                    if (proc_rank == 0) print*, 'max. CFL. Fourth layer:', CFL_heat_4, CFL_heat_4/4._wp, &
-                                                                        CFL_heat_4/16._wp, CFL_heat_4/64._wp, CFL_heat_4/128._wp
+
+                else ! 3D cartesian (all stages)
+
+                    call s_populate_variables_buffers(q_hifu, pb, mv) 
+
+                    !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
+                    !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
+                    do l = 0, p
+                        do k = 0, n
+                            do j = 0, m
+
+                                abortFlag = 0._wp
+                                CFL_heat = -100._wp
+
+                                !<  Zeroing RHS_heat
+                                q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
+
+                                !> Temperature derivatives at the cell center. METHOD: Second order centered difference approximation
+                                dTdx = (q_hifu(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu(hifu_params%T_idx)%sf(j - 1, k, l))/(x_cc(j + 1) - x_cc(j - 1))
+                                dTdx_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j - 2, k, l))/(x_cc(j) - x_cc(j - 2))
+                                dTdx_R = (q_hifu(hifu_params%T_idx)%sf(j + 2, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(x_cc(j + 2) - x_cc(j))
+
+                                dTdr = (q_hifu(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu(hifu_params%T_idx)%sf(j, k - 1, l))/(y_cc(k + 1) - y_cc(k - 1))
+                                dTdr_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k - 2, l))/(y_cc(k) - y_cc(k - 2))
+                                dTdr_R = (q_hifu(hifu_params%T_idx)%sf(j, k + 2, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(y_cc(k + 2) - y_cc(k))
+
+                                dTdz = (q_hifu(hifu_params%T_idx)%sf(j, k, l + 1) - q_hifu(hifu_params%T_idx)%sf(j, k, l - 1))/(z_cc(l + 1) - z_cc(l - 1))
+                                dTdz_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l - 2))/(z_cc(l) - z_cc(l - 2))
+                                dTdz_R = (q_hifu(hifu_params%T_idx)%sf(j, k, l + 2) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(z_cc(l + 2) - z_cc(l))
+
+                                !> Find temperature derivatives at the faces of the cell
+                                dTdx_L = (dTdx*(x_cc(j) - x_cb(j - 1)) + dTdx_L*(x_cb(j-1) - x_cc(j-1)))/(x_cc(j) - x_cc(j-1))
+                                dTdr_L = (dTdr*(y_cc(k) - y_cb(k - 1)) + dTdr_L*(y_cb(k-1) - y_cc(k-1)))/(y_cc(k) - y_cc(k-1))
+                                dTdz_L = (dTdz*(z_cc(l) - z_cb(l - 1)) + dTdz_L*(z_cb(l-1) - z_cc(l-1)))/(z_cc(l) - z_cc(l-1))
+
+                                dTdx_R = (dTdx*(x_cb(j) - x_cc(j)) + dTdx_R*(x_cc(j+1) - x_cb(j)))/(x_cc(j+1) - x_cc(j))
+                                dTdr_R = (dTdr*(y_cb(k) - y_cc(k)) + dTdr_R*(y_cc(k+1) - y_cb(k)))/(y_cc(k+1) - y_cc(k))
+                                dTdz_R = (dTdz*(z_cb(l) - z_cc(l)) + dTdz_R*(z_cc(l+1) - z_cb(l)))/(z_cc(l+1) - z_cc(l))
+
+                                !> Get thermal properties
+                                rho_cp = 0._wp
+                                tdiff = 0._wp
+                                !$acc loop seq
+                                do i = 1, num_fluids
+                                    alpha = q_cons_vf(advxb + i - 1)%sf(j, k, l)
+                                    rho_cp = rho_cp + alpha * rho_cp_fluids(i)
+                                    tdiff = tdiff + alpha * tdiff_fluids(i)
+                                end do
+
+                                if (f_is_default(rho_cp) .or. f_is_default(tdiff)) then
+                                    print *, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
+                                    print *, "HIFU: Check thermal properties!"
+                                    abortFlag = 1._wp
+                                end if
+
+                                !> Obtain rhs (see notes)
+                                q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = & 
+                                            q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) + tdiff*( &
+                                            (1._wp/dx(j))*(dTdx_R - dTdx_L) + &
+                                            (1._wp/dy(k))*(dTdr_R - dTdr_L) + &
+                                            (1._wp/dz(l))*(dTdz_R - dTdz_L))
+
+
+                                if ((q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) > 0._wp) .and. &
+                                                            (t_step < hifu_params%stepStopSource)) then
+                                    !> Adding the heat source terms
+                                    q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = &
+                                            q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) + &
+                                            (1._wp/(rho_cp*q_hifu(hifu_params%tsamp_idx)%sf(j, k, l)))*( &
+                                            q_hifu(qus_hifu_idx_ht)%sf(j, k, l) + &         !Acoustic intensity
+                                            q_hifu(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
+                                            q_hifu(hifu_params%qth_idx)%sf(j, k, l))        !Thermal intensity
+
+
+                                    if (hifu_params%streaming) then
+                                        !> Convected heat flux
+                                        print*, "HIFU: No streaming valid for 3D heat solver!"
+                                        abortFlag = 1._wp
+                                    end if
+                                end if
+
+                                !Checking NaNs
+                                if (q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) /= &
+                                                q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)) then
+                                    print*, 'NaNs in q hifu rhs', q_hifu(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l, proc_rank
+                                    print*, 'dx, dy, dz', dx(j), dy(k), dz(l)
+                                    print*, 'x, y, z', x_cc(j), y_cc(k), z_cc(l)
+                                    print*, 'Heat sources: ', q_hifu(qus_hifu_idx_ht)%sf(j, k, l), &
+                                                            q_hifu(hifu_params%qvis_idx)%sf(j, k, l), &
+                                                            q_hifu(hifu_params%qth_idx)%sf(j, k, l)
+                                    print*, "Reduce dt!!"
+                                    abortFlag = 1._wp
+                                end if
+
+                                ! Calculate min CFL
+                                if (t_step == 0) then
+                                    CFL_heat = max(CFL_heat, tdiff*dt/(dx(j)**2_wp))
+                                    CFL_heat = max(CFL_heat, tdiff*dt/(dy(k)**2_wp))
+                                    CFL_heat = max(CFL_heat, tdiff*dt/(dz(l)**2_wp))
+                                    CFL_heat_max = max(CFL_heat_max, CFL_heat)
+                                end if
+
+                                abortFlag_max = max(abortFlag_max, abortFlag)
+
+                            end do
+                        end do
+                    end do
+
                 end if
             end if
         end if
+
+        if (num_procs > 1) then
+            val_tmp = abortFlag_max
+            call s_mpi_allreduce_max(val_tmp, abortFlag_max)
+            val_tmp = CFL_heat_max
+            call s_mpi_allreduce_max(val_tmp, CFL_heat_max)
+        end if
+
+        if (t_step == 0 .and. proc_rank == 0) print*, 'Max CFL:', CFL_heat_max
+
+        if (abortFlag_max > 0._wp) call s_mpi_abort("Errors found in s_rhs_heatEqn")
 
         if (proc_rank == 0 .and. t_step == hifu_params%stepStopSource) print *, 'WARNING :: Turn off HIFU source'
 

@@ -274,7 +274,7 @@ for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_s
     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-             'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye']:
+             'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
 
 for var in [ 'iwave', 'ncycles']:

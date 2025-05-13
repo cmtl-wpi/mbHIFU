@@ -590,7 +590,7 @@ contains
         ! Populating Buffer Regions in the x-direction
 
         ! Ghost-cell extrapolation BC at the beginning
-        if (bc_x%beg <= -3) then
+        if (bc_x%beg <= -3 .and. bc_y%beg /= -22) then
 
             do i = 1, buff_size
                 dx(-i) = dx(0)
@@ -608,6 +608,13 @@ contains
 
             do i = 1, buff_size
                 dx(-i) = dx((m + 1) - i)
+            end do
+        
+        ! Periodic BC at the beginning
+        elseif (bc_x%beg == -22) then
+
+            do i = 1, buff_size
+                dx(-i) = dy((n + 1) - i)
             end do
 
             ! Processor BC at the beginning
@@ -668,7 +675,7 @@ contains
         if (n > 0) then
 
             ! Ghost-cell extrapolation BC at the beginning
-            if (bc_y%beg <= -3 .and. bc_y%beg /= -14) then
+            if (bc_y%beg <= -3 .and. bc_y%beg /= -14 .and. bc_y%beg /= -22) then
 
                 do i = 1, buff_size
                     dy(-i) = dy(0)
@@ -686,6 +693,13 @@ contains
 
                 do i = 1, buff_size
                     dy(-i) = dy((n + 1) - i)
+                end do
+
+                ! Periodic BC at the beginning
+            elseif (bc_y%beg == -22) then
+
+                do i = 1, buff_size
+                    dy(-i) = dx((m + 1) - i)
                 end do
 
                 ! Processor BC at the beginning

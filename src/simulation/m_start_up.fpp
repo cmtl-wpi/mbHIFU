@@ -1001,7 +1001,7 @@ contains
         ! coordinate direction, based on the selected boundary condition. In
         ! order, these are the ghost-cell extrapolation, symmetry, periodic,
         ! and processor boundary conditions.
-        if (bc_x%beg <= -3) then
+        if (bc_x%beg <= -3 .and. bc_y%beg /= -22) then
             do i = 1, buff_size
                 dx(-i) = dx(0)
             end do
@@ -1012,6 +1012,10 @@ contains
         elseif (bc_x%beg == -1) then
             do i = 1, buff_size
                 dx(-i) = dx(m - (i - 1))
+            end do
+        elseif (bc_x%beg == -22) then
+            do i = 1, buff_size
+                dx(-i) = dy(n - (i - 1))
             end do
         else
             call s_mpi_sendrecv_grid_variables_buffers(1, -1)
@@ -1070,7 +1074,7 @@ contains
         ! and processor boundary conditions.
         if (n == 0) then
             return
-        elseif (bc_y%beg <= -3 .and. bc_y%beg /= -14) then
+        elseif (bc_y%beg <= -3 .and. bc_y%beg /= -14 .and. bc_y%beg /= -22) then
             do i = 1, buff_size
                 dy(-i) = dy(0)
             end do
@@ -1081,6 +1085,10 @@ contains
         elseif (bc_y%beg == -1) then
             do i = 1, buff_size
                 dy(-i) = dy(n - (i - 1))
+            end do
+        elseif (bc_y%beg == -22) then
+            do i = 1, buff_size
+                dy(-i) = dx(m - (i - 1))
             end do
         else
             call s_mpi_sendrecv_grid_variables_buffers(2, -1)
@@ -1785,7 +1793,7 @@ contains
 
     subroutine s_finalize_modules
 
-        if(hifu_params%heatSolver .and. hifu_params%stg3_3d) call s_finalize_from_2d_to_3d()
+        if (hifu_params%heatSolver) call s_restore_initial_setup()
         call s_finalize_time_steppers_module()
         if (hypoelasticity) call s_finalize_hypoelastic_module()
         if (hyperelasticity) call s_finalize_hyperelastic_module()
