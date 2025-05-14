@@ -265,7 +265,7 @@ module m_global_parameters
     integer :: solverapproach
 
     !< HIFU parameters
-    type(hifu_parameters) :: hifu_params    
+    type(hifu_parameters) :: hifu_params
     integer :: sys_size_hifu
     integer :: m_hf, n_hf, p_hf
 

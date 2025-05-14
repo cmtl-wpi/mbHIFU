@@ -242,12 +242,12 @@ contains
                     sizes_glb(3) = p_hf + 1; sizes_loc(3) = p_hf + 1
 
                     call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
-                                            MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
+                                                  MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
                     call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
 
                 else
                     call MPI_TYPE_CREATE_SUBARRAY(num_dims, sizes_glb, sizes_loc, start_idx, &
-                                                MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
+                                                  MPI_ORDER_FORTRAN, mpi_p, MPI_IO_HIFU_DATA%view(i), ierr)
                     call MPI_TYPE_COMMIT(MPI_IO_HIFU_DATA%view(i), ierr)
                 end if
             end do

@@ -609,8 +609,8 @@ contains
             do i = 1, buff_size
                 dx(-i) = dx((m + 1) - i)
             end do
-        
-        ! Periodic BC at the beginning
+
+            ! Periodic BC at the beginning
         elseif (bc_x%beg == -22) then
 
             do i = 1, buff_size

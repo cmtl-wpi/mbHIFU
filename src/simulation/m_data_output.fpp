@@ -936,7 +936,7 @@ contains
 
             if (hifu_params%cartesian .and. hifu_params%heatSolver) then
                 call MPI_FILE_OPEN(MPI_COMM_SELF, file_loc, ior(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
-                               mpi_info_int, ifile, ierr)
+                                   mpi_info_int, ifile, ierr)
 
                 ! Size of local arrays
                 data_size = (m_hf + 1)*(n_hf + 1)*(p_hf + 1)
@@ -952,7 +952,7 @@ contains
             else
 
                 call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, ior(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
-                               mpi_info_int, ifile, ierr)
+                                   mpi_info_int, ifile, ierr)
 
                 ! Size of local arrays
                 data_size = (m + 1)*(n + 1)*(p + 1)
@@ -1006,7 +1006,7 @@ contains
                                            'native', mpi_info_int, ierr)
                     if (hifu_params%cartesian .and. hifu_params%heatSolver) then
                         call MPI_FILE_WRITE(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
-                                                MPI_DOUBLE_PRECISION, status, ierr)
+                                            MPI_DOUBLE_PRECISION, status, ierr)
                     else
                         call MPI_FILE_WRITE_ALL(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
                                                 MPI_DOUBLE_PRECISION, status, ierr)
@@ -1206,7 +1206,7 @@ contains
 
             if (hifu_params%cartesian .and. hifu_params%heatSolver) then
 
-                if (proc_rank==0) then
+                if (proc_rank == 0) then
                     ! print*, 'Entering probe point, x:', x_cb_hf(-1), probe(i)%x, x_cb_hf(m_hf), i
                     ! print*, 'Entering probe point, y:', y_cb_hf(-1), probe(i)%y, y_cb_hf(n_hf), i
                     ! print*, 'Entering probe point, z:', z_cb_hf(-1), probe(i)%z, z_cb_hf(p_hf), i
@@ -1242,7 +1242,7 @@ contains
                                 pres = 0._wp
 
                                 ! print*, 'Probe point:', i, 'cell:', j - 2, k - 2, l - 2
-                                
+
                             end if
                         end if
                     end if
@@ -1354,7 +1354,7 @@ contains
 
                         ! Compute mixture sound Speed
                         call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                    ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                      ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
 
                         accel = accel_mag(j - 2, k, l)
                     end if
@@ -1447,7 +1447,7 @@ contains
                             end if
                             ! Compute mixture sound speed
                             call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                        ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                          ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
                         end if
                     end if
                 else ! 3D
@@ -1483,7 +1483,7 @@ contains
                                     vel(2) = 0._wp
                                     pres = 0._wp
                                 else
-                            
+
                                     ! Computing/Sharing necessary state variables
                                     call s_convert_to_mixture_variables(q_cons_vf, j - 2, k - 2, l - 2, &
                                                                         rho, gamma, pi_inf, qv, &
@@ -1517,7 +1517,7 @@ contains
 
                                     ! Compute mixture sound speed
                                     call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                                ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                                  ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
 
                                     accel = accel_mag(j - 2, k - 2, l - 2)
 
@@ -1569,13 +1569,13 @@ contains
             if (proc_rank == 0) then
                 if (hifu_params%cartesian .and. hifu_params%heatSolver) then
                     write (i + 30, '(6X,6E24.8)') &
-                            nondim_time, &
-                            rho, &
-                            vel(1), &
-                            vel(2), &
-                            pres, &
-                            Temp_hifu
-                        !print *, 'time =', nondim_time, 'focal temperature =', Temp_hifu, '3D cartesian sim'
+                        nondim_time, &
+                        rho, &
+                        vel(1), &
+                        vel(2), &
+                        pres, &
+                        Temp_hifu
+                    !print *, 'time =', nondim_time, 'focal temperature =', Temp_hifu, '3D cartesian sim'
                 elseif (n == 0) then
                     if (bubbles_euler .and. (num_fluids <= 2)) then
                         if (qbmm) then

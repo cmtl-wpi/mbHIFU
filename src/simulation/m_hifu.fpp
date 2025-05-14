@@ -333,7 +333,7 @@ contains
                 else if (p > 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
                     if (bc_x%beg == -20) bc_x%beg = -6
-                    !$acc update device(bc_x)
+                        !$acc update device(bc_x)
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
@@ -390,7 +390,7 @@ contains
                 else if (p > 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
                     if (bc_x%beg == -20) bc_x%beg = -6
-                    !$acc update device(bc_x)
+                        !$acc update device(bc_x)
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
@@ -828,8 +828,9 @@ contains
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
-                        if (p>0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
+                        if (p>0) axialCondition = axialCondition .and. (dx(j) > abs(x_cc(j)) .and. abs(x_cc(j)) >= 0._wp)
                         radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
+                        if (p>0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
                             focalIntensity_ac = max(focalIntensity_ac, q_hifu(hifu_params%qus_idx)%sf(j, k, l))
@@ -923,9 +924,10 @@ contains
                 do j = 0, m
                     ! Specify enough conditions for axial and radial probe lines
                     axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
-                    if (p > 0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
+                    if (p>0) axialCondition = axialCondition .and. (dx(j) > abs(x_cc(j)) .and. abs(x_cc(j)) >= 0._wp)
                     radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
-                    if (p > 0) radialCondition = radialCondition .and. l==0
+                    if (p > 0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
+                    if (p > 0) radialCondition = radialCondition .and. j==0
                     condition = (axialCondition .or. radialCondition)
                     if (condition) then
                         if (p>0) then
@@ -1449,9 +1451,9 @@ contains
 
     function f_interpolate_qus(j, k, l)
 #ifdef _CRAYFTN
-        !DIR$ INLINEALWAYS f_interpolate_qus
+    !DIR$ INLINEALWAYS f_interpolate_qus
 #else
-        !$acc routine seq
+    !$acc routine seq
 #endif
         integer, intent(in) :: j, k, l
         real(wp) :: f_interpolate_qus, r_cc, minDist, minDist_old
@@ -1666,7 +1668,7 @@ contains
             end do
         end do
 
-        !$acc update device(q_hifu_3d%vf(hifu_params%T_idx)%sf)
+         !$acc update device(q_hifu_3d%vf(hifu_params%T_idx)%sf)
 
          if (proc_rank==0) print*, 'Temperature field got unified'
 
@@ -2347,9 +2349,9 @@ contains
 
     subroutine s_pole_correction(rhs_heat, j, k, l, t_step)
 #ifdef _CRAYFTN
-        !DIR$ INLINEALWAYS s_get_char_vol
+    !DIR$ INLINEALWAYS s_get_char_vol
 #else
-        !$acc routine seq
+    !$acc routine seq
 #endif
         real(wp), intent(inout) :: rhs_heat
         integer, intent(in) :: j, k, l, t_step

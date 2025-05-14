@@ -453,7 +453,7 @@ module m_derived_types
         real(wp) :: dt_stg2, dt_stg3, cfl_stg3               !< dt in stage 3 (heat solver)  (*)
         real(wp) :: z_max       !< 3D domain, azumital goes from 0 to z_max (must be max 2*pi) (cylindrical)
         integer :: p_cyl            !< number of cells in the azimutal direction within 0 and z_max (cylindrical)
-        
+
         real(wp) :: xb, xe, ye  !< Reduce domain to solve heat eqn (cyl and cartesian)
         integer :: mb, me, ne   !< Reduce domain to solve heat eqn (cylindrical)
         logical :: cartesian    !< from 2D to 3D cartesian (needs interpolation of qus)

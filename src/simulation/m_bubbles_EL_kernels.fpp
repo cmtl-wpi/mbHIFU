@@ -67,7 +67,7 @@ contains
             case (2)
             call s_deltafunc(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
             end select smoothfunc
-        end if  
+        end if
 
     end subroutine s_smoothfunction
 
@@ -371,7 +371,6 @@ contains
 
     end subroutine s_applygaussian
 
-
     subroutine s_gaussian_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
 
         integer, intent(in) :: nBubs
@@ -401,13 +400,13 @@ contains
 
             !> Is the particle in the domain?
             particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb_hf(m_hf + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb_hf(-1 - buff_size)) .and. &
-            (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
-            (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
+                                  (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
+                                  (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
 
             if (particle_in_domain) then
 
                 !> Find cell of the bubble in the heat solver domain
-                cell = - buff_size
+                cell = -buff_size
                 !x
                 do while (lbk_pos(l, 1, 1) < x_cb_hf(cell(1) - 1))
                     cell(1) = cell(1) - 1
@@ -439,7 +438,7 @@ contains
                 !> Gasussian parameters and cells to smear
                 volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
                 call s_compute_stddsv(cell, volpart, stddsv)
-                center(1:3) = lbk_pos(l, 1:3, 2) 
+                center(1:3) = lbk_pos(l, 1:3, 2)
 
                 ! !> Get the sumation of Gausian functions to correct smearing
                 ! sumFun = 0._wp
@@ -459,7 +458,7 @@ contains
                 !                 end if
                 !                 if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
                 !                     celloutside = .true.
-                !                 end if      
+                !                 end if
 
                 !                 if (.not. celloutside) then
                 !                     nodecoord(1) = x_cc_hf(cellaux(1))
@@ -474,56 +473,55 @@ contains
 
                 !if (sumFun <= 0._wp .or. sumFun/=sumFun) print*, 'SumFun error', sumFun
 
-                 !> Smearing
+                !> Smearing
                 normGaussSum = 0._wp
                 !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+: normGaussSum)
                 do i = 0, smearGrid
                     do j = 0, smearGrid
                         do k = 0, smearGrid
 
-                                cellaux(1) = cell(1) + i - mapCells
-                                cellaux(2) = cell(2) + j - mapCells
-                                cellaux(3) = cell(3) + k - mapCells
+                            cellaux(1) = cell(1) + i - mapCells
+                            cellaux(2) = cell(2) + j - mapCells
+                            cellaux(3) = cell(3) + k - mapCells
 
-                                !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
-                                celloutside = .false.
-                                if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
-                                    celloutside = .true.
-                                end if
-                                if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
-                                    celloutside = .true.
-                                end if      
+                            !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
+                            celloutside = .false.
+                            if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
+                                celloutside = .true.
+                            end if
+                            if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
+                                celloutside = .true.
+                            end if
 
-                                if (.not. celloutside) then
-                                    nodecoord(1) = x_cc_hf(cellaux(1))
-                                    nodecoord(2) = y_cc_hf(cellaux(2))
-                                    nodecoord(3) = z_cc_hf(cellaux(3))
-                                    call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
-                                    !func = func / sumFun !Adjusted intensity
-                                else
-                                    func = 0._wp
-                                    cellaux(1) = cell(1)
-                                    cellaux(2) = cell(2)
-                                    cellaux(3) = cell(3)
-                                end if
+                            if (.not. celloutside) then
+                                nodecoord(1) = x_cc_hf(cellaux(1))
+                                nodecoord(2) = y_cc_hf(cellaux(2))
+                                nodecoord(3) = z_cc_hf(cellaux(3))
+                                call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
+                                !func = func / sumFun !Adjusted intensity
+                            else
+                                func = 0._wp
+                                cellaux(1) = cell(1)
+                                cellaux(2) = cell(2)
+                                cellaux(3) = cell(3)
+                            end if
 
-                                !Summation of the normalized gaussian function
-                                normGaussSum = normGaussSum + func*(dx_hf(cellaux(1))*dy_hf(cellaux(2))*dz_hf(cellaux(3)))
+                            !Summation of the normalized gaussian function
+                            normGaussSum = normGaussSum + func*(dx_hf(cellaux(1))*dy_hf(cellaux(2))*dz_hf(cellaux(3)))
 
-                                !Update qvis field
-                                addFun1 = func*lbk_qvis(l)
-                                !$acc atomic update
-                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
-                                    updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-                                    + addFun1
+                            !Update qvis field
+                            addFun1 = func*lbk_qvis(l)
+                            !$acc atomic update
+                            updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                + addFun1
 
-                                !Update qth field
-                                addFun2 = func*lbk_qth(l)
-                                !$acc atomic update
-                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
-                                    updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-                                    + addFun2
-
+                            !Update qth field
+                            addFun2 = func*lbk_qth(l)
+                            !$acc atomic update
+                            updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                + addFun2
 
                         end do
                     end do
@@ -531,16 +529,16 @@ contains
 
                 ! Summation of normal gaussian weigths must be equal to one, exept from the cells at the buffers since some surrounding cells can be outside the domain.
                 ! Tolerance of 0.01 defined
-                if ( (cell(1) > 0 .and. cell(1) <= m_hf) .and. (cell(2) > 0 .and. cell(2) <= n_hf) .and. &
-                     (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum-1._wp) > 0.01_wp) then
-                        print*, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
+                if ((cell(1) > 0 .and. cell(1) <= m_hf) .and. (cell(2) > 0 .and. cell(2) <= n_hf) .and. &
+                    (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum - 1._wp) > 0.01_wp) then
+                    print *, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
                 end if
 
             end if
 
         end do
 
-         if (proc_rank==0) print*, 'Bubble sources smeared with Gaussian kernel: qvis & qth'
+        if (proc_rank == 0) print *, 'Bubble sources smeared with Gaussian kernel: qvis & qth'
 
     end subroutine s_gaussian_hifu
 
@@ -566,13 +564,13 @@ contains
 
             !> Is the particle in the domain?
             particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb_hf(m_hf + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb_hf(-1 - buff_size)) .and. &
-            (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
-            (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
+                                  (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
+                                  (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
 
             if (particle_in_domain) then
 
                 !> Find cell of the bubble in the heat solver domain
-                cell = - buff_size
+                cell = -buff_size
                 !x
                 do while (lbk_pos(l, 1, 1) < x_cb_hf(cell(1) - 1))
                     cell(1) = cell(1) - 1
@@ -603,7 +601,7 @@ contains
 
                 !> Volume of the cell
                 volCell = dx_hf(cell(1))*dy_hf(cell(2))*dz_hf(cell(3))
-                
+
                 !> Smearing
                 !Update qvis field
                 addFun1 = lbk_qvis(l)/volCell
@@ -622,7 +620,7 @@ contains
             end if
         end do
 
-         if (proc_rank==0) print*, 'Bubble sources smeared with delta kernel: qvis & qth'
+        if (proc_rank == 0) print *, 'Bubble sources smeared with delta kernel: qvis & qth'
 
     end subroutine s_deltafunc_hifu
 
@@ -876,7 +874,6 @@ contains
             end if
 
         end if
-
 
     end subroutine s_compute_stddsv
 

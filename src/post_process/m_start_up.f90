@@ -322,7 +322,7 @@ contains
             varname(:) = ' '
 
             if (hifu_params%stg3 .and. hifu_params%cartesian) return
-            
+
             !------- Avg streming velocity x-dir---------------------------
             do i = -offset_x%beg, m + offset_x%end
                 do j = -offset_y%beg, n + offset_y%end

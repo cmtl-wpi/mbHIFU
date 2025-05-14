@@ -65,7 +65,7 @@ contains
                     cyl_coord = .false.
                     m_glb = m
                     n_glb = n
-                    p_glb = p   
+                    p_glb = p
                     num_dims = 3
                     grid_geometry = 1
                     nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
@@ -85,10 +85,10 @@ contains
                 end if
             else
 
-                if (p > 0) then ! Full 3D 
+                if (p > 0) then ! Full 3D
                     if (bc_x%beg == -22) bc_x%beg = -6
                     if (bc_y%beg == -22) bc_y%beg = -6
-                    if (bc_z%beg == -20) bc_z%beg = -6 
+                    if (bc_z%beg == -20) bc_z%beg = -6
                 end if
             end if
         end if

@@ -278,11 +278,11 @@ contains
                                 rbeta = sqrt(1._wp + ((0.5_wp*acoustic_bc_params%apert)/ &
                                                       (acoustic_bc_params%focLen + acoustic_bc_params%focCal))**2._wp)
                                 radial_cc = y_cc(k)
-                                if (p>0) radial_cc = sqrt(y_cc(k)**2._wp + z_cc(l)**2._wp)
+                                if (p > 0) radial_cc = sqrt(y_cc(k)**2._wp + z_cc(l)**2._wp)
 
                                 if (radial_cc < rc) then
                                     tau = mytime + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
-                                                                   (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
+                                                                     (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
                                     gFun = (1._wp/rbeta)
 
                                     if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
@@ -400,7 +400,7 @@ contains
 
                                 if (radial_cc < rc) then
                                     tau = mytime + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
-                                                                   (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
+                                                                     (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
                                     gFun = (1._wp/rbeta)
 
                                     if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
@@ -1124,21 +1124,21 @@ contains
 
         ! Compute dot product k · v
         dot_kv = axis_rot(1)*vel_vect(1) + axis_rot(2)*vel_vect(2) + &
-                                                        axis_rot(3)*vel_vect(3)
+                 axis_rot(3)*vel_vect(3)
 
         ! Apply Rodrigues' formula
         vel_rot(1) = vel_vect(1)*cos_theta + cross_kv(1)*sin_theta + &
-                                        axis_rot(1)*dot_kv*(1._wp - cos_theta)
+                     axis_rot(1)*dot_kv*(1._wp - cos_theta)
         vel_rot(2) = vel_vect(2)*cos_theta + cross_kv(2)*sin_theta + &
-                                        axis_rot(2)*dot_kv*(1._wp - cos_theta)
+                     axis_rot(2)*dot_kv*(1._wp - cos_theta)
         vel_rot(3) = vel_vect(3)*cos_theta + cross_kv(3)*sin_theta + &
-                                        axis_rot(3)*dot_kv*(1._wp - cos_theta)
+                     axis_rot(3)*dot_kv*(1._wp - cos_theta)
 
     end subroutine s_rotate_velocity
 
     function f_rotation_angle(pos, pos_rot)
         !$acc routine seq
-        real(wp), dimension(3), intent(in):: pos, pos_rot
+        real(wp), dimension(3), intent(in) :: pos, pos_rot
         real(wp) :: dot_pr, norm_pos, norm_rot, cos_theta
         real(wp) :: f_rotation_angle
 
@@ -1152,12 +1152,12 @@ contains
         ! Prevent divide by zero
         if (f_approx_equal(norm_pos, 0._wp) .or. f_approx_equal(norm_rot, 0._wp)) then
             f_rotation_angle = 0._wp  ! or return -1 to indicate invalid input
-            print*, 'Division by zero in f_rotation_angle: Rotationally periodic BC'
+            print *, 'Division by zero in f_rotation_angle: Rotationally periodic BC'
             return
         end if
 
         ! Compute cosine of angle
-        cos_theta = dot_pr / (norm_pos * norm_rot)
+        cos_theta = dot_pr/(norm_pos*norm_rot)
 
         ! Clamp the value to [-1, 1] to avoid domain error in acos
         ! cos_theta = max(-1._wp, min(1._wp, cos_theta))
@@ -1190,7 +1190,8 @@ contains
                     if (bc_loc_pair == -1) then !< bc_y%beg -> pair
 
                         !call s_mpi_abort('xbeg <- ybeg need to be implemented (periodic rotational)')
-                        !$acc parallel loop collapse(3) gang vector default(present) private(vel_vect)
+                        !$acc parallel loop collapse(3) gang vector default(present) &
+                        !$acc private(pos, pos_rot, vel_vect, axis_rot, vel_rot)
                         do l = 0, p
                             do k = 0, n
                                 do j = 1, buff_size
@@ -1198,7 +1199,7 @@ contains
                                     !$acc loop seq
                                     do i = 1, contxe
                                         q_prim_vf(i)%sf(-j, k, l) = &
-                                                q_prim_vf(i)%sf(k, j - 1, l)
+                                            q_prim_vf(i)%sf(k, j - 1, l)
                                     end do
 
                                     !> Unit vector of the rotation axis
@@ -1210,14 +1211,14 @@ contains
                                     pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
                                     pos(1) = x_cc(-j); pos_rot(1) = x_cc(k)
                                     pos(2) = y_cc(k); pos_rot(2) = y_cc(j - 1)
-                                    if (p /= 0 ) pos(3) = z_cc(l)
-                                    if (p /= 0 ) pos_rot(3) = z_cc(l)
+                                    if (p /= 0) pos(3) = z_cc(l)
+                                    if (p /= 0) pos_rot(3) = z_cc(l)
                                     theta = f_rotation_angle(pos, pos_rot)
 
                                     vel_vect(1:3) = 0._wp
                                     vel_vect(1) = q_prim_vf(momxb)%sf(k, j - 1, l)
                                     vel_vect(2) = q_prim_vf(momxb + 1)%sf(k, j - 1, l)
-                                    if (p /= 0 ) vel_vect(3) = q_prim_vf(momxb + 2)%sf(k, j - 1, l)
+                                    if (p /= 0) vel_vect(3) = q_prim_vf(momxb + 2)%sf(k, j - 1, l)
 
                                     call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
 
@@ -1230,7 +1231,7 @@ contains
                                     !$acc loop seq
                                     do i = E_idx, sys_size
                                         q_prim_vf(i)%sf(-j, k, l) = &
-                                                q_prim_vf(i)%sf(k, j - 1, l)
+                                            q_prim_vf(i)%sf(k, j - 1, l)
                                     end do
 
                                 end do
@@ -1287,8 +1288,8 @@ contains
 
             end if
 
-        ! y-direction
-        elseif(bc_dir == 2) then 
+            ! y-direction
+        elseif (bc_dir == 2) then
 
             if (bc_loc == -1) then !< bc_y%beg
 
@@ -1297,7 +1298,8 @@ contains
                     if (bc_loc_pair == -1) then !< bc_x%beg -> pair
 
                         ! call s_mpi_abort('ybeg <- xbeg need to be implemented (periodic rotational)')
-                        !$acc parallel loop collapse(3) gang vector default(present)
+                        !$acc parallel loop collapse(3) gang vector default(present) &
+                        !$acc private(pos, pos_rot, vel_vect, axis_rot, vel_rot)
                         do l = 0, p
                             do j = 1, buff_size
                                 do k = 0, m
@@ -1305,7 +1307,7 @@ contains
                                     !$acc loop seq
                                     do i = 1, contxe
                                         q_prim_vf(i)%sf(k, -j, l) = &
-                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                            q_prim_vf(i)%sf(j - 1, k, l)
                                     end do
 
                                     !> Unit vector of the rotation axis
@@ -1317,14 +1319,14 @@ contains
                                     pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
                                     pos(1) = x_cc(k); pos_rot(1) = x_cc(j - 1)
                                     pos(2) = y_cc(-j); pos_rot(2) = y_cc(k)
-                                    if (p /= 0 ) pos(3) = z_cc(l)
-                                    if (p /= 0 ) pos_rot(3) = z_cc(l)
+                                    if (p /= 0) pos(3) = z_cc(l)
+                                    if (p /= 0) pos_rot(3) = z_cc(l)
                                     theta = abs(f_rotation_angle(pos, pos_rot))
 
                                     vel_vect(1:3) = 0._wp
                                     vel_vect(1) = q_prim_vf(momxb)%sf(j - 1, k, l)
                                     vel_vect(2) = q_prim_vf(momxb + 1)%sf(j - 1, k, l)
-                                    if (p /= 0 ) vel_vect(3) = q_prim_vf(momxb + 2)%sf(j - 1, k, l)
+                                    if (p /= 0) vel_vect(3) = q_prim_vf(momxb + 2)%sf(j - 1, k, l)
 
                                     call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
 
@@ -1337,22 +1339,23 @@ contains
                                     !$acc loop seq
                                     do i = E_idx, sys_size
                                         q_prim_vf(i)%sf(k, -j, l) = &
-                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                            q_prim_vf(i)%sf(j - 1, k, l)
                                     end do
 
                                 end do
                             end do
                         end do
 
-                        !$acc parallel loop collapse(3) gang vector default(present)
+                        !$acc parallel loop collapse(3) gang vector default(present) &
+                        !$acc private(pos, pos_rot, vel_vect, axis_rot, vel_rot)
                         do l = 0, p
                             do j = 1, buff_size
                                 do k = -buff_size, -1
-                                    
+
                                     !$acc loop seq
                                     do i = 1, contxe
                                         q_prim_vf(i)%sf(k, -j, l) = &
-                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                            q_prim_vf(i)%sf(j - 1, k, l)
                                     end do
 
                                     !> Unit vector of the rotation axis
@@ -1364,14 +1367,14 @@ contains
                                     pos(1:3) = 0._wp; pos_rot(1:3) = 0._wp
                                     pos(1) = x_cc(k); pos_rot(1) = x_cc(j - 1)
                                     pos(2) = y_cc(-j); pos_rot(2) = y_cc(k)
-                                    if (p /= 0 ) pos(3) = z_cc(l)
-                                    if (p /= 0 ) pos_rot(3) = z_cc(l)
+                                    if (p /= 0) pos(3) = z_cc(l)
+                                    if (p /= 0) pos_rot(3) = z_cc(l)
                                     theta = abs(f_rotation_angle(pos, pos_rot))
 
                                     vel_vect(1:3) = 0._wp
                                     vel_vect(1) = q_prim_vf(momxb)%sf(j - 1, k, l)
                                     vel_vect(2) = q_prim_vf(momxb + 1)%sf(j - 1, k, l)
-                                    if (p /= 0 ) vel_vect(3) = q_prim_vf(momxb + 2)%sf(j - 1, k, l)
+                                    if (p /= 0) vel_vect(3) = q_prim_vf(momxb + 2)%sf(j - 1, k, l)
 
                                     call s_rotate_velocity(vel_vect, axis_rot, theta, vel_rot)
 
@@ -1384,7 +1387,7 @@ contains
                                     !$acc loop seq
                                     do i = E_idx, sys_size
                                         q_prim_vf(i)%sf(k, -j, l) = &
-                                                q_prim_vf(i)%sf(j - 1, k, l)
+                                            q_prim_vf(i)%sf(j - 1, k, l)
                                     end do
 
                                 end do
@@ -1534,7 +1537,7 @@ contains
 
             end if
 
-        ! z-direction
+            ! z-direction
         else
 
             if (bc_loc == -1) then !< bc_z%beg
@@ -1578,7 +1581,7 @@ contains
                         !             if (p /= 0 ) pos(3) = z_cc(-j)
                         !             if (p /= 0 ) pos_rot(3) = z_cc(l)
                         !             theta = abs(f_rotation_angle(pos, pos_rot))
-                                    
+
                         !             vel_vect(1:3) = 0._wp
                         !             vel_vect(1) = q_prim_vf(1)%sf(k, j - 1, l)
                         !             vel_vect(2) = q_prim_vf(2)%sf(k, j - 1, l)
@@ -1597,7 +1600,7 @@ contains
                         !                 q_prim_vf(i)%sf(k, l, -j) = &
                         !                         q_prim_vf(i)%sf(k, j - 1, l)
                         !             end do
-                                    
+
                         !         end do
                         !     end do
                         ! end do
@@ -1664,7 +1667,7 @@ contains
                             q_prim_vf(1)%sf(l, -j, k) = &
                                 q_prim_vf(1)%sf(l, j - 1, k + ((p + 1)/2))
                         else
-                        
+
                             !$acc loop seq
                             do i = 1, momxb
                                 q_prim_vf(i)%sf(l, -j, k) = &
@@ -1709,7 +1712,7 @@ contains
                                 q_prim_vf(i)%sf(l, -j, k) = &
                                     q_prim_vf(i)%sf(l, j - 1, k - ((p + 1)/2))
                             end do
-                            
+
                         end if
                     end if
                 end do

@@ -326,13 +326,13 @@ contains
             end if
             denom = denom + 4._wp*lag_params%srfDilVsc_ctdBub/(fRho*fC*fR)
             cdot_star = cdot_star + 2._wp*ss_mod*fV/(fR**2._wp) + &
-                                    8._wp*lag_params%srfDilVsc_ctdBub*(fV**2._wp)/fR**3._wp
+                        8._wp*lag_params%srfDilVsc_ctdBub*(fV**2._wp)/fR**3._wp
         else
             if (.not. f_is_default(Web)) cdot_star = cdot_star + (2._wp/Web)*fV/(fR**2._wp)
         end if
 
         if (.not. f_is_default(Re_inv)) cdot_star = cdot_star + 4._wp*Re_inv*((fV/fR)**2._wp)
-        
+
         tmp2 = 1.5_wp*(fV**2._wp)*(tmp1/3._wp - 1._wp) + &
                (1._wp + tmp1)*(fCpbw - fCp)/fRho + &
                cdot_star*fR/(fRho*fC)
@@ -342,7 +342,7 @@ contains
         if (.not. f_is_default(Re_inv)) denom = denom + 4._wp*Re_inv/(fRho*fC)
 
         f_rddot_KM = tmp2/denom
-       
+
     end function f_rddot_KM
 
     !>  Subroutine that computes bubble wall properties for vapor bubbles
@@ -492,7 +492,7 @@ contains
         f_pout = 0._wp
 
         if (.not. lag_params%pressure_corrector) return
-        if (.not. lag_params%interaction_model==1) return
+        if (.not. lag_params%interaction_model == 1) return
         if (p == 0) return
 
         !Find Pout to modif Pinf
@@ -500,13 +500,13 @@ contains
         c2 = 1.5_wp*(fR**3._wp)*(1._wp - fR/fRcell)/aux
         c1 = 1.5_wp*(fR*(fRcell**2._wp - fR**2._wp))/aux
 
-        dphidt = (fCp-fCpbw)/fRho - (c2 - 0.5_wp)*fV**2._wp
+        dphidt = (fCp - fCpbw)/fRho - (c2 - 0.5_wp)*fV**2._wp
         dphidt = dphidt/(1._wp - c1)
 
         f_pout = fRho*(c2*fV**2._wp - c1*dphidt)    ! p_inf = pcell - pout
 
-        f_pout_2 = fCp - fCpbw - (c2-0.5_wp)*fRho*fV**2._wp
-        f_pout_2 = f_pout_2/(1._wp-c1)
+        f_pout_2 = fCp - fCpbw - (c2 - 0.5_wp)*fRho*fV**2._wp
+        f_pout_2 = f_pout_2/(1._wp - c1)
 
         f_pout = -f_pout_2 !+ 0.5_wp*fRho*fV**2._wp
 
@@ -518,7 +518,7 @@ contains
 
         ! ks = lag_params%srfDilVsc_ctdBub
 
-        ! a1 = fV*(1._wp - 2._wp*c2) 
+        ! a1 = fV*(1._wp - 2._wp*c2)
         ! if (.not. f_is_default(Re_inv)) a1 = a1 + 4._wp*Re_inv/(fRho*fR)
         ! if (fshell == 1._wp) a1 = a1 + 4._wp*ks/(fRho*fR**2._wp)
         ! a1 = a1/(1._wp - c1)
@@ -613,11 +613,11 @@ contains
         !!  @param fshell Shell switch, Marmottant model (EL)
         !!  @param fRbuck Buckling radius, Marmottant model (EL)
     subroutine s_advance_step(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
-        fntait, fBtait, f_bub_adv_src, f_divu, &
-        bub_id, fmass_v, fmass_n, fbeta_c, &
-        fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
-        fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
-        fQvis, fQth)
+                              fntait, fBtait, f_bub_adv_src, f_divu, &
+                              bub_id, fmass_v, fmass_n, fbeta_c, &
+                              fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
+                              fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
+                              fQvis, fQth)
 #ifdef _CRAYFTN
         !DIR$ INLINEALWAYS s_advance_step
 #else
@@ -648,8 +648,8 @@ contains
         h = f_initial_substep_h(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                                 fntait, fBtait, f_bub_adv_src, f_divu, fCson, fInt, fshell, fRbuck, fRcell)
 
-        if (h/=h) then
-            print*, 'Altering initial h (from/to)', bub_id, h, 0.1_wp*0.5_wp*dt
+        if (h /= h) then
+            print *, 'Altering initial h (from/to)', bub_id, h, 0.1_wp*0.5_wp*dt
             h = 0.1_wp*0.5_wp*dt
         end if
 
@@ -712,7 +712,7 @@ contains
                     fR = myR_tmp1(4)
                     fV = myV_tmp1(4)
                     fAc = 0.5_wp*fAc21 + 0.5_wp*fAc22
-                    
+
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
                         fpb = myPb_tmp1(4)
@@ -743,9 +743,9 @@ contains
 
                             ! Checking for NaNs and negative qvis
                             if (fQvis /= fQvis .or. fQth /= fQth .or. fQvis < 0._wp) then
-                                print*, 'Bubble intensity is NaN (or negative qvis)', bub_id, fQvis, fQth, h
-                                print*, 'Viscous damping', fR, mul0, fV
-                                print*, 'Thermal damping', heatflux_h, fR
+                                print *, 'Bubble intensity is NaN (or negative qvis)', bub_id, fQvis, fQth, h
+                                print *, 'Viscous damping', fR, mul0, fV
+                                print *, 'Thermal damping', heatflux_h, fR
                                 stop "NaNs in viscous (or thermal) damping of the bubbles"
                             end if
                         end if
@@ -763,15 +763,15 @@ contains
                         h = 0.25_wp*h
                     end if
 
-                    if (h<1e-30_wp) then
-                        print*, 'h small', h, t_new, bub_id, fR, fV, fshell
-                        print*, 'errs', err1, err2, err3, err4, err5
-                        print*, 'tmp R',myR_tmp1(1), myR_tmp1(2), myR_tmp1(3), myR_tmp1(4)
-                        print*, 'tmp V',myV_tmp1(1), myV_tmp1(2), myV_tmp1(3), myV_tmp1(4)
-                        print*, 'tmp Pb',myPb_tmp1(1), myPb_tmp1(2), myPb_tmp1(3), myPb_tmp1(4)
-                        print*, 'tmp mass_v',myMv_tmp1(1), myMv_tmp1(2), myMv_tmp1(3), myMv_tmp1(4)
-                        print*, 'old vals', fR, fV, fpb, fmass_v, fP, t_new, t_new/(0.5_wp*dt)
-                        print*, 'otherVars', fmass_n, fbeta_c, fbeta_t, fCson, fshell, fRbuck, fRrupt
+                    if (h < 1e-30_wp) then
+                        print *, 'h small', h, t_new, bub_id, fR, fV, fshell
+                        print *, 'errs', err1, err2, err3, err4, err5
+                        print *, 'tmp R', myR_tmp1(1), myR_tmp1(2), myR_tmp1(3), myR_tmp1(4)
+                        print *, 'tmp V', myV_tmp1(1), myV_tmp1(2), myV_tmp1(3), myV_tmp1(4)
+                        print *, 'tmp Pb', myPb_tmp1(1), myPb_tmp1(2), myPb_tmp1(3), myPb_tmp1(4)
+                        print *, 'tmp mass_v', myMv_tmp1(1), myMv_tmp1(2), myMv_tmp1(3), myMv_tmp1(4)
+                        print *, 'old vals', fR, fV, fpb, fmass_v, fP, t_new, t_new/(0.5_wp*dt)
+                        print *, 'otherVars', fmass_n, fbeta_c, fbeta_t, fCson, fshell, fRbuck, fRrupt
                         stop "h too small"
                     end if
 
@@ -882,11 +882,11 @@ contains
         !!  @param myPb_tmp Internal bubble pressure at each stage (EL)
         !!  @param myMv_tmp Mass of vapor in the bubble at each stage (EL)
     function f_advance_substep(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
-                                fntait, fBtait, f_bub_adv_src, f_divu, &
-                                bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
-                                fnoise_constant, flambda_c, fdk, floc, ftime, fAc, & !fPhase_rn &
-                                fCson, fInt, fshell, fRbuck, fRcell, h, &
-                                myR_tmp, myV_tmp, myPb_tmp, myMv_tmp)
+                               fntait, fBtait, f_bub_adv_src, f_divu, &
+                               bub_id, fmass_v, fmass_n, fbeta_c, fbeta_t, &
+                               fnoise_constant, flambda_c, fdk, floc, ftime, fAc, & !fPhase_rn &
+                               fCson, fInt, fshell, fRbuck, fRcell, h, &
+                               myR_tmp, myV_tmp, myPb_tmp, myMv_tmp)
         !$acc routine seq
         real(wp), intent(IN) :: fRho, fP, fR, fV, fR0, fpb, fpbdot, alf
         real(wp), intent(IN) :: fntait, fBtait, f_bub_adv_src, f_divu, h
@@ -909,7 +909,7 @@ contains
         !     Pnoise_tmp = f_pres_stochastic(fP, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn)
         !     Pinf = fP + Pnoise_tmp
         ! end if
-        
+
         ! Stage 0
         myR_tmp(1) = fR
         myV_tmp(1) = fV

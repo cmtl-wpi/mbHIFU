@@ -329,7 +329,7 @@ contains
         temp_max = -abs(dflt_real)
         temp_min = abs(dflt_real)
 
-        if (hifu_params%cartesian) then 
+        if (hifu_params%cartesian) then
 
             if (proc_rank == 0) then
 
@@ -340,7 +340,7 @@ contains
 
                             !Forward euler time scheme, explicit
                             q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
-                                                                        + dt*q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+                                                                          + dt*q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
 
                             ! Max and min
                             temp_max = max(temp_max, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
@@ -348,7 +348,7 @@ contains
 
                             if (abs(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) > 10._wp) then
                                 print *, 'Temp > 10', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l, m_hf, n_hf, p_hf, &
-                                                                                    x_cc_hf(j), y_cc_hf(k), z_cc_hf(l), proc_rank
+                                    x_cc_hf(j), y_cc_hf(k), z_cc_hf(l), proc_rank
                                 print *, "Temperature value > 10!!"
                             end if
 
@@ -359,7 +359,7 @@ contains
             end if
 
             call s_mpi_barrier()
-            
+
         else
 
             if (hifu_params%stg3_3d) then   ! Cylindrical coord
@@ -374,10 +374,9 @@ contains
                             ! Correction to address numerical stiffness at the pole
                             !call s_pole_correction(rhs_heat, j, k, l, t_step)
 
-
                             !Forward euler time scheme, explicit
                             q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) &
-                                                                        + dt*rhs_heat
+                                                                          + dt*rhs_heat
                             ! Max and min
                             temp_max = max(temp_max, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
                             temp_min = min(temp_min, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
@@ -405,7 +404,7 @@ contains
                             temp_max = max(temp_max, q_hifu(hifu_params%T_idx)%sf(j, k, l))
                             temp_min = min(temp_min, q_hifu(hifu_params%T_idx)%sf(j, k, l))
 
-                            if (temp_max>15000._wp) print*, temp_max, j, k, l
+                            if (temp_max > 15000._wp) print *, temp_max, j, k, l
 
                             if (q_hifu(hifu_params%T_idx)%sf(j, k, l) /= q_hifu(hifu_params%T_idx)%sf(j, k, l)) then
                                 print *, 'NaNs in q hifu temp', q_hifu(hifu_params%T_idx)%sf(j, k, l), j, k, l
@@ -424,7 +423,7 @@ contains
             call s_mpi_allreduce_min(val_tmp, temp_min)
         end if
 
-        if (proc_rank==0) print*, 'Temp max:', temp_max, 'Temp min:', temp_min
+        if (proc_rank == 0) print *, 'Temp max:', temp_max, 'Temp min:', temp_min
 
         call nvtxEndRange
 
