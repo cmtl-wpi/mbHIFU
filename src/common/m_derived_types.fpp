@@ -427,6 +427,7 @@ module m_derived_types
         integer :: interaction_model !< 1: kazuki's model, 2: Aditya's model
         integer :: influence         !< Number of cells around the bubble that limits the interacton volume
         real(wp) :: scaleVirtualSphere !< Extract pinf from the cells that intersect the surface of the virtual sphere.
+        logical :: newModel_2D      !< New model to match experiments
 
     end type bubbles_lagrange_parameters
 

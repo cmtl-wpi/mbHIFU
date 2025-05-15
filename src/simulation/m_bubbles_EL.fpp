@@ -823,7 +823,7 @@ contains
             if (p > 0 .or. lag_params%interaction_model == 2) then
                 ! Total number of interacting bubbles
                 bub_int_ids(j, 1) = nb_local
-                print *, proc_rank, 'Bub', j, 'interacts with', nb_local - 1, 'bubbles'
+                if (nb_local - 1 > 0) print *, proc_rank, 'Bub', j, 'interacts with', nb_local - 1, 'bubbles'
             else
                 ! Compute and update the mean inter-bubble distance lambda_c
                 !bub_lambda_c(j) = 1._wp/(nb_local**(1._wp/3._wp))
@@ -1035,7 +1035,7 @@ contains
 
         if (lag_params%solver_approach == 2) then
 
-            if (p == 0) then
+            if (p == 0 .and. .not. lag_params%newModel_2D) then
                 !$acc parallel loop collapse(4) gang vector default(present)
                 do k = 0, p
                     do j = 0, n
@@ -1169,8 +1169,13 @@ contains
             end do
         end do
 
-        call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
-                              mtn_s, mtn_pos, q_beta)
+        if (lag_params%newModel_2D) then
+            call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
+                                          mtn_s, mtn_posPrev, q_beta)
+        else
+            call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
+                                          mtn_s, mtn_pos, q_beta)
+        end if
 
         !Store 1-beta
         !$acc parallel loop collapse(3) gang vector default(present)

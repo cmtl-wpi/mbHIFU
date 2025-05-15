@@ -152,7 +152,7 @@ contains
 
         if (bubbles_lagrange) then
             #:for VAR in [ 'heatTransfer_model', 'massTransfer_model', 'pressure_corrector', &
-                & 'write_bubbles', 'write_bubbles_stats', 'coatedBub_model']
+                & 'write_bubbles', 'write_bubbles_stats', 'coatedBub_model', 'newModel_2D']
                 call MPI_BCAST(lag_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
@@ -646,6 +646,7 @@ contains
             end if
         end if
 
+	print*, 'num_proc x-y-z', num_procs_x, num_procs_y, num_procs_z, proc_rank
 #endif
 
     end subroutine s_mpi_decompose_computational_domain

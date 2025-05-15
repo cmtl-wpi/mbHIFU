@@ -230,7 +230,7 @@ contains
 
                         !Check if the cells intended to smear the bubbles in are in the computational domain
                         !and redefine the cells for symmetric boundary
-                        call s_check_celloutside(cellaux, celloutside)
+                        call s_check_celloutside(center, cellaux, nodecoord, celloutside)
 
                         if (.not. celloutside) then
 
@@ -238,10 +238,13 @@ contains
                             nodecoord(2) = y_cc(cellaux(2))
                             if (p > 0) nodecoord(3) = z_cc(cellaux(3))
                             call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
-                            if (p == 0) call s_applygaussian(center, cellaux, nodecoord, stddsv, 1._wp, func2)
+                            if (p == 0 .and. .not. lag_params%newModel_2D) then
+                                call s_applygaussian(center, cellaux, nodecoord, stddsv, 1._wp, func2)
+                            end if
 
                             ! Relocate cells for bubbles intersecting symmetric boundaries
-                            if (bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. bczb == -2 .or. bcze == -2) then
+                            if ((bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. &
+                                bczb == -2 .or. bcze == -2) .and. .not. lag_params%newModel_2D) then
                                 call s_shift_cell_symmetric_bc(cellaux, cell)
                             end if
                         else
@@ -269,7 +272,7 @@ contains
 
                         !Product of two smeared functions
                         !Update void fraction * time derivative of void fraction
-                        if (p == 0) then
+                        if (p == 0 .and. .not. lag_params%newModel_2D) then
                             addFun3 = func2*strength_vol*strength_vel
                             !$acc atomic update
                             updatedvar%vf(5)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
@@ -296,7 +299,8 @@ contains
         end do
 
         ! Populate symmetric boundaries
-        if (bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. bczb == -2 .or. bcze == -2) then
+        if ((bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. &
+             bczb == -2 .or. bcze == -2) .and. .not. lag_params%newModel_2D) then
             call s_populate_symmetric_bc(updatedvar)
         end if
 
@@ -322,7 +326,7 @@ contains
 
         distance = sqrt((center(1) - nodecoord(1))**2._wp + (center(2) - nodecoord(2))**2._wp + (center(3) - nodecoord(3))**2._wp)
 
-        if (num_dims == 3) then
+        if (num_dims == 3 .or. lag_params%newModel_2D) then
             !< 3D gaussian function
             func = exp(-0.5_wp*(distance/stddsv)**2._wp)/(sqrt(2._wp*pi)*stddsv)**3._wp
         else
@@ -627,14 +631,17 @@ contains
     !> The purpose of this subroutine is to check if the current cell is outside the computational domain or not (including ghost cells).
             !! @param cellaux Tested cell to smear the bubble effect in.
             !! @param celloutside If true, then cellaux is outside the computational domain.
-    subroutine s_check_celloutside(cellaux, celloutside)
+    subroutine s_check_celloutside(center, cellaux, nodecoord, celloutside)
 #ifdef _CRAYFTN
         !DIR$ INLINEALWAYS s_check_celloutside
 #else
         !$acc routine seq
 #endif
+        real(wp), dimension(3), intent(in) :: center, nodecoord
         integer, dimension(3), intent(inout) :: cellaux
         logical, intent(out) :: celloutside
+
+        real(wp) :: distance, vrtDist, chardist
 
         celloutside = .false.
 
@@ -653,6 +660,14 @@ contains
             if ((cellaux(3) > p + buff_size) .or. (cellaux(2) > n + buff_size) .or. (cellaux(1) > m + buff_size)) then
                 celloutside = .true.
             end if
+        end if
+
+        if (lag_params%newModel_2D .and. .not. celloutside) then
+            distance = sqrt((center(1) - nodecoord(1))**2._wp + (center(2) - nodecoord(2))**2._wp + (center(3) - nodecoord(3))**2._wp)
+            vrtDist = 0.5_wp*(dx(cellaux(1)) + dy(cellaux(2)))
+            chardist = (dx(cellaux(1))*dy(cellaux(2))*vrtDist)**(1._wp/3._wp)
+            if (distance >= 5._wp * chardist) celloutside = .true.
+            return
         end if
 
     end subroutine s_check_celloutside
@@ -835,7 +850,7 @@ contains
         real(wp), intent(in) :: volpart
         real(wp), intent(out) :: stddsv
 
-        real(wp) :: chardist, charvol
+        real(wp) :: chardist, charvol, vrtDist
         real(wp) :: rad
 
         if (hifu_params%cartesian .and. hifu_params%heatSolver) then
@@ -862,6 +877,12 @@ contains
                 else
                     charvol = dx(cell(1))*dy(cell(2))*lag_params%charwidth
                 end if
+            end if
+
+            if (lag_params%newModel_2D) then
+                vrtDist = 0.5_wp*(dx(cell(1)) + dy(cell(2)))
+                chardist = (dx(cell(1))*dy(cell(2))*vrtDist)**(1._wp/3._wp)
+                charvol = dx(cell(1))*dy(cell(2))*vrtDist
             end if
 
             !< Compute Standard deviaton

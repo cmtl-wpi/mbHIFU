@@ -746,6 +746,7 @@ contains
         lag_params%interaction_model = 1
         lag_params%influence = 3
         lag_params%scaleVirtualSphere = 2._wp
+        lag_params%newModel_2D = .false.
         !Marmottant model
         lag_params%coatedBub_model = .false.
         lag_params%ss0_ctdBub = dflt_real
