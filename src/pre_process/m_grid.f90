@@ -197,7 +197,7 @@ contains
         real(wp) :: length   !< domain lengths
 
         ! Locations of cell boundaries
-        real(wp), allocatable, dimension(:) :: x_cb_glb, y_cb_glb, z_cb_glb, dxDV, dyDV !<
+        real(wp), allocatable, dimension(:) :: x_cb_glb, y_cb_glb, z_cb_glb !<
             !! Locations of cell boundaries
 
         character(LEN=path_len + name_len) :: file_loc !<
@@ -211,8 +211,6 @@ contains
         allocate (x_cb_glb(-1:m_glb))
         allocate (y_cb_glb(-1:n_glb))
         allocate (z_cb_glb(-1:p_glb))
-        allocate (dxDV(0:m_glb))
-        allocate (dyDV(0:n_glb))
 
         ! Grid generation in the x-direction
         dx = (x_domain%end - x_domain%beg)/real(m_glb + 1, wp)
@@ -306,23 +304,6 @@ contains
                 end if
             end if
         end if
-
-        do i = 0, m_glb
-            dxDV(i) = abs(x_cb_glb(i - 1) - x_cb_glb(i))
-        end do
-        do i = 0, n_glb
-            dyDV(i) = abs(y_cb_glb(i - 1) - y_cb_glb(i))
-        end do
-
-        print *, 'Stretched grid: dx min, dx max - x grid: ', minval(dxDV(:)), maxval(dxDV(:))
-        print *, 'Stretched grid: loc dx min, loc dx max - x grid: ', x_cb_glb(minloc(dxDV(:)) - 1), x_cb_glb(maxloc(dxDV(:)) - 1)
-        print *, 'Stretched grid: dx m=0, dx m=m_glb - x grid: ', dxDV(0), dxDV(m_glb)
-        print *, 'Stretched grid: x-boundaries: ', x_cb_glb(-1), x_cb_glb(m)
-
-        print *, 'Stretched grid: dy min, dy max - y grid: ', minval(dyDV(:)), maxval(dyDV(:))
-        print *, 'Stretched grid: loc dy min, loc dy max - y grid: ', y_cb_glb(minloc(dyDV(:)) - 1), y_cb_glb(maxloc(dyDV(:)) - 1)
-        print *, 'Stretched grid: dy n=0, dy n=n_glb - y grid: ', dyDV(0), dyDV(n_glb)
-        print *, 'Stretched grid: y-boundaries: ', y_cb_glb(-1), y_cb_glb(n)
 
         ! Write cell boundary locations to grid data files
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'x_cb.dat'

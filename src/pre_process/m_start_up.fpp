@@ -804,10 +804,112 @@ contains
                 call s_mpi_barrier()
                 call s_read_grid_data_files()
                 call s_check_grid_data_files()
+                call s_print_dv_grid()
             end if
         end if
 
     end subroutine s_read_grid
+
+    subroutine s_print_dv_grid()
+
+        real(wp) :: tbprint1, tbprint2, glbVal, tempVal
+
+        if (proc_rank == 0) print*, '=========== x-dir'
+        call s_print_direction(m)
+
+        if (proc_rank == 0) print*, '=========== y-dir'
+        call s_print_direction(n)
+
+        if (p>0) then
+            if (proc_rank == 0) print*, '=========== z-dir'
+            call s_print_direction(p)
+        end if
+    end subroutine s_print_dv_grid
+
+
+    subroutine s_print_direction(vectLen)
+
+        integer, intent(in) :: vectLen
+
+        real(wp) :: print_min, print_max
+        real(wp), allocatable, dimension(:) :: dn
+        integer :: i
+        integer :: min_id, max_id
+        real(wp) :: dn_old_min, dn_old_max
+
+        allocate (dn(0:vectLen))
+
+        do i = 0, vectLen
+            if (vectLen == m) then
+                dn(i) = abs(x_cb(i - 1) - x_cb(i))
+            elseif (vectLen == n) then
+                dn(i) = abs(y_cb(i - 1) - y_cb(i))
+            else
+                dn(i) = abs(z_cb(i - 1) - z_cb(i))
+            end if
+        end do
+
+        print_min = minval(dn(:)); print_max = maxval(dn(:))
+        call s_dv_prints_grid(print_min, print_max)
+        if (proc_rank == 0) print *, 'dn min:', print_min, 'dn max:', print_max
+
+        min_id = -6; max_id = -6
+        dn_old_min = 100._wp; dn_old_max = -100._wp
+        do i = 0, vectLen
+            !min
+            if (dn(i)<dn_old_min) then
+                dn_old_min = dn(i)
+                min_id = i
+            end if
+            !max
+            if (dn(i)>dn_old_max) then
+                dn_old_max = dn(i)
+                max_id = i
+            end if
+        end do
+
+        if (vectLen == m) then
+            print_min = x_cb(min_id - 1); print_max = x_cb(max_id - 1)
+        elseif (vectLen == n) then
+            print_min = y_cb(min_id - 1); print_max = y_cb(max_id - 1)
+        else
+            print_min = z_cb(min_id - 1); print_max = z_cb(max_id - 1)
+        end if
+        call s_dv_prints_grid(print_min, print_max)
+        if (proc_rank == 0) print *, 'loc dn min:', print_min, 'loc dn max:', print_max 
+
+        if (vectLen == m) then
+            print_min = x_cb(-1); print_max = x_cb(vectLen)
+        elseif (vectLen == n) then
+            print_min = y_cb(-1); print_max = y_cb(vectLen)
+        else
+            print_min = z_cb(-1); print_max = z_cb(vectLen)
+        end if
+        call s_dv_prints_grid(print_min, print_max)
+        if (proc_rank == 0) print *, 'n beg: ', print_min, 'n end:', print_max
+
+        deallocate (dn)
+
+    end subroutine s_print_direction
+
+    subroutine s_dv_prints_grid(print_min, print_max)
+
+        real(wp), intent(inout) :: print_min, print_max
+        real(wp) :: tempVal, glbVal
+
+        if (num_procs > 1) then
+            tempVal = print_min
+            call s_mpi_allreduce_min(tempVal, glbVal)
+            print_min = glbVal
+
+            tempVal = print_max
+            call s_mpi_allreduce_max(tempVal, glbVal)
+            print_max = glbVal
+        else
+            return
+        end if
+
+    end subroutine s_dv_prints_grid
 
     subroutine s_apply_initial_condition(start, finish, proc_time, time_avg, time_final, file_exists)
 
