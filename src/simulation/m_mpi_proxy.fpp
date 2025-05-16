@@ -645,8 +645,7 @@ contains
                 start_idx(1) = (m + 1)*proc_coords(1) + rem_cells
             end if
         end if
-
-	print*, 'num_proc x-y-z', num_procs_x, num_procs_y, num_procs_z, proc_rank
+        
 #endif
 
     end subroutine s_mpi_decompose_computational_domain

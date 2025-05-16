@@ -581,6 +581,14 @@ contains
             end if
         end if
 
+        if (p>0) then
+            print*, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y, 'num_procs_z', num_procs_z
+        elseif (n>0) then
+            print*, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y
+        else
+            print*, proc_rank, 'num_procs_x', num_procs_x
+        end if
+
 #endif
 
     end subroutine s_mpi_decompose_computational_domain
