@@ -307,6 +307,8 @@ contains
 
         integer :: i, j !< Generic loop iterators
 
+        integer :: rot_coords(3), rot_rank !< Rotational periodic coordinates and rank
+
         if (num_procs == 1 .and. parallel_io) then
             do i = 1, num_dims
                 start_idx(i) = 0
@@ -431,6 +433,12 @@ contains
 
                 end if
 
+                if (bc_x%beg == -22 .and. bc_y%beg == -22) then
+                    num_procs_x = 1
+                    num_procs_y = 1
+                    num_procs_z = num_procs
+                end if
+
                 ! Verifying that a valid decomposition of the computational
                 ! domain has been established. If not, the simulation exits.
                 if (proc_rank == 0 .and. ierr == -1) then
@@ -466,7 +474,7 @@ contains
                 end do
 
                 ! Boundary condition at the beginning
-                if (proc_coords(3) > 0 .or. ((bc_z%beg == -1 .or. bc_z%beg == -22) .and. num_procs_z > 1)) then
+                if (proc_coords(3) > 0 .or. (bc_z%beg == -1 .and. num_procs_z > 1)) then
                     proc_coords(3) = proc_coords(3) - 1
                     call MPI_CART_RANK(MPI_COMM_CART, proc_coords, &
                                        bc_z%beg, ierr)
@@ -474,7 +482,7 @@ contains
                 end if
 
                 ! Boundary condition at the end
-                if (proc_coords(3) < num_procs_z - 1 .or. ((bc_z%end == -1 .or. bc_z%end == -22) .and. num_procs_z > 1)) then
+                if (proc_coords(3) < num_procs_z - 1 .or. (bc_z%end == -1 .and. num_procs_z > 1)) then
                     proc_coords(3) = proc_coords(3) + 1
                     call MPI_CART_RANK(MPI_COMM_CART, proc_coords, &
                                        bc_z%end, ierr)
@@ -569,7 +577,7 @@ contains
             end do
 
             ! Boundary condition at the beginning
-            if (proc_coords(2) > 0 .or. ((bc_y%beg == -1 .or. bc_y%beg == -22) .and. num_procs_y > 1)) then
+            if (proc_coords(2) > 0 .or. (bc_y%beg == -1 .and. num_procs_y > 1)) then
                 proc_coords(2) = proc_coords(2) - 1
                 call MPI_CART_RANK(MPI_COMM_CART, proc_coords, &
                                    bc_y%beg, ierr)
@@ -577,7 +585,7 @@ contains
             end if
 
             ! Boundary condition at the end
-            if (proc_coords(2) < num_procs_y - 1 .or. ((bc_y%end == -1 .or. bc_y%end == -22) .and. num_procs_y > 1)) then
+            if (proc_coords(2) < num_procs_y - 1 .or. (bc_y%end == -1 .and. num_procs_y > 1)) then
                 proc_coords(2) = proc_coords(2) + 1
                 call MPI_CART_RANK(MPI_COMM_CART, proc_coords, &
                                    bc_y%end, ierr)
@@ -625,18 +633,28 @@ contains
         end do
 
         ! Boundary condition at the beginning
-        if (proc_coords(1) > 0 .or. ((bc_x%beg == -1 .or. bc_x%beg == -22) .and. num_procs_x > 1)) then
+        if (proc_coords(1) > 0 .or. (bc_x%beg == -1 .and. num_procs_x > 1)) then
             proc_coords(1) = proc_coords(1) - 1
             call MPI_CART_RANK(MPI_COMM_CART, proc_coords, bc_x%beg, ierr)
             proc_coords(1) = proc_coords(1) + 1
         end if
 
         ! Boundary condition at the end
-        if (proc_coords(1) < num_procs_x - 1 .or. ((bc_x%end == -1 .or. bc_x%end == -22) .and. num_procs_x > 1)) then
+        if (proc_coords(1) < num_procs_x - 1 .or. (bc_x%end == -1 .and. num_procs_x > 1)) then
             proc_coords(1) = proc_coords(1) + 1
             call MPI_CART_RANK(MPI_COMM_CART, proc_coords, bc_x%end, ierr)
             proc_coords(1) = proc_coords(1) - 1
         end if
+
+        ! Rotational periodic boundary handling (example: 180-degree in x-y plane)
+        ! if (bc_x%beg == -22 .and. bc_y%beg == -22 .and. (num_procs_x>0 .or. num_procs_y>0 )) then
+        !     rot_coords(1) = num_procs_x - 1 - proc_coords(1)
+        !     rot_coords(2) = num_procs_y - 1 - proc_coords(2)
+        !     rot_coords(3) = proc_coords(3)
+
+        !     call MPI_CART_RANK(MPI_COMM_CART, rot_coords, bc_x%beg, ierr)
+        !     call MPI_CART_RANK(MPI_COMM_CART, rot_coords, bc_y%beg, ierr)
+        ! end if
 
         if (parallel_io) then
             if (proc_coords(1) < rem_cells) then
@@ -645,7 +663,13 @@ contains
                 start_idx(1) = (m + 1)*proc_coords(1) + rem_cells
             end if
         end if
-        
+
+        if (bc_x%beg == -22 .and. bc_y%beg == -22) then
+            if (p > 0 .and. p + 1 < weno_order) then
+                call s_mpi_abort("p must be at least weno_order - 1. Reduce num_proc with rot periodic BC.")
+            end if
+        end if
+
 #endif
 
     end subroutine s_mpi_decompose_computational_domain

@@ -814,18 +814,17 @@ contains
 
         real(wp) :: tbprint1, tbprint2, glbVal, tempVal
 
-        if (proc_rank == 0) print*, '=========== x-dir'
+        if (proc_rank == 0) print *, '=========== x-dir'
         call s_print_direction(m)
 
-        if (proc_rank == 0) print*, '=========== y-dir'
+        if (proc_rank == 0) print *, '=========== y-dir'
         call s_print_direction(n)
 
-        if (p>0) then
-            if (proc_rank == 0) print*, '=========== z-dir'
+        if (p > 0) then
+            if (proc_rank == 0) print *, '=========== z-dir'
             call s_print_direction(p)
         end if
     end subroutine s_print_dv_grid
-
 
     subroutine s_print_direction(vectLen)
 
@@ -857,12 +856,12 @@ contains
         dn_old_min = 100._wp; dn_old_max = -100._wp
         do i = 0, vectLen
             !min
-            if (dn(i)<dn_old_min) then
+            if (dn(i) < dn_old_min) then
                 dn_old_min = dn(i)
                 min_id = i
             end if
             !max
-            if (dn(i)>dn_old_max) then
+            if (dn(i) > dn_old_max) then
                 dn_old_max = dn(i)
                 max_id = i
             end if
@@ -876,7 +875,7 @@ contains
             print_min = z_cb(min_id - 1); print_max = z_cb(max_id - 1)
         end if
         call s_dv_prints_grid(print_min, print_max)
-        if (proc_rank == 0) print *, 'loc dn min:', print_min, 'loc dn max:', print_max 
+        if (proc_rank == 0) print *, 'loc dn min:', print_min, 'loc dn max:', print_max
 
         if (vectLen == m) then
             print_min = x_cb(-1); print_max = x_cb(vectLen)

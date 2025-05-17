@@ -291,6 +291,12 @@ contains
 
                 end if
 
+                if (bc_x%beg == -22 .and. bc_y%beg == -22) then
+                    num_procs_x = 1
+                    num_procs_y = 1
+                    num_procs_z = num_procs
+                end if
+
                 ! Checking whether the decomposition of the computational
                 ! domain was successful
                 if (proc_rank == 0 .and. ierr == -1) then
@@ -581,12 +587,12 @@ contains
             end if
         end if
 
-        if (p>0) then
-            print*, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y, 'num_procs_z', num_procs_z
-        elseif (n>0) then
-            print*, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y
+        if (p > 0) then
+            print *, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y, 'num_procs_z', num_procs_z
+        elseif (n > 0) then
+            print *, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y
         else
-            print*, proc_rank, 'num_procs_x', num_procs_x
+            print *, proc_rank, 'num_procs_x', num_procs_x
         end if
 
 #endif

@@ -379,6 +379,12 @@ contains
 
                 end if
 
+                if (bc_x%beg == -22 .and. bc_y%beg == -22) then
+                    num_procs_x = 1
+                    num_procs_y = 1
+                    num_procs_z = num_procs
+                end if
+
                 ! Checking whether the decomposition of the computational
                 ! domain was successful
                 if (proc_rank == 0 .and. ierr == -1) then

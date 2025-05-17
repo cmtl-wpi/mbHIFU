@@ -244,7 +244,7 @@ contains
 
                             ! Relocate cells for bubbles intersecting symmetric boundaries
                             if ((bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. &
-                                bczb == -2 .or. bcze == -2) .and. .not. lag_params%newModel_2D) then
+                                 bczb == -2 .or. bcze == -2) .and. .not. lag_params%newModel_2D) then
                                 call s_shift_cell_symmetric_bc(cellaux, cell)
                             end if
                         else
@@ -666,7 +666,7 @@ contains
             distance = sqrt((center(1) - nodecoord(1))**2._wp + (center(2) - nodecoord(2))**2._wp + (center(3) - nodecoord(3))**2._wp)
             vrtDist = 0.5_wp*(dx(cellaux(1)) + dy(cellaux(2)))
             chardist = (dx(cellaux(1))*dy(cellaux(2))*vrtDist)**(1._wp/3._wp)
-            if (distance >= 5._wp * chardist) celloutside = .true.
+            if (distance >= 5._wp*chardist) celloutside = .true.
             return
         end if
 

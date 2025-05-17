@@ -1171,10 +1171,10 @@ contains
 
         if (lag_params%newModel_2D) then
             call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
-                                          mtn_s, mtn_posPrev, q_beta)
+                                  mtn_s, mtn_posPrev, q_beta)
         else
             call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
-                                          mtn_s, mtn_pos, q_beta)
+                                  mtn_s, mtn_pos, q_beta)
         end if
 
         !Store 1-beta
