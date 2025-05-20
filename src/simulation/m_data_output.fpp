@@ -1474,7 +1474,7 @@ contains
                                 if (l == 1) l = 2 ! Pick first point if probe is at edge
 
                                 ! Temperature hifu
-                                if (hifu_params%heatSolver .and. hifu_params%stg3_3d) then
+                                if (hifu_params%heatSolver) then
 
                                     Temp_hifu = Temp_hifu + q_hifu_vf(hifu_params%T_idx)%sf(j - 2, k - 2, l - 2)
                                     Temp_hifu = Temp_hifu - hifu_params%Tref ! Delta T
