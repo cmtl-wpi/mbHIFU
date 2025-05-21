@@ -69,7 +69,7 @@ contains
             weno_order, bc_x, &
             bc_y, bc_z, fluid_pp, format, precision, &
             output_partial_domain, x_output, y_output, z_output, &
-            hypoelasticity, G, &
+            hypoelasticity, G, mhd, &
             chem_wrt_Y, chem_wrt_T, avg_state, &
             alpha_rho_wrt, rho_wrt, mom_wrt, vel_wrt, &
             E_wrt, pres_wrt, alpha_wrt, gamma_wrt, &
@@ -83,8 +83,9 @@ contains
             polydisperse, poly_sigma, file_per_process, relax, &
             relax_model, cf_wrt, sigma, adv_n, ib, num_ibs, &
             cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, &
-            cfl_target, surface_tension, bubbles_lagrange, rkck_adap_dt, &
-            sim_data, hyperelasticity, hifu, hifu_params
+            cfl_target, surface_tension, bubbles_lagrange, &
+            sim_data, hyperelasticity, Bx0, relativity, cont_damage, &
+            hifu, hifu_params
 
         ! Inquiring the status of the post_process.inp file
         file_loc = 'post_process.inp'
@@ -113,7 +114,7 @@ contains
 
             nGlobal = (m_glb + 1)*(n_glb + 1)*(p_glb + 1)
 
-            if (cfl_adap_dt .or. cfl_const_dt .or. rkck_adap_dt) cfl_dt = .true.
+            if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
 
         else
             call s_mpi_abort('File post_process.inp is missing. Exiting.')
@@ -420,15 +421,30 @@ contains
         end if
 
         ! Adding the density to the formatted database file
-        if (rho_wrt &
-            .or. &
-            (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) then
+        if ((rho_wrt .or. (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) .and. (.not. relativity)) then
             q_sf = rho_sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
             write (varname, '(A)') 'rho'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
             varname(:) = ' '
+        end if
 
+        if (relativity .and. (rho_wrt .or. prim_vars_wrt)) then
+            q_sf = q_prim_vf(1)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
+            write (varname, '(A)') 'rho'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+
+            varname(:) = ' '
+        end if
+
+        if (relativity .and. (rho_wrt .or. cons_vars_wrt)) then
+            ! For relativistic flow, conservative and primitive densities are different
+            ! Hard-coded single-component for now
+            q_sf = q_cons_vf(1)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
+            write (varname, '(A)') 'D'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+
+            varname(:) = ' '
         end if
 
         ! Adding the momentum to the formatted database file
@@ -500,6 +516,34 @@ contains
 
         end if
 
+        ! Adding the magnetic field to the formatted database file
+        if (mhd .and. prim_vars_wrt) then
+            do i = B_idx%beg, B_idx%end
+                q_sf = q_prim_vf(i)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
+
+                ! 1D: output By, Bz
+                if (n == 0) then
+                    if (i == B_idx%beg) then
+                        write (varname, '(A)') 'By'
+                    else
+                        write (varname, '(A)') 'Bz'
+                    end if
+                    ! 2D/3D: output Bx, By, Bz
+                else
+                    if (i == B_idx%beg) then
+                        write (varname, '(A)') 'Bx'
+                    elseif (i == B_idx%beg + 1) then
+                        write (varname, '(A)') 'By'
+                    else
+                        write (varname, '(A)') 'Bz'
+                    end if
+                end if
+
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+            end do
+        end if
+
         ! Adding the elastic shear stresses to the formatted database file
         if (elasticity) then
             do i = 1, stress_idx%end - stress_idx%beg + 1
@@ -521,6 +565,14 @@ contains
                 end if
                 varname(:) = ' '
             end do
+        end if
+
+        if (cont_damage) then
+            q_sf = q_cons_vf(damage_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
+            write (varname, '(A)') 'damage_state'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+
+            varname(:) = ' '
         end if
 
         ! Adding the pressure to the formatted database file
@@ -642,31 +694,17 @@ contains
         end if
 
         ! Adding the vorticity to the formatted database file
-        if (p > 0) then
-            do i = 1, E_idx - mom_idx%beg
-                if (omega_wrt(i)) then
+        do i = 1, 3
+            if (omega_wrt(i)) then
 
-                    call s_derive_vorticity_component(i, q_prim_vf, q_sf)
+                call s_derive_vorticity_component(i, q_prim_vf, q_sf)
 
-                    write (varname, '(A,I0)') 'omega', i
-                    call s_write_variable_to_formatted_database_file(varname, t_step)
+                write (varname, '(A,I0)') 'omega', i
+                call s_write_variable_to_formatted_database_file(varname, t_step)
 
-                    varname(:) = ' '
-                end if
-            end do
-        elseif (n > 0) then
-            do i = 1, E_idx - cont_idx%end
-                if (omega_wrt(i)) then
-
-                    call s_derive_vorticity_component(i, q_prim_vf, q_sf)
-
-                    write (varname, '(A,I0)') 'omega', i
-                    call s_write_variable_to_formatted_database_file(varname, t_step)
-
-                    varname(:) = ' '
-                end if
-            end do
-        end if
+                varname(:) = ' '
+            end if
+        end do
 
         if (ib) then
             q_sf = real(ib_markers%sf(-offset_x%beg:m + offset_x%end, -offset_y%beg:n + offset_y%end, -offset_z%beg:p + offset_z%end))

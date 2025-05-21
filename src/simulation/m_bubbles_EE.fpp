@@ -65,6 +65,8 @@ contains
         @:ALLOCATE(bub_p_src(0:m, 0:n, 0:p, 1:nb))
         @:ALLOCATE(bub_m_src(0:m, 0:n, 0:p, 1:nb))
 
+        if (adap_dt .and. f_is_default(adap_dt_tol)) adap_dt_tol = dflt_adap_dt_tol
+
     end subroutine s_initialize_bubbles_EE_module
 
     ! Compute the bubble volume fraction alpha from the bubble number density n
@@ -166,11 +168,7 @@ contains
 
         integer :: i, j, k, l, q, ii !< Loop variables
 
-        real(wp) :: err1, err2, err3, err4, err5 !< Error estimates for adaptive time stepping
-        real(wp) :: t_new !< Updated time step size
-        real(wp) :: h !< Time step size
-        real(wp), dimension(4) :: myR_tmp1, myV_tmp1, myR_tmp2, myV_tmp2 !< Bubble radius, radial velocity, and radial acceleration for the inner loop
-
+        integer :: adap_dt_stop_max, adap_dt_stop !< Fail-safe exit if max iteration count reached
         integer :: dmBub_id !< Dummy variables for unified subgrid bubble subroutines
         real(wp) :: dmMass_v, dmMass_n, dmBeta_c, dmBeta_t, dmCson, dmshell, dmRbuck, dmRrupt, dmQvis, dmQth
         real(wp) :: dmNoise_constant, dmLambda_c, dmdk, dmLoc, dmTime, dmInt, dmA, dmRcell
@@ -192,7 +190,9 @@ contains
             end do
         end do
 
-        !$acc parallel loop collapse(3) gang vector default(present) private(Rtmp, Vtmp, myalpha_rho, myalpha, myR_tmp1, myV_tmp1, myR_tmp2, myV_tmp2)
+        adap_dt_stop_max = 0
+        !$acc parallel loop collapse(3) gang vector default(present) private(Rtmp, Vtmp, myalpha_rho, myalpha)  &
+        !$acc reduction(MAX:adap_dt_stop_max) copy(adap_dt_stop_max)
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -283,6 +283,8 @@ contains
                         end if
 
                         ! Adaptive time stepping
+                        adap_dt_stop = 0
+
                         if (adap_dt) then
 
                             call s_advance_step(myRho, myP, myR, myV, R0(q), &
@@ -291,7 +293,7 @@ contains
                                                 dmBub_id, dmMass_v, dmMass_n, dmBeta_c, &
                                                 dmBeta_t, dmCson, dmInt, dmshell, dmRbuck, dmRrupt, dmRcell, &
                                                 dmNoise_constant, dmLambda_c, dmdk, dmLoc, dmTime, dmA, &!dmPhase_rn, &
-                                                dmQvis, dmQth)
+                                                dmQvis, dmQth, adap_dt_stop)
 
                             q_cons_vf(rs(q))%sf(j, k, l) = nbub*myR
                             q_cons_vf(vs(q))%sf(j, k, l) = nbub*myV
@@ -304,6 +306,8 @@ contains
                             bub_v_src(j, k, l, q) = nbub*rddot
                             bub_r_src(j, k, l, q) = q_cons_vf(vs(q))%sf(j, k, l)
                         end if
+
+                        adap_dt_stop_max = max(adap_dt_stop_max, adap_dt_stop)
 
                         if (alf < 1.e-11_wp) then
                             bub_adv_src(j, k, l) = 0._wp
@@ -318,6 +322,8 @@ contains
                 end do
             end do
         end do
+
+        if (adap_dt .and. adap_dt_stop_max > 0) call s_mpi_abort("Adaptive time stepping failed to converge.")
 
         if (.not. adap_dt) then
             !$acc parallel loop collapse(3) gang vector default(present)

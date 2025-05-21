@@ -966,7 +966,7 @@ contains
             MPI_IO_HIFU_DATA%var(i)%sf => null()
         end do
         
-        call s_finalize_mpi_proxy_module()
+        !call s_finalize_mpi_proxy_module()
 
         if (hifu_params%cartesian) then
             !> 3D CARTESIAN COORDS
@@ -1024,7 +1024,7 @@ contains
             do i = 1, num_dims
                 start_idx(i) = 0
             end do
-            call s_initialize_mpi_proxy_module()
+            !call s_initialize_mpi_proxy_module()
 
             !> Allocate 3d q_hifu
             @:ALLOCATE(q_hifu_3d%vf(1:sys_size_hifu))
@@ -1086,7 +1086,7 @@ contains
                 allocate (MPI_IO_HIFU_DATA%var(i)%sf(0:m, 0:n, 0:p))
                 MPI_IO_HIFU_DATA%var(i)%sf => null()
             end do
-            call s_initialize_mpi_proxy_module()
+            !call s_initialize_mpi_proxy_module()
 
             !Allocate 3d q_hifu
             @:ALLOCATE(q_hifu_3d%vf(1:sys_size_hifu))
@@ -1847,11 +1847,12 @@ contains
     end subroutine s_restore_initial_setup
 
     !Calculate the rhs value from heat transfer eqn discretized with finite volumes.
-    subroutine s_rhs_heatEqn(q_cons_vf, pb, mv, t_step)
+    subroutine s_rhs_heatEqn(q_cons_vf, pb, mv, t_step, bc_type)
 
         type(scalar_field), dimension(sys_size_hyd), intent(in) :: q_cons_vf
         real(wp), optional, dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: t_step
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
         real(wp) :: CFL_heat, val_tmp, CFL_heat_old, CFL_heat_2, CFL_heat_3, CFL_heat_4, CFL_heat_max
         real(wp) :: dTdx_L, dTdx_R, dTdr_L, dTdr_R
@@ -1876,7 +1877,7 @@ contains
 
             if (proc_rank == 0) then
 
-                ! call s_populate_variables_buffers(q_hifu_3d%vf, pb, mv) 
+                ! call s_populate_variables_buffers(q_hifu_3d%vf, pb, mv, bc_type)
                 ! Assume boundaries are far away from the heating and that do not undergo any heating up.
                 ! Buffers are equal to Tref as set in the initial condition
 
@@ -1979,7 +1980,7 @@ contains
             if (p == 0 .and. cyl_coord) then !< Axisymmetric rhs
 
                 ! call s_populate_HIFU_variables_buffers(q_hifu)
-                call s_populate_variables_buffers(q_hifu, pb, mv)
+                call s_populate_variables_buffers(q_hifu, pb, mv, bc_type)
 
                 !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
                 !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
@@ -2076,7 +2077,7 @@ contains
 
                 if (cyl_coord) then !< from axisymmetric to 3D Cylindrical
 
-                    call s_populate_variables_buffers(q_hifu_3d%vf, pb, mv)
+                    call s_populate_variables_buffers(q_hifu_3d%vf, pb, mv, bc_type)
 
                     !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
                     !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
@@ -2213,7 +2214,7 @@ contains
                         ! merging 4 cells at the pole
                         ! merging 8 cells at the pole
             
-                        if (proc_rank == 0) print*, 'max. CFL. Secod layer:', CFL_heat_2, CFL_heat_2/4._wp, &
+                        if (proc_rank == 0) print*, 'max. CFL. Second layer:', CFL_heat_2, CFL_heat_2/4._wp, &
                                                                             CFL_heat_2/16._wp, CFL_heat_2/64._wp, CFL_heat_2/128._wp
                         if (proc_rank == 0) print*, 'max. CFL. Third layer:', CFL_heat_3, CFL_heat_3/4._wp, &
                                                                             CFL_heat_3/16._wp, CFL_heat_3/64._wp, CFL_heat_3/128._wp
@@ -2223,7 +2224,7 @@ contains
 
                 else ! 3D cartesian (all stages)
 
-                    call s_populate_variables_buffers(q_hifu, pb, mv) 
+                    call s_populate_variables_buffers(q_hifu, pb, mv, bc_type)
 
                     !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
                     !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)

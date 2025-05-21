@@ -243,8 +243,7 @@ contains
                             end if
 
                             ! Relocate cells for bubbles intersecting symmetric boundaries
-                            if ((bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. &
-                                 bczb == -2 .or. bcze == -2) .and. .not. lag_params%newModel_2D) then
+                            if (any((/bc_x%beg, bc_x%end, bc_y%beg, bc_y%end, bc_z%beg, bc_z%end/) == BC_REFLECTIVE)) then
                                 call s_shift_cell_symmetric_bc(cellaux, cell)
                             end if
                         else
@@ -444,39 +443,6 @@ contains
                 call s_compute_stddsv(cell, volpart, stddsv)
                 center(1:3) = lbk_pos(l, 1:3, 2)
 
-                ! !> Get the sumation of Gausian functions to correct smearing
-                ! sumFun = 0._wp
-                ! !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+:sumFun)
-                ! do i = 0, smearGrid
-                !     do j = 0, smearGrid
-                !         do k = 0, smearGrid
-
-                !                 cellaux(1) = cell(1) + i - mapCells
-                !                 cellaux(2) = cell(2) + j - mapCells
-                !                 cellaux(3) = cell(3) + k - mapCells
-
-                !                 !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
-                !                 celloutside = .false.
-                !                 if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
-                !                     celloutside = .true.
-                !                 end if
-                !                 if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
-                !                     celloutside = .true.
-                !                 end if
-
-                !                 if (.not. celloutside) then
-                !                     nodecoord(1) = x_cc_hf(cellaux(1))
-                !                     nodecoord(2) = y_cc_hf(cellaux(2))
-                !                     nodecoord(3) = z_cc_hf(cellaux(3))
-                !                     call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
-                !                     sumFun = sumFun + func * (sqrt(2._wp*pi)*stddsv)**3._wp
-                !                 end if
-                !         end do
-                !     end do
-                ! end do
-
-                !if (sumFun <= 0._wp .or. sumFun/=sumFun) print*, 'SumFun error', sumFun
-
                 !> Smearing
                 normGaussSum = 0._wp
                 !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+: normGaussSum)
@@ -531,7 +497,7 @@ contains
                     end do
                 end do
 
-                ! Summation of normal gaussian weigths must be equal to one, exept from the cells at the buffers since some surrounding cells can be outside the domain.
+                ! Summation of normal gaussian weights must be equal to one, except from the cells at the buffers since some surrounding cells can be outside the domain.
                 ! Tolerance of 0.01 defined
                 if ((cell(1) > 0 .and. cell(1) <= m_hf) .and. (cell(2) > 0 .and. cell(2) <= n_hf) .and. &
                     (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum - 1._wp) > 0.01_wp) then
@@ -685,52 +651,28 @@ contains
         integer, dimension(3), intent(in) :: cell
 
         ! x-dir
-        if (bcxb == -2 .and. (cell(1) <= mapCells - 1)) then
-            if (cell(1) >= 0) then
-                if (cellaux(1) < 0) cellaux(1) = abs(cellaux(1)) - 1
-            else
-                stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_x%beg)."
-            end if
+        if (bc_x%beg == BC_REFLECTIVE .and. (cell(1) <= mapCells - 1)) then
+            cellaux(1) = abs(cellaux(1)) - 1
         end if
-        if (bcxe == -2 .and. (cell(1) >= m + 1 - mapCells)) then
-            if (cell(1) <= m) then
-                if (cellaux(1) > m) cellaux(1) = cellaux(1) - (2*(cellaux(1) - m) - 1)
-            else
-                stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_x%end)."
-            end if
+        if (bc_x%end == BC_REFLECTIVE .and. (cell(1) >= m + 1 - mapCells)) then
+            cellaux(1) = cellaux(1) - (2*(cellaux(1) - m) - 1)
         end if
 
         !y-dir
-        if (bcyb == -2 .and. (cell(2) <= mapCells - 1)) then
-            if (cell(2) >= 0) then
-                if (cellaux(2) < 0) cellaux(2) = abs(cellaux(2)) - 1
-            else
-                stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_y%beg)."
-            end if
+        if (bc_y%beg == BC_REFLECTIVE .and. (cell(2) <= mapCells - 1)) then
+            cellaux(2) = abs(cellaux(2)) - 1
         end if
-        if (bcye == -2 .and. (cell(2) >= n + 1 - mapCells)) then
-            if (cell(2) <= n) then
-                if (cellaux(2) > n) cellaux(2) = cellaux(2) - (2*(cellaux(2) - n) - 1)
-            else
-                stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_y%end)."
-            end if
+        if (bc_y%end == BC_REFLECTIVE .and. (cell(2) >= n + 1 - mapCells)) then
+            cellaux(2) = cellaux(2) - (2*(cellaux(2) - n) - 1)
         end if
 
         if (p > 0) then
             !z-dir
-            if (bczb == -2 .and. (cell(3) <= mapCells - 1)) then
-                if (cell(3) >= 0) then
-                    if (cellaux(3) < 0) cellaux(3) = abs(cellaux(3)) - 1
-                else
-                    stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_z%beg)."
-                end if
+            if (bc_z%beg == BC_REFLECTIVE .and. (cell(3) <= mapCells - 1)) then
+                cellaux(3) = abs(cellaux(3)) - 1
             end if
-            if (bcze == -2 .and. (cell(3) >= p + 1 - mapCells)) then
-                if (cell(3) <= p) then
-                    if (cellaux(3) > p) cellaux(3) = cellaux(3) - (2*(cellaux(3) - p) - 1)
-                else
-                    stop "Lagrangian bubbles must not be located in the ghost cells of a symmetric boundary (bc_z%end)."
-                end if
+            if (bc_z%end == BC_REFLECTIVE .and. (cell(3) >= p + 1 - mapCells)) then
+                cellaux(3) = cellaux(3) - (2*(cellaux(3) - p) - 1)
             end if
         end if
 

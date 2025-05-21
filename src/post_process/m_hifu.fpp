@@ -86,8 +86,8 @@ contains
             else
 
                 if (p > 0) then ! Full 3D
-                    if (bc_x%beg == -22) bc_x%beg = -6
-                    if (bc_y%beg == -22) bc_y%beg = -6
+                    if (bc_x%beg == BC_ROT_PERIODIC) bc_x%beg = -6
+                    if (bc_y%beg == BC_ROT_PERIODIC) bc_y%beg = -6
                     if (bc_z%beg == -20) bc_z%beg = -6
                 end if
             end if

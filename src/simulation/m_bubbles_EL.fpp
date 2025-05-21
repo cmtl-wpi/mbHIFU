@@ -19,7 +19,7 @@ module m_bubbles_EL
 
     use m_compile_specific
 
-    use m_boundary_conditions
+    use m_boundary_common
 
     use m_sim_helpers
 
@@ -66,10 +66,9 @@ module m_bubbles_EL
 
     !$acc declare create(bub_interact, bub_int_ids)
 
-    real(wp), allocatable, dimension(:, :) :: lag_RKCKcoef  !< RKCK 4th-5th time stepper coefficients
     integer, private :: lag_num_ts                          !<  Number of time stages in the time-stepping scheme
 
-    !$acc declare create(lag_RKCKcoef, lag_num_ts)
+    !$acc declare create(lag_num_ts)
 
     integer :: nBubs                            !< Number of bubbles in the local domain
     real(wp) :: Rmax_glb, Rmin_glb              !< Maximum and minimum bubbe size in the local domain
@@ -98,7 +97,6 @@ contains
 
         ! Setting number of time-stages for selected time-stepping scheme
         lag_num_ts = time_stepper
-        if (time_stepper == 4) lag_num_ts = num_ts_rkck
 
         ! Allocate space for the Eulerian fields needed to map the effect of the bubbles
         if (lag_params%solver_approach == 1) then
@@ -168,20 +166,7 @@ contains
         !@:ALLOCATE(bub_lambda_c(1:nBubs_glb))
         !@:ALLOCATE(bub_rnd_phase(1:nBubs_glb, 1:num_noise))
 
-        if (time_stepper == 4) then
-            !< Allocate space for the RKCK 4th/5th time stepper coefficients
-            @:ALLOCATE(lag_RKCKcoef(1:lag_num_ts+1, 1:lag_num_ts))
-            do i = 1, lag_num_ts
-                ! Populate RKCK coefficients (from constants)
-                lag_RKCKcoef(1, i) = rkck_coef1(i)
-                lag_RKCKcoef(2, i) = rkck_coef2(i)
-                lag_RKCKcoef(3, i) = rkck_coef3(i)
-                lag_RKCKcoef(4, i) = rkck_coef4(i)
-                lag_RKCKcoef(5, i) = rkck_coef5(i)
-                lag_RKCKcoef(6, i) = rkck_coef6(i)
-                lag_RKCKcoef(7, i) = rkck_coefE(i)
-            end do
-        end if
+        if (adap_dt .and. f_is_default(adap_dt_tol)) adap_dt_tol = dflt_adap_dt_tol
 
         call s_initialize_bubbles_EL_kernels()
 
@@ -255,12 +240,6 @@ contains
 
         character(LEN=path_len + 2*name_len) :: path_D_dir !<
 
-        if (time_stepper == 4) then
-            !Initial and largest dt - rkck stepper
-            dt_max = dt
-            !$acc update device(lag_RKCKcoef)
-        end if
-
         ! Initialize number of particles
         bub_id = 0
         id = 0
@@ -286,7 +265,7 @@ contains
                     indomain = particle_in_domain(inputBubble(1:3), .false.)
                     id = id + 1
                     if (id > lag_params%nBubs_glb .and. proc_rank == 0) then
-                        call s_mpi_abort('Current number of bubbles is larger than nBubs_glb')
+                        call s_mpi_abort("Current number of bubbles is larger than nBubs_glb")
                     end if
                     if (indomain) then
                         bub_id = bub_id + 1
@@ -298,7 +277,7 @@ contains
                 end do
                 close (94)
             else
-                stop "if you include lagrange bubbles, you have to initialize them in input/lag_bubbles.dat"
+                call s_mpi_abort("Initialize the lagrange bubbles in input/lag_bubbles.dat")
             end if
         else
             if (proc_rank == 0) print *, 'Restarting lagrange bubbles at save_count: ', save_count
@@ -383,6 +362,21 @@ contains
         cell = -buff_size
         call s_locate_cell(mtn_pos(bub_id, 1:3, 1), cell, mtn_s(bub_id, 1:3, 1))
 
+        ! Check if the bubble is located in the ghost cell of a symmetric boundary
+        if ((bc_x%beg == BC_REFLECTIVE .and. cell(1) < 0) .or. &
+            (bc_x%end == BC_REFLECTIVE .and. cell(1) > m) .or. &
+            (bc_y%beg == BC_REFLECTIVE .and. cell(2) < 0) .or. &
+            (bc_y%end == BC_REFLECTIVE .and. cell(2) > n)) then
+            call s_mpi_abort("Lagrange bubble is in the ghost cells of a symmetric boundary.")
+        end if
+
+        if (p > 0) then
+            if ((bc_z%beg == BC_REFLECTIVE .and. cell(3) < 0) .or. &
+                (bc_z%end == BC_REFLECTIVE .and. cell(3) > p)) then
+                call s_mpi_abort("Lagrange bubble is in the ghost cells of a symmetric boundary.")
+            end if
+        end if
+
         ! If particle is in the ghost cells, find the closest non-ghost cell
         cell(1) = min(max(cell(1), 0), m)
         cell(2) = min(max(cell(2), 0), n)
@@ -428,7 +422,7 @@ contains
         gas_mv(bub_id, 1) = pv*volparticle*(1._wp/(R_v*Tw))*(massflag) ! vapermass
         gas_mg(bub_id) = (gas_p(bub_id, 1) - pv*(massflag))*volparticle*(1._wp/(R_n*Tw)) ! gasmass
         if (gas_mg(bub_id) <= 0._wp) then
-            stop 'the initial mass of gas inside the bubble is negative. Check your initial conditions'
+            call s_mpi_abort("The initial mass of gas inside the bubble is negative. Check the initial conditions.")
         end if
         totalmass = gas_mg(bub_id) + gas_mv(bub_id, 1) ! totalmass
 
@@ -440,9 +434,7 @@ contains
         end if
 
         if (pv*(massflag) > gas_p(bub_id, 1)) then
-            print *, 'Not allowed: bubble initially located in a region with pressure below the vapor pressure'
-            print *, 'location:', mtn_pos(bub_id, 1:3, 1)
-            stop
+            call s_mpi_abort("Lagrange bubble initially located in a region with pressure below the vapor pressure.")
         end if
         omegaN = sqrt(omegaN/bub_R0(bub_id)**2._wp)
 
@@ -458,7 +450,9 @@ contains
         call s_transcoeff(1._wp, PeG, Re_trans, Im_trans)
         gas_betaC(bub_id) = Re_trans*lag_params%diffcoefvap
 
-        if (gas_mg(bub_id) <= 0._wp) stop "Negative gas mass in the bubble, check if the bubble is in the domain."
+        if (gas_mg(bub_id) <= 0._wp) then
+            call s_mpi_abort("Negative gas mass in the bubble, check if the bubble is in the domain.")
+        end if
 
         if (gas_betaT(bub_id) /= gas_betaT(bub_id) .or. gas_betaC(bub_id) /= gas_betaC(bub_id)) then
             print *, bub_id, gas_betaT(bub_id), gas_betaC(bub_id)
@@ -861,18 +855,18 @@ contains
 
     end subroutine s_start_bubble_interaction
 
-    !>  Contains the two-way and one-way Euler-Lagrange coupled algorithm, including the bubble dynamics subroutines.
+    !>  Contains the bubble dynamics subroutines.
         !! @param q_cons_vf Conservative variables
         !! @param q_prim_vf Primitive variables
         !! @param rhs_vf Calculated change of conservative variables
+        !! @param t_step Current time step
         !! @param stage Current stage in the time-stepper algorithm
     subroutine s_compute_bubble_EL_dynamics(q_cons_vf, q_prim_vf, t_step, rhs_vf, stage)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf
-        integer, intent(in) :: t_step
-        integer, intent(in) :: stage
+        integer, intent(in) :: t_step, stage
 
         real(wp) :: myVapFlux
         real(wp) :: preterm1, term2, paux, pint, Romega, term1_fac, Rb
@@ -888,6 +882,7 @@ contains
         real(wp) :: myTzPcell, myNoise_constant, myLambda_c, myloc, mydk, myPnoise, myLag_time
         real(wp), dimension(num_noise) :: myPhase
 
+        integer :: adap_dt_stop_max, adap_dt_stop !< Fail-safe exit if max iteration count reached
         real(wp) :: dmalf, dmntait, dmBtait, dm_bub_adv_src, dm_divu !< Dummy variables for unified subgrid bubble subroutines
 
         integer :: i, k, l
@@ -910,8 +905,11 @@ contains
         end if
 
         ! Radial motion
-        !$acc parallel loop gang vector default(present) private(k, myalpha_rho, myalpha, Re, cell) copyin(stage)
+        adap_dt_stop_max = 0
+        !$acc parallel loop gang vector default(present) private(k, myalpha_rho, myalpha, Re, cell) &
+        !$acc reduction(MAX:adap_dt_stop_max) copy(adap_dt_stop_max) copyin(stage)
         do k = 1, nBubs
+            ! Keller-Miksis model
 
             ! Current bubble state
             myPb = gas_p(k, 2)
@@ -929,7 +927,7 @@ contains
             myLag_time = mytime - dt
             myPout = 0._wp !Self-scaterred pressure
             if (any(lag_params%interaction_model == (/1, 3/))) myPout = bub_interact(k)
-            myInt = 0._wp !Interaction term from surrouding bubbles
+            myInt = 0._wp !Interaction term from surrounding bubbles
             if (any(lag_params%interaction_model == (/2, 3/))) myInt = bub_interact(k)
 
             ! Vapor and heat fluxes
@@ -967,7 +965,7 @@ contains
             call s_compute_cson_from_pinf(k, q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
 
             ! Adaptive time stepping
-            if (adap_dt .and. .not. rkck_adap_dt) then
+            if (adap_dt) then
 
                 if (stage == 3) myLag_time = mytime - 0.5_wp*dt
 
@@ -976,7 +974,7 @@ contains
                                     k, myMass_v, myMass_n, myBeta_c, &
                                     myBeta_t, myCson, myInt, myShell, myRbuck, myRrupt, myRcell, &
                                     myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myAc, & !myPhase, &
-                                    myQvis, myQth)
+                                    myQvis, myQth, adap_dt_stop)
 
                 ! Update bubble state
                 intfc_rad(k, 1) = myR
@@ -1012,7 +1010,11 @@ contains
 
             end if
 
+            adap_dt_stop_max = max(adap_dt_stop_max, adap_dt_stop)
+
         end do
+
+        if (adap_dt .and. adap_dt_stop_max > 0) call s_mpi_abort("Adaptive time stepping failed to converge.")
 
         call nvtxEndRange
 
@@ -1329,12 +1331,57 @@ contains
         integer, dimension(3) :: cell
         real(wp) :: myR0, myR, myV, myPb, myShell, myRbuck, myRrupt, myDist, myA
 
-        real(wp) :: Pcell, Rcell, Pn, myRho, myPout, sumPout
+        real(wp) :: Pcell, Rcell, Pw, myRho, myPout, sumPout
         real(wp) :: preterm1, term2, aux, denom, c1, c2
         integer :: bub_idx, total_ids
         integer :: i, k
 
-        if (any(lag_params%interaction_model == (/1, 3/)) .and. p > 0) then !Kazuki's model
+        ! if (lag_params%interaction_model == 0) then !MFC for tests
+        !     !$acc parallel loop gang vector default(present) private(k, cell)
+        !     do k = 1, nBubs
+        !         ! Current bubble state
+        !         myR0 = bub_R0(k)
+        !         myR = intfc_rad(k, 2)
+        !         myV = intfc_vel(k, 2)
+        !         myPb = gas_p(k, 2)
+        !         myShell = mrmtnt_shell(k, 2)
+        !         myRbuck = mrmtnt_Rbuck(k)
+        !         myRrupt = mrmtnt_Rrupt(k)
+        !         if (myR > myRrupt) myShell = 0._wp
+
+        !         ! Calculate velocity potentials (valid for one bubble per cell)
+        !         call s_get_pinf(k, q_prim_vf, 2, Pcell, cell, preterm1, term2, Rcell)
+
+        !         ! Obtain liquid density and computing speed of sound from myPinf
+        !         myRho = 0._wp
+        !         !$acc loop seq
+        !         do i = 1, num_fluids
+        !             myRho = myRho + q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
+        !         end do
+
+        !         aux = Rcell**3._wp - myR**3._wp
+        !         c2 = (3._wp/2._wp)*(myR**3._wp)*(1._wp - myR/Rcell)/aux
+        !         c1 = 3._wp/2._wp*(myR*(Rcell**2._wp - myR**2._wp))/aux
+
+        !         Pw = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
+        !         Pw = Pw + 0.5_wp*myV**2._wp
+        !         bub_dphidt(k) = (Pcell - Pw) + c2*myV**2._wp
+        !         ! Accounting for the potential induced by the bubble averaged over the control volume
+        !         ! Note that this is based on the incompressible flow assumption near the bubble.
+        !         bub_dphidt(k) = bub_dphidt(k)/(1._wp - c1)
+
+        !         ! Scattered pressure
+        !         myPout = c1*bub_dphidt(k) + c2*myV**2._wp
+
+        !         !Update emitted Pout
+        !         bub_interact(k) = myPout
+        !         print*, 'myPout matching:', myPout, bub_dphidt(k), mytime
+
+        !     end do
+
+        ! end if
+
+        if (any(lag_params%interaction_model == (/1, 3/)) .and. p > 0) then !Kazuki's model (DV version)
             !$acc parallel loop gang vector default(present) private(k, cell)
             do k = 1, nBubs
                 ! Current bubble state
@@ -1361,9 +1408,9 @@ contains
                 c2 = (3._wp/2._wp)*(myR**3._wp)*(1._wp - myR/Rcell)/aux
                 c1 = (3._wp/2._wp)*(myR*(Rcell**2._wp - myR**2._wp))/aux
 
-                Pn = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
-                Pn = Pn/myRho - 0.5_wp*myV**2._wp
-                bub_dphidt(k) = (Pcell/myRho - Pn) - c2*myV**2._wp
+                Pw = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
+                Pw = Pw/myRho - 0.5_wp*myV**2._wp
+                bub_dphidt(k) = (Pcell/myRho - Pw) - c2*myV**2._wp
                 ! Accounting for the potential induced by the bubble averaged over the control volume
                 ! Note that this is based on the incompressible flow assumption near the bubble.
                 bub_dphidt(k) = bub_dphidt(k)/(1._wp - c1)
@@ -1528,17 +1575,10 @@ contains
         else if (lag_params%cluster_type == 2) then
             ! Bubble dynamic closure from Maeda and Colonius (2018)
 
-            ! Range of cells included in Omega
-            if (lag_params%smooth_type == 1) then
-                mapCells_pinf = mapCells
-            else
-                stop "lag_params%cluster_type: 2 requires lag_params%smooth_type: 1."
-            end if
-
             ! Include the cell that contains the bubble (mapCells+1+mapCells)
-            smearGrid = mapCells_pinf - (-mapCells_pinf)
+            smearGrid = mapCells - (-mapCells) + 1
             smearGridz = smearGrid
-            if (p == 0) smearGridz = 0
+            if (p == 0) smearGridz = 1
 
             charvol = 0._wp
             charpres = 0._wp
@@ -1548,14 +1588,14 @@ contains
             charbeta = 0._wp
 
             !$acc loop seq
-            do i = 0, smearGrid
+            do i = 1, smearGrid
                 !$acc loop seq
-                do j = 0, smearGrid
+                do j = 1, smearGrid
                     !$acc loop seq
-                    do k = 0, smearGridz
-                        cellaux(1) = cell(1) + i - mapCells
-                        cellaux(2) = cell(2) + j - mapCells
-                        cellaux(3) = cell(3) + k - mapCells
+                    do k = 1, smearGridz
+                        cellaux(1) = cell(1) + i - (mapCells + 1)
+                        cellaux(2) = cell(2) + j - (mapCells + 1)
+                        cellaux(3) = cell(3) + k - (mapCells + 1)
                         if (p == 0) cellaux(3) = 0
 
                         !< check if the current cell is outside the computational domain or not (including ghost cells)
@@ -1620,6 +1660,7 @@ contains
                             charvol2 = charvol2 + vol*q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
                             charpres2 = charpres2 + q_prim_vf(E_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
                                         *vol*q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3))
+                            ! print*, vol, i, j, k
 
                         end if
 
@@ -1631,12 +1672,12 @@ contains
             if (lag_params%interaction_model == 2) f_pinfl = charpres/charvol
             vol = charvol
             dc = (3._wp*abs(vol)/(4._wp*pi))**(1._wp/3._wp)
-        else
-            stop "Check clusterflag. Exiting."
         end if
 
         !Control volume radius
         Romega = dc
+        ! print*, 'Rcell', Romega
+        ! call s_mpi_abort('Debbuging DV')
 
         ! if (lag_params%pressure_corrector .and. p > 0) then
 
@@ -1753,7 +1794,6 @@ contains
                 mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
                 gas_p(k, 1) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                 gas_mv(k, 1) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
-                if (intfc_rad(k, 1) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
                 mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
                 intfc_ac(k, 1) = intfc_dveldt(k, 1)
             end do
@@ -1777,8 +1817,6 @@ contains
                     mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
                     gas_p(k, 2) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
-                    if (intfc_rad(k, 2) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
-                    !intfc_ac(k, 2) = intfc_dveldt(k, 1)
                 end do
 
             elseif (stage == 2) then
@@ -1791,7 +1829,6 @@ contains
                     mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + dt*(mtn_dveldt(k, 1:3, 1) + mtn_dveldt(k, 1:3, 2))/2._wp
                     gas_p(k, 1) = gas_p(k, 1) + dt*(gas_dpdt(k, 1) + gas_dpdt(k, 2))/2._wp
                     gas_mv(k, 1) = gas_mv(k, 1) + dt*(gas_dmvdt(k, 1) + gas_dmvdt(k, 2))/2._wp
-                    if (intfc_rad(k, 1) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
                     if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) == 0._wp)) then
                         if (intfc_rad(k, 1) < mrmtnt_Rrupt(k)) mrmtnt_shell(k, 2) = 1._wp ! No actual rupture happened during dt
                     end if
@@ -1820,8 +1857,6 @@ contains
                     mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
                     gas_p(k, 2) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
-                    if (intfc_rad(k, 2) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
-                    !intfc_ac(k, 2) = intfc_dveldt(k, 1)
                 end do
 
             elseif (stage == 2) then
@@ -1834,8 +1869,6 @@ contains
                     mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*(mtn_dveldt(k, 1:3, 1) + mtn_dveldt(k, 1:3, 2))/4._wp
                     gas_p(k, 2) = gas_p(k, 1) + dt*(gas_dpdt(k, 1) + gas_dpdt(k, 2))/4._wp
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*(gas_dmvdt(k, 1) + gas_dmvdt(k, 2))/4._wp
-                    if (intfc_rad(k, 2) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
-                    !intfc_ac(k, 2) = (intfc_dveldt(k, 1) + intfc_dveldt(k, 2))/4._wp
                 end do
             elseif (stage == 3) then
                 !$acc parallel loop gang vector default(present) private(k)
@@ -1847,7 +1880,6 @@ contains
                     mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + (2._wp/3._wp)*dt*(mtn_dveldt(k, 1:3, 1)/4._wp + mtn_dveldt(k, 1:3, 2)/4._wp + mtn_dveldt(k, 1:3, 3))
                     gas_p(k, 1) = gas_p(k, 1) + (2._wp/3._wp)*dt*(gas_dpdt(k, 1)/4._wp + gas_dpdt(k, 2)/4._wp + gas_dpdt(k, 3))
                     gas_mv(k, 1) = gas_mv(k, 1) + (2._wp/3._wp)*dt*(gas_dmvdt(k, 1)/4._wp + gas_dmvdt(k, 2)/4._wp + gas_dmvdt(k, 3))
-                    if (intfc_rad(k, 1) <= 0._wp) stop "Negative bubble radius encountered, please reduce dt"
                     if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) == 0._wp)) then
                         if (intfc_rad(k, 1) < mrmtnt_Rrupt(k)) mrmtnt_shell(k, 2) = 1._wp ! No actual rupture happened during dt
                     end if
@@ -1868,278 +1900,6 @@ contains
         end if
 
     end subroutine s_update_lagrange_tdv_rk
-
-    !>  This subroutine updates the Euler-Lagrange temporal variables before entering to the next time-stage in the RKCK stepper.
-        !! @param RKstep Current time step in the RKCK adaptive stepper
-        !! @param q_cons_ts Conservative variables
-        !! @param rhs_ts Time derivatives of the conservative variables
-        !! @param lag_largestep Negative radius flag
-    subroutine s_update_tmp_rkck(RKstep, q_cons_ts, rhs_ts, lag_largestep)
-
-        integer, intent(in) :: RKstep
-        type(vector_field), dimension(:), intent(inout) :: q_cons_ts
-        type(vector_field), dimension(:), intent(inout) :: rhs_ts
-        real(wp), intent(out) :: lag_largestep
-
-        integer :: i, j, k, l, q
-        real(wp) :: radiusOld, velOld, aux_glb
-        integer :: remove_id
-        logical :: transferShell
-
-        transferShell = .false.
-        if (RKstep == 1) transferShell = .true.
-        call s_transfer_data_to_tmp(transferShell)
-
-        lag_largestep = 0._wp
-        remove_id = 0
-        !$acc parallel loop gang vector default(present) reduction(+: lag_largestep) reduction(MAX: remove_id) private(k) copyin(RKstep) copy(lag_largestep)
-        do k = 1, nBubs
-
-            radiusOld = intfc_rad(k, 2)
-            velOld = intfc_vel(k, 2)
-
-            !$acc loop seq
-            do i = 1, RKstep
-                intfc_rad(k, 2) = intfc_rad(k, 2) + dt*lag_RKCKcoef(RKstep, i)*intfc_draddt(k, i)
-                intfc_vel(k, 2) = intfc_vel(k, 2) + dt*lag_RKCKcoef(RKstep, i)*intfc_dveldt(k, i)
-                mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 2) + dt*lag_RKCKcoef(RKstep, i)*mtn_dposdt(k, 1:3, i)
-                mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 2) + dt*lag_RKCKcoef(RKstep, i)*mtn_dveldt(k, 1:3, i)
-                gas_p(k, 2) = gas_p(k, 2) + dt*lag_RKCKcoef(RKstep, i)*gas_dpdt(k, i)
-                gas_mv(k, 2) = gas_mv(k, 2) + dt*lag_RKCKcoef(RKstep, i)*gas_dmvdt(k, i)
-            end do
-
-            if ((intfc_rad(k, 2) <= 0._wp) .or. &               ! no negative radius
-                (intfc_rad(k, 2) /= intfc_rad(k, 2)) .or. &     ! finite radius
-                (intfc_vel(k, 2) /= intfc_vel(k, 2)) .or. &     ! finite velocity
-                (gas_p(k, 2) /= gas_p(k, 2)) .or. &             ! finite pressure
-                (mtn_pos(k, 1, 2) /= mtn_pos(k, 1, 2))) then    ! finite bubble location
-                print *, 'Negative (or infinite) bubble property: ', lag_id(k, 1), intfc_rad(k, 2), intfc_vel(k, 2), gas_p(k, 2)
-                lag_largestep = lag_largestep + 1._wp
-                if (dt < 1e-10_wp) then
-                    remove_id = max(remove_id, k)
-                end if
-            end if
-
-        end do
-
-        if (remove_id /= 0) call s_remove_lag_bubble(remove_id)
-
-#ifdef MFC_MPI
-        if (num_procs > 1) then
-            call s_mpi_allreduce_sum(lag_largestep, aux_glb)
-            lag_largestep = aux_glb
-        end if
-#endif
-
-        if (lag_largestep > 0._wp) return
-
-        ! Update background fluid variables
-        !$acc parallel loop collapse(4) gang vector default(present) copyin(RKstep)
-        do l = 1, sys_size
-            do k = 0, p
-                do j = 0, n
-                    do i = 0, m
-                        q_cons_ts(2)%vf(l)%sf(i, j, k) = &
-                            q_cons_ts(1)%vf(l)%sf(i, j, k)
-                        !$acc loop seq
-                        do q = 1, RKstep
-                            q_cons_ts(2)%vf(l)%sf(i, j, k) = &
-                                q_cons_ts(2)%vf(l)%sf(i, j, k) + &
-                                dt*lag_RKCKcoef(RKstep, q)*rhs_ts(q)%vf(l)%sf(i, j, k)
-                        end do
-                    end do
-                end do
-            end do
-        end do
-
-    end subroutine s_update_tmp_rkck
-
-    !>  This subroutine calculates the maximum error between the 4th and 5th order Runge-Kutta-Cash-Karp solutions
-        !!      for the same time step size. If the errors are smaller than a tolerance, then the algorithm employs
-        !!      the 5th order solution, while if not, both eulerian/lagrangian variables are re-calculated with a
-        !!      smaller time step size.
-        !! @param rkck_errmax Truncation error
-    subroutine s_calculate_rkck_truncation_error(rkck_errmax)
-
-        real(wp), intent(out) :: rkck_errmax
-
-        real(wp) :: erraux, errb
-        integer :: i, j, k
-
-        rkck_errmax = 0._wp
-        !$acc parallel loop gang vector default(present) reduction(MAX: rkck_errmax) copy(rkck_errmax)
-        do k = 1, nBubs
-            errb = 0._wp
-
-            !Bubble radius error
-            erraux = 0._wp
-            !$acc loop seq
-            do i = 1, lag_num_ts
-                erraux = erraux + lag_RKCKcoef(7, i)*intfc_draddt(k, i)
-            end do
-            errb = max(errb, abs(erraux)*dt/bub_R0(k))
-
-            !Interface velocity error
-            erraux = 0._wp
-            !$acc loop seq
-            do i = 1, lag_num_ts
-                erraux = erraux + lag_RKCKcoef(7, i)*intfc_dveldt(k, i)
-            end do
-            errb = max(errb, abs(erraux)*dt)
-
-            !Bubble velocity error
-            !$acc loop seq
-            do j = 1, 3
-                erraux = 0._wp
-                !$acc loop seq
-                do i = 1, lag_num_ts
-                    erraux = erraux + lag_RKCKcoef(7, i)*mtn_dposdt(k, j, i)
-                end do
-                errb = max(errb, abs(erraux)*dt/(abs(mtn_vel(k, j, 2)) + 1.0d-4))
-            end do
-            rkck_errmax = max(rkck_errmax, errb)
-        end do
-
-    end subroutine s_calculate_rkck_truncation_error
-
-    !>  This subroutine updates the conservative fields and the lagrangian variables after accepting the performed time step.
-        !! @param q_cons_ts Conservative variables
-    subroutine s_update_rkck(q_cons_ts)
-
-        type(vector_field), dimension(:), intent(inout) :: q_cons_ts
-
-        integer :: i, j, k, l
-
-        !$acc parallel loop gang vector default(present) private(k)
-        do k = 1, nBubs
-            !Accept time step (actual vars = temporal vars)
-            mtn_pos(k, 1:3, 1) = mtn_pos(k, 1:3, 2)
-            mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 2)
-            intfc_rad(k, 1) = intfc_rad(k, 2)
-            intfc_vel(k, 1) = intfc_vel(k, 2)
-            gas_p(k, 1) = gas_p(k, 2)
-            gas_mv(k, 1) = gas_mv(k, 2)
-            mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
-        end do
-
-        !$acc parallel loop collapse(4) gang vector default(present)
-        do i = 0, m
-            do j = 0, n
-                do k = 0, p
-                    do l = 1, sys_size
-                        q_cons_ts(1)%vf(l)%sf(i, j, k) = q_cons_ts(2)%vf(l)%sf(i, j, k)
-                    end do
-                end do
-            end do
-        end do
-
-    end subroutine s_update_rkck
-
-    !>  This subroutine computes the next time step in the adaptive RKCK stepper in the CPU.
-        !! @param lag_largestep Negative radius flag
-        !! @param restart_rkck_step Restart the current time step
-        !! @param rkck_errmax Truncation error
-    subroutine s_compute_rkck_dt(lag_largestep, restart_rkck_step, rkck_errmax)
-
-        real(wp), intent(in) :: lag_largestep
-        logical, intent(out) :: restart_rkck_step
-        real(wp), intent(inout), optional :: rkck_errmax
-
-        real(wp) :: htemp, aux_glb
-        logical :: transferShell, restart_rkck_step_glb
-
-        restart_rkck_step = .false.
-
-        if (lag_largestep > 0._wp) then ! Encountered negative radius, so reduce dt and restart time step
-
-            if (rkck_adap_dt) then
-                if (dt > verysmall_dt) then
-                    restart_rkck_step = .true.
-                    dt = SHRNKDT*dt
-                    dt = min(dt, dt_max)
-                    if (dt < 0._wp) then
-                        print *, dt, 'neg radius'
-                        call s_mpi_abort('dt must not be negative')
-                    end if
-
-                    if (num_procs > 1) then
-                        call s_mpi_allreduce_min(dt, aux_glb)
-                        dt = aux_glb
-                    end if
-                    !$acc update device(dt)
-                    if (proc_rank == 0) print '("WARNING: Negative radius. Restaring time step, and now dt = "ES16.6"")', &
-                        dt
-                else
-                    call s_mpi_abort('Time step smaller than 1e-14')
-                end if
-            else
-                call s_mpi_abort('Time step too large, please reduce dt or enable rkck_adap_dt')
-            end if
-
-        end if
-
-        if (present(rkck_errmax) .and. rkck_adap_dt) then ! Checking truncation error
-
-            rkck_errmax = min(rkck_errmax, 1._wp)
-            if (num_procs > 1) then
-                call s_mpi_allreduce_max(rkck_errmax, aux_glb)
-                rkck_errmax = aux_glb
-            end if
-            rkck_errmax = rkck_errmax/rkck_tolerance ! Scale relative to user required tolerance.
-
-            if ((rkck_errmax > 1._wp)) then   ! Truncation error too large, reduce dt and restart time step
-                restart_rkck_step = .true.
-                htemp = SAFETY*dt*(rkck_errmax**PSHRNK)
-                dt = sign(max(abs(htemp), (1._wp - SAFETY)*abs(dt)), dt)  ! No more than a factor of 10.
-            else                            ! Step succeeded. Compute size of next step.
-                if (rkck_errmax > ERRCON) then
-                    dt = SAFETY*dt*(rkck_errmax**PGROW) ! No more than a factor of 5 increase.
-                else
-                    dt = (1._wp/SHRNKDT)*dt ! Truncation error too small (< 1.89e-4), increase time step
-                end if
-
-                if (dt < verysmall_dt) dt = verysmall_dt
-
-            end if
-
-            if (num_procs > 1) then
-                call s_mpi_allreduce_or(restart_rkck_step, restart_rkck_step_glb)
-                restart_rkck_step = restart_rkck_step_glb
-            end if
-
-            !dt precision accuracy is 16 digits
-            !dt = (ceiling(dt*RNDDEC)*RNDDEC + ceiling(dt*(RNDDEC**2._wp) - ceiling(dt*RNDDEC)*RNDDEC))/(RNDDEC**2._wp)
-            dt = min(dt, dt_max)
-
-            if (num_procs > 1) then
-                call s_mpi_allreduce_min(dt, aux_glb)
-                dt = aux_glb
-            end if
-
-            if (dt < 0._wp) then
-                call s_mpi_abort('dt must not be negative')
-            elseif (dt < verysmall_dt) then
-                if (proc_rank == 0 .and. restart_rkck_step) print *, 'WARNING: Truncation error found.'
-                call s_mpi_abort('Time step smaller than 1e-14, try modifying rkck tolerance')
-            end if
-
-            !$acc update device(dt)
-
-            if (restart_rkck_step) then
-                if (proc_rank == 0) print '("WARNING: Truncation error found. Restaring time step, and now dt = "ES16.6"")', &
-                    dt
-            end if
-
-        end if
-
-        if (restart_rkck_step) then
-            ! Restarting temporal values
-            transferShell = .true.
-            call s_transfer_data_to_tmp(transferShell)
-            call s_smear_voidfraction()
-        end if
-
-    end subroutine s_compute_rkck_dt
 
     !> This subroutine returns the computational coordinate of the cell for the given position.
           !! @param pos Input coordinates
@@ -2262,24 +2022,24 @@ contains
         end if
 
         ! For symmetric boundary condition
-        if (bc_x%beg == -2) then
+        if (bc_x%beg == BC_REFLECTIVE) then
             particle_in_domain = (particle_in_domain .and. (pos_part(1) >= x_cb(-1)))
         end if
-        if (bc_x%end == -2) then
+        if (bc_x%end == BC_REFLECTIVE) then
             particle_in_domain = (particle_in_domain .and. (pos_part(1) < x_cb(m)))
         end if
-        if (bc_y%beg == -2 .and. (.not. cyl_coord)) then
+        if (bc_y%beg == BC_REFLECTIVE .and. (.not. cyl_coord)) then
             particle_in_domain = (particle_in_domain .and. (pos_part(2) >= y_cb(-1)))
         end if
-        if (bc_y%end == -2 .and. (.not. cyl_coord)) then
+        if (bc_y%end == BC_REFLECTIVE .and. (.not. cyl_coord)) then
             particle_in_domain = (particle_in_domain .and. (pos_part(2) < y_cb(n)))
         end if
 
         if (p > 0) then
-            if (bc_z%beg == -2) then
+            if (bc_z%beg == BC_REFLECTIVE) then
                 particle_in_domain = (particle_in_domain .and. (pos_part(3) >= z_cb(-1)))
             end if
-            if (bc_z%end == -2) then
+            if (bc_z%end == BC_REFLECTIVE) then
                 particle_in_domain = (particle_in_domain .and. (pos_part(3) < z_cb(p)))
             end if
         end if
@@ -2395,13 +2155,13 @@ contains
         file_loc = trim(case_dir)//'/D/'//trim(file_loc)
         inquire (FILE=trim(file_loc), EXIST=file_exist)
 
-        if (file_exist) then
-            open (11, FILE=trim(file_loc), FORM='formatted', position='append')
-        else
+        if (.not. file_exist) then
             open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
             write (11, *) 'currentTime, particleID, x, y, z, ', &
                 'coreVaporMass, coreVaporConcentration, radius, interfaceVelocity, ', &
-                'corePressure, pout, qvis, qth, shell'
+                'corePressure'
+        else
+            open (11, FILE=trim(file_loc), FORM='formatted', position='append')
         end if
 
         if (lag_params%write_only_bub_id == dflt_int) then
@@ -2471,14 +2231,15 @@ contains
         real(wp) :: aux_glb
 
         integer :: i, j, k
-        integer :: cellx, celly, cellz
 
         character(LEN=path_len + 2*name_len) :: file_loc
+        logical :: file_exist
 
         if (proc_rank == 0) then
             write (file_loc, '(A)') 'voidfraction.dat'
             file_loc = trim(case_dir)//'/D/'//trim(file_loc)
-            if (qtime == 0._wp) then
+            inquire (FILE=trim(file_loc), EXIST=file_exist)
+            if (.not. file_exist) then
                 open (12, FILE=trim(file_loc), FORM='formatted', position='rewind')
                 !write (12, *) 'currentTime, averageVoidFraction, ', &
                 !    'maximumVoidFraction, totalParticlesVolume', 'maxRadius', 'minRadius'
@@ -2498,13 +2259,12 @@ contains
         do k = 0, p
             do j = 0, n
                 do i = 0, m
-                    cellx = i; celly = j; cellz = k
                     lag_void_max = max(lag_void_max, 1._wp - q_beta%vf(1)%sf(i, j, k))
-                    call s_get_char_vol(cellx, celly, cellz, volcell)
-                    !if ((1._wp - q_beta%vf(1)%sf(i, j, k)) > 5.0d-11) then
-                    lag_void_avg = lag_void_avg + (1._wp - q_beta%vf(1)%sf(i, j, k))*volcell
-                    lag_vol = lag_vol + volcell
-                    !end if
+                    call s_get_char_vol(i, j, k, volcell)
+                    if ((1._wp - q_beta%vf(1)%sf(i, j, k)) > 5.0d-11) then
+                        lag_void_avg = lag_void_avg + (1._wp - q_beta%vf(1)%sf(i, j, k))*volcell
+                        lag_vol = lag_vol + volcell
+                    end if
                 end do
             end do
         end do
@@ -2845,10 +2605,6 @@ contains
         @:DEALLOCATE(q_beta%vf)
 
         !Deallocating space
-        if (time_stepper == 4) then
-            @:DEALLOCATE(lag_RKCKcoef)
-        end if
-
         @:DEALLOCATE(lag_id)
         @:DEALLOCATE(bub_R0)
         @:DEALLOCATE(intfc_rad)

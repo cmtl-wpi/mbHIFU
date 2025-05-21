@@ -111,7 +111,7 @@ contains
         !$acc update device(loc_acoustic, mag, dipole, support, length, height, wavelength, frequency, gauss_sigma_dist, gauss_sigma_time, foc_length, aperture, npulse, pulse, dir, delay, element_polygon_ratio, rotate_angle, element_spacing_angle, num_elements, element_on, bb_num_freq, bb_bandwidth, bb_lowest_freq)
 
         @:ALLOCATE(mass_src(0:m, 0:n, 0:p))
-        @:ALLOCATE(mom_src(1:num_dims, 0:m, 0:n, 0:p))
+        @:ALLOCATE(mom_src(1:num_vels, 0:m, 0:n, 0:p))
         @:ALLOCATE(E_src(0:m, 0:n, 0:p))
 
     end subroutine s_initialize_acoustic_src
@@ -158,7 +158,6 @@ contains
         integer, parameter :: mass_label = 1, mom_label = 2
 
         sim_time = t_step*dt
-        if (time_stepper == 4) sim_time = rkck_time_tmp ! Probably create a time_stepper == 5 for the rkck stepper
 
         !$acc parallel loop collapse(3) gang vector default(present)
         do l = 0, p

@@ -271,7 +271,7 @@ contains
         integer, intent(in) :: t_step
 
         real(wp) :: rho        !< Cell-avg. density
-        real(wp), dimension(num_dims) :: vel        !< Cell-avg. velocity
+        real(wp), dimension(num_vels) :: vel        !< Cell-avg. velocity
         real(wp) :: vel_sum    !< Cell-avg. velocity sum
         real(wp) :: pres       !< Cell-avg. pressure
         real(wp), dimension(num_fluids) :: alpha      !< Cell-avg. volume fraction
@@ -1122,7 +1122,7 @@ contains
         ! function, and sound speed.
         real(wp) :: lit_gamma, nbub
         real(wp) :: rho
-        real(wp), dimension(num_dims) :: vel
+        real(wp), dimension(num_vels) :: vel
         real(wp) :: pres
         real(wp) :: ptilde
         real(wp) :: ptot
@@ -1144,6 +1144,7 @@ contains
         real(wp), dimension(6) :: tau_e
         real(wp) :: G
         real(wp) :: dyn_p, T
+        real(wp) :: damage_state
 
         integer :: i, j, k, l, s, d !< Generic loop iterator
 
@@ -1163,7 +1164,7 @@ contains
         T = dflt_T_guess
 
         ! Non-dimensional time calculation
-        if (time_stepper == 23 .or. rkck_adap_dt) then
+        if (time_stepper == 23) then
             nondim_time = mytime
         else
             if (t_step_old /= dflt_int) then
@@ -1176,7 +1177,7 @@ contains
         do i = 1, num_probes
             ! Zeroing out flow variables for all processors
             rho = 0._wp
-            do s = 1, num_dims
+            do s = 1, num_vels
                 vel(s) = 0._wp
             end do
             pres = 0._wp
@@ -1199,6 +1200,11 @@ contains
             do s = 1, (num_dims*(num_dims + 1))/2
                 tau_e(s) = 0._wp
             end do
+            damage_state = 0._wp
+
+            if (hifu) then
+                Temp_hifu = 0._wp
+            end if
 
             if (hifu) then
                 Temp_hifu = 0._wp
@@ -1285,6 +1291,10 @@ contains
                         dyn_p = 0.5_wp*rho*dot_product(vel, vel)
 
                         if (elasticity) then
+                            if (cont_damage) then
+                                damage_state = q_cons_vf(damage_idx)%sf(j - 2, k, l)
+                                G = G*max((1._wp - damage_state), 0._wp)
+                            end if
 
                             call s_compute_pressure( &
                                 q_cons_vf(1)%sf(j - 2, k, l), &
@@ -1400,6 +1410,11 @@ contains
                             dyn_p = 0.5_wp*rho*dot_product(vel, vel)
 
                             if (elasticity) then
+                                if (cont_damage) then
+                                    damage_state = q_cons_vf(damage_idx)%sf(j - 2, k - 2, l)
+                                    G = G*max((1._wp - damage_state), 0._wp)
+                                end if
+
                                 call s_compute_pressure( &
                                     q_cons_vf(1)%sf(j - 2, k - 2, l), &
                                     q_cons_vf(alf_idx)%sf(j - 2, k - 2, l), &
@@ -1501,6 +1516,11 @@ contains
                                     end if
 
                                     if (elasticity) then
+                                        if (cont_damage) then
+                                            damage_state = q_cons_vf(damage_idx)%sf(j - 2, k - 2, l - 2)
+                                            G = G*max((1._wp - damage_state), 0._wp)
+                                        end if
+
                                         call s_compute_pressure( &
                                             q_cons_vf(1)%sf(j - 2, k - 2, l - 2), &
                                             q_cons_vf(alf_idx)%sf(j - 2, k - 2, l - 2), &
@@ -1533,7 +1553,7 @@ contains
                     call s_mpi_allreduce_sum(tmp, ${VAR}$)
                 #:endfor
 
-                do s = 1, num_dims
+                do s = 1, num_vels
                     tmp = vel(s)
                     call s_mpi_allreduce_sum(tmp, vel(s))
                 end do
@@ -1564,6 +1584,11 @@ contains
                         tmp = tau_e(s)
                         call s_mpi_allreduce_sum(tmp, tau_e(s))
                     end do
+                end if
+
+                if (cont_damage) then
+                    tmp = damage_state
+                    call s_mpi_allreduce_sum(tmp, damage_state)
                 end if
             end if
             if (proc_rank == 0) then
@@ -1731,7 +1756,7 @@ contains
                     npts = 0
                     do j = 1, m
                         pres = 0._wp
-                        do s = 1, num_dims
+                        do s = 1, num_vels
                             vel(s) = 0._wp
                         end do
                         rho = 0._wp
@@ -1744,7 +1769,7 @@ contains
                             npts = npts + 1
                             call s_convert_to_mixture_variables(q_cons_vf, j, k, l, &
                                                                 rho, gamma, pi_inf, qv, Re)
-                            do s = 1, num_dims
+                            do s = 1, num_vels
                                 vel(s) = q_cons_vf(cont_idx%end + s)%sf(j, k, l)/rho
                             end do
 
@@ -1803,7 +1828,7 @@ contains
                             end if
 
                             pres = 0._wp
-                            do s = 1, num_dims
+                            do s = 1, num_vels
                                 vel(s) = 0._wp
                             end do
                             rho = 0._wp
@@ -1816,7 +1841,7 @@ contains
                                 npts = npts + 1
                                 call s_convert_to_mixture_variables(q_cons_vf, j, k, l, &
                                                                     rho, gamma, pi_inf, qv, Re)
-                                do s = 1, num_dims
+                                do s = 1, num_vels
                                     vel(s) = q_cons_vf(cont_idx%end + s)%sf(j, k, l)/rho
                                 end do
 
