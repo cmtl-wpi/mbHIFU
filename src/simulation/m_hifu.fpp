@@ -828,9 +828,9 @@ contains
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
-                        if (p>0) axialCondition = axialCondition .and. (dx(j) > abs(x_cc(j)) .and. abs(x_cc(j)) >= 0._wp)
+                        if (p>0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
                         radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
-                        if (p>0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
+                        !if (p>0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
                             focalIntensity_ac = max(focalIntensity_ac, q_hifu(hifu_params%qus_idx)%sf(j, k, l))
@@ -924,10 +924,10 @@ contains
                 do j = 0, m
                     ! Specify enough conditions for axial and radial probe lines
                     axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
-                    if (p>0) axialCondition = axialCondition .and. (dx(j) > abs(x_cc(j)) .and. abs(x_cc(j)) >= 0._wp)
+                    if (p>0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
                     radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
-                    if (p > 0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
-                    if (p > 0) radialCondition = radialCondition .and. j==0
+                    ! if (p > 0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
+                    if (p > 0) radialCondition = radialCondition .and. l==0
                     condition = (axialCondition .or. radialCondition)
                     if (condition) then
                         if (p>0) then
