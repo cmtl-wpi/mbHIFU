@@ -1253,7 +1253,11 @@ contains
     end subroutine s_axis_cylindrical_sector_hifu
 
     subroutine s_rotational_periodic(q_prim_vf, pb, mv, bc_dir, bc_loc, k, l)
-
+#ifdef _CRAYFTN
+        !DIR$ INLINEALWAYS s_rotational_periodic
+#else
+        !$acc routine seq
+#endif
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         real(wp), optional, dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
