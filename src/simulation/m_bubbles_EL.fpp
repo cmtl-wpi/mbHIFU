@@ -817,7 +817,13 @@ contains
             if (p > 0 .or. lag_params%interaction_model == 2) then
                 ! Total number of interacting bubbles
                 bub_int_ids(j, 1) = nb_local
-                if (nb_local - 1 > 0) print *, proc_rank, 'Bub', j, 'interacts with', nb_local - 1, 'bubbles'
+                if (nb_local - 1 > 0) then
+                    print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
+                        proc_rank, &
+                        j, &
+                        nb_local - 1
+
+                end if
             else
                 ! Compute and update the mean inter-bubble distance lambda_c
                 !bub_lambda_c(j) = 1._wp/(nb_local**(1._wp/3._wp))

@@ -616,11 +616,11 @@ contains
         end if
 
         if (p > 0) then
-            print *, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y, 'num_procs_z', num_procs_z
+            if (proc_rank == 0) print *, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y, 'num_procs_z', num_procs_z
         elseif (n > 0) then
-            print *, proc_rank, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y
+            if (proc_rank == 0) print *, 'num_procs_x', num_procs_x, 'num_procs_y', num_procs_y
         else
-            print *, proc_rank, 'num_procs_x', num_procs_x
+            if (proc_rank == 0) print *, 'num_procs_x', num_procs_x
         end if
 
 #endif

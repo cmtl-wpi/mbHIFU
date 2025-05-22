@@ -243,7 +243,7 @@ contains
                             end if
 
                             ! Relocate cells for bubbles intersecting symmetric boundaries
-                            if (any((/bc_x%beg, bc_x%end, bc_y%beg, bc_y%end, bc_z%beg, bc_z%end/) == BC_REFLECTIVE)) then
+                            if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
                                 call s_shift_cell_symmetric_bc(cellaux, cell)
                             end if
                         else
@@ -298,8 +298,7 @@ contains
         end do
 
         ! Populate symmetric boundaries
-        if ((bcxb == -2 .or. bcxe == -2 .or. bcyb == -2 .or. bcye == -2 .or. &
-             bczb == -2 .or. bcze == -2) .and. .not. lag_params%newModel_2D) then
+        if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
             call s_populate_symmetric_bc(updatedvar)
         end if
 
@@ -651,27 +650,27 @@ contains
         integer, dimension(3), intent(in) :: cell
 
         ! x-dir
-        if (bc_x%beg == BC_REFLECTIVE .and. (cell(1) <= mapCells - 1)) then
+        if (bcxb == BC_REFLECTIVE .and. (cell(1) <= mapCells - 1)) then
             cellaux(1) = abs(cellaux(1)) - 1
         end if
-        if (bc_x%end == BC_REFLECTIVE .and. (cell(1) >= m + 1 - mapCells)) then
+        if (bcxe == BC_REFLECTIVE .and. (cell(1) >= m + 1 - mapCells)) then
             cellaux(1) = cellaux(1) - (2*(cellaux(1) - m) - 1)
         end if
 
         !y-dir
-        if (bc_y%beg == BC_REFLECTIVE .and. (cell(2) <= mapCells - 1)) then
+        if (bcyb == BC_REFLECTIVE .and. (cell(2) <= mapCells - 1)) then
             cellaux(2) = abs(cellaux(2)) - 1
         end if
-        if (bc_y%end == BC_REFLECTIVE .and. (cell(2) >= n + 1 - mapCells)) then
+        if (bcye == BC_REFLECTIVE .and. (cell(2) >= n + 1 - mapCells)) then
             cellaux(2) = cellaux(2) - (2*(cellaux(2) - n) - 1)
         end if
 
         if (p > 0) then
             !z-dir
-            if (bc_z%beg == BC_REFLECTIVE .and. (cell(3) <= mapCells - 1)) then
+            if (bczb == BC_REFLECTIVE .and. (cell(3) <= mapCells - 1)) then
                 cellaux(3) = abs(cellaux(3)) - 1
             end if
-            if (bc_z%end == BC_REFLECTIVE .and. (cell(3) >= p + 1 - mapCells)) then
+            if (bcze == BC_REFLECTIVE .and. (cell(3) >= p + 1 - mapCells)) then
                 cellaux(3) = cellaux(3) - (2*(cellaux(3) - p) - 1)
             end if
         end if
@@ -685,7 +684,7 @@ contains
         integer :: j, k, l
 
         ! x-dir
-        if (bcxb == -2) then
+        if (bcxb == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) gang vector default(present)
             do l = 0, p
                 do k = 0, n
@@ -699,7 +698,7 @@ contains
                 end do
             end do
         end if
-        if (bcxe == -2) then
+        if (bcxe == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) default(present)
             do l = 0, p
                 do k = 0, n
@@ -715,7 +714,7 @@ contains
         end if
 
         !y-dir
-        if (bcyb == -2) then
+        if (bcyb == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) gang vector default(present)
             do k = 0, p
                 do j = 1, buff_size
@@ -729,7 +728,7 @@ contains
                 end do
             end do
         end if
-        if (bcye == -2) then
+        if (bcye == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) gang vector default(present)
             do k = 0, p
                 do j = 1, buff_size
@@ -746,7 +745,7 @@ contains
 
         if (p > 0) then
             !z-dir
-            if (bczb == -2) then
+            if (bczb == BC_REFLECTIVE) then
                 !$acc parallel loop collapse(3) gang vector default(present)
                 do j = 1, buff_size
                     do l = -buff_size, n + buff_size
@@ -760,7 +759,7 @@ contains
                     end do
                 end do
             end if
-            if (bcze == -2) then
+            if (bcze == BC_REFLECTIVE) then
                 !$acc parallel loop collapse(3) gang vector default(present)
                 do j = 1, buff_size
                     do l = -buff_size, n + buff_size
