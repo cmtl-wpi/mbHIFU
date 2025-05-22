@@ -1950,7 +1950,7 @@ contains
 
                             !Checking NaNs
                             if (q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)) then
-                                print*, 'NaNs in q hifu rhs', q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l, proc_rank
+                                print*, 'NaNs in q hifu rhs', q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
                                 print*, 'dx, dy, dz', dx_hf(j), dy_hf(k), dz_hf(l)
                                 print*, 'x, y, z', x_cc_hf(j), y_cc_hf(k), z_cc_hf(l)
                                 print*, 'Heat sources: ', q_hifu_3d%vf(qus_hifu_idx_ht)%sf(j, k, l), q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l), &
@@ -2156,7 +2156,7 @@ contains
 
                                 !Checking NaNs
                                 if (q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)) then
-                                    print*, 'NaNs in q hifu rhs', q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l, proc_rank
+                                    print*, 'NaNs in q hifu rhs', q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
                                     print*, 'dx, dy, dz', dx(j), dy(k), dz(l)
                                     print*, 'x, y, z', x_cc(j), y_cc(k), z_cc(l)
                                     print*, 'Heat sources: ', q_hifu_3d%vf(qus_hifu_idx_ht)%sf(j, k, l), q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l), &
@@ -2305,7 +2305,7 @@ contains
                                 !Checking NaNs
                                 if (q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) /= &
                                                 q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)) then
-                                    print*, 'NaNs in q hifu rhs', q_hifu(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l, proc_rank
+                                    print*, 'NaNs in q hifu rhs', q_hifu(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
                                     print*, 'dx, dy, dz', dx(j), dy(k), dz(l)
                                     print*, 'x, y, z', x_cc(j), y_cc(k), z_cc(l)
                                     print*, 'Heat sources: ', q_hifu(qus_hifu_idx_ht)%sf(j, k, l), &
@@ -2348,89 +2348,89 @@ contains
 
     end subroutine s_rhs_heatEqn ! =============================================
 
-    subroutine s_pole_correction(rhs_heat, j, k, l, t_step)
-#ifdef _CRAYFTN
-    !DIR$ INLINEALWAYS s_get_char_vol
-#else
-    !$acc routine seq
-#endif
-        real(wp), intent(inout) :: rhs_heat
-        integer, intent(in) :: j, k, l, t_step
+!     subroutine s_pole_correction(rhs_heat, j, k, l, t_step)
+! #ifdef _CRAYFTN
+!     !DIR$ INLINEALWAYS s_get_char_vol
+! #else
+!     !$acc routine seq
+! #endif
+!         real(wp), intent(inout) :: rhs_heat
+!         integer, intent(in) :: j, k, l, t_step
 
-        integer :: sub_id, nCells
-        integer :: q, qq
-        real(wp) :: volCell, totVol, Nr
+!         integer :: sub_id, nCells
+!         integer :: q, qq
+!         real(wp) :: volCell, totVol, Nr
 
-        if (bc_pole /= -14) return
+!         if (bc_pole /= -14) return
 
-        ! Number of cells to merge
-        Nr = ceiling(2._wp*pi*y_cc(k)/(y_cb(k) - y_cb(k - 1)))
-        Nr = ceiling(log(Nr)/log(2._wp))
-        nCells = int(ceiling((p+1)/(2**Nr)))
+!         ! Number of cells to merge
+!         Nr = ceiling(2._wp*pi*y_cc(k)/(y_cb(k) - y_cb(k - 1)))
+!         Nr = ceiling(log(Nr)/log(2._wp))
+!         nCells = int(ceiling((p+1)/(2**Nr)))
 
-        if (nCells == 1) return
+!         if (nCells == 1) return
 
-        ! Find cells to merge
-        sub_id = 0
-        do while (.true.)
-            if (mod(l + sub_id, nCells) == 0) then
-                exit
-            end if
-            sub_id = sub_id + 1
-        end do
+!         ! Find cells to merge
+!         sub_id = 0
+!         do while (.true.)
+!             if (mod(l + sub_id, nCells) == 0) then
+!                 exit
+!             end if
+!             sub_id = sub_id + 1
+!         end do
 
-        rhs_heat = 0._wp
-        totVol = 0._wp
+!         rhs_heat = 0._wp
+!         totVol = 0._wp
 
-        if (sub_id==0) then
+!         if (sub_id==0) then
 
-            if (j==0 .and. l==0 .and. t_step==0) print*, k, nCells, proc_rank
+!             if (j==0 .and. l==0 .and. t_step==0) print*, k, nCells, proc_rank
 
-            !$acc loop seq
-            do q = 0, nCells-1
+!             !$acc loop seq
+!             do q = 0, nCells-1
 
-                ! Check temperature is the same in the set of cells
-                if (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) /= &
-                    q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + q)) then
+!                 ! Check temperature is the same in the set of cells
+!                 if (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) /= &
+!                     q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l + q)) then
 
-                    print*, j, k, l, nCells
-                    stop "Different temperatures in the unified cells!!"
-                end if
+!                     print*, j, k, l, nCells
+!                     stop "Different temperatures in the unified cells!!"
+!                 end if
 
-                ! Calculate volume
-                volCell = dx(j)*dy(k)*y_cc(k)*dz(l + q)
+!                 ! Calculate volume
+!                 volCell = dx(j)*dy(k)*y_cc(k)*dz(l + q)
 
-                ! Corrected RHS
-                rhs_heat = rhs_heat + &
-                            q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l + q) * volCell
-                totVol = totVol + volCell
+!                 ! Corrected RHS
+!                 rhs_heat = rhs_heat + &
+!                             q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l + q) * volCell
+!                 totVol = totVol + volCell
                 
-            end do
+!             end do
 
-        else
+!         else
             
-            qq = sub_id - nCells
+!             qq = sub_id - nCells
 
-            !$acc loop seq
-            do q = 0, nCells-1
+!             !$acc loop seq
+!             do q = 0, nCells-1
 
-                ! Calculate volume
-                volCell = dx(j)*dy(k)*y_cc(k)*dz(l + qq)
+!                 ! Calculate volume
+!                 volCell = dx(j)*dy(k)*y_cc(k)*dz(l + qq)
 
-                ! Corrected RHS
-                rhs_heat = rhs_heat + &
-                            q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l + qq) * volCell
-                totVol = totVol + volCell
+!                 ! Corrected RHS
+!                 rhs_heat = rhs_heat + &
+!                             q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l + qq) * volCell
+!                 totVol = totVol + volCell
 
-                qq = qq + 1 
+!                 qq = qq + 1 
                 
-            end do
+!             end do
 
-        end if         
+!         end if         
         
-        rhs_heat = rhs_heat / totVol
+!         rhs_heat = rhs_heat / totVol
 
-    end subroutine s_pole_correction
+!     end subroutine s_pole_correction
 
     subroutine s_open_run_time_information_samplingHIFU()
 
