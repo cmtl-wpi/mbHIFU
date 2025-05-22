@@ -84,7 +84,7 @@ contains
         if (bcxb >= 0) then
             call s_mpi_sendrecv_variables_buffers(q_prim_vf, pb, mv, 1, -1)
         else
-            !$acc parallel loop collapse(2) gang vector default(present)
+            !$acc parallel loop collapse(2) gang vector default(present) copyin(mytime)
             do l = 0, p
                 do k = 0, n
                     select case (int(bc_type(1, -1)%sf(0, k, l)))
@@ -101,7 +101,7 @@ contains
                     case (BC_DIRICHLET)
                         call s_dirichlet(q_prim_vf, pb, mv, 1, -1, k, l)
                     case (BC_ACOUSTIC_WAVE)
-                        call s_acoustic_bc(q_prim_vf, pb, mv, 1, -1, k, l)
+                        call s_acoustic_bc(q_prim_vf, pb, mv, 1, -1, k, l, mytime)
                     case (BC_ROT_PERIODIC)
                         call s_rotational_periodic(q_prim_vf, pb, mv, 1, -1, k, l)
                     end select
@@ -140,7 +140,7 @@ contains
         if (bcyb >= 0) then
             call s_mpi_sendrecv_variables_buffers(q_prim_vf, pb, mv, 2, -1)
         else
-            !$acc parallel loop collapse(2) gang vector default(present)
+            !$acc parallel loop collapse(2) gang vector default(present) copyin(mytime)
             do l = 0, p
                 do k = -buff_size, m + buff_size
                     select case (int(bc_type(2, -1)%sf(k, 0, l)))
@@ -159,7 +159,7 @@ contains
                     case (BC_DIRICHLET)
                         call s_dirichlet(q_prim_vf, pb, mv, 2, -1, k, l)
                     case (BC_ACOUSTIC_WAVE)
-                        call s_acoustic_bc(q_prim_vf, pb, mv, 2, -1, k, l)
+                        call s_acoustic_bc(q_prim_vf, pb, mv, 2, -1, k, l, mytime)
                     case (BC_AXIS_SECTOR)
                         call s_axis_cylindrical_sector_hifu(q_prim_vf, pb, mv, 2, -1, k, l)
                     case (BC_ROT_PERIODIC)
@@ -202,7 +202,7 @@ contains
         if (bczb >= 0) then
             call s_mpi_sendrecv_variables_buffers(q_prim_vf, pb, mv, 3, -1)
         else
-            !$acc parallel loop collapse(2) gang vector default(present)
+            !$acc parallel loop collapse(2) gang vector default(present) copyin(mytime)
             do l = -buff_size, n + buff_size
                 do k = -buff_size, m + buff_size
                     select case (int(bc_type(3, -1)%sf(k, l, 0)))
@@ -219,7 +219,7 @@ contains
                     case (BC_DIRICHLET)
                         call s_dirichlet(q_prim_vf, pb, mv, 3, -1, k, l)
                     case (BC_ACOUSTIC_WAVE)
-                        call s_acoustic_bc(q_prim_vf, pb, mv, 3, -1, k, l)
+                        call s_acoustic_bc(q_prim_vf, pb, mv, 3, -1, k, l, mytime)
                     end select
                 end do
             end do
@@ -1097,7 +1097,7 @@ contains
 
     end subroutine s_dirichlet
 
-    subroutine s_acoustic_bc(q_prim_vf, pb, mv, bc_dir, bc_loc, k, l)
+    subroutine s_acoustic_bc(q_prim_vf, pb, mv, bc_dir, bc_loc, k, l, timeNow)
 #ifdef _CRAYFTN
         !DIR$ INLINEALWAYS s_acoustic_bc
 #else
@@ -1107,6 +1107,7 @@ contains
         real(wp), dimension(idwbuff(1)%beg:, idwbuff(2)%beg:, idwbuff(3)%beg:, 1:, 1:), intent(inout) :: pb, mv
         integer, intent(in) :: bc_dir, bc_loc
         integer, intent(in) :: k, l
+        real(wp), intent(in) :: timeNow
 
         integer :: j, i, q
         real(wp) :: tau, gFun, rc, rbeta, radial_cc
@@ -1122,7 +1123,7 @@ contains
                     end do
                     if (acoustic_bc_params%iwave == 1) then
                         ! Pressure : Planar wave
-                        tau = mytime
+                        tau = timeNow
                         if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                             q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
                                                                 acoustic_bc_params%Pamp* &
@@ -1140,8 +1141,8 @@ contains
                         radial_cc = y_cc(k)
                         if (p > 0) radial_cc = sqrt(y_cc(k)**2._wp + z_cc(l)**2._wp)
                         if (radial_cc < rc) then
-                            tau = mytime + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
-                                                             (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
+                            tau = timeNow + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
+                                                              (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
                             gFun = (1._wp/rbeta)
                             if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                                 q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase + &
@@ -1168,7 +1169,7 @@ contains
                     end do
                     if (acoustic_bc_params%iwave == 1) then
                         ! Pressure : Planar wave
-                        tau = mytime
+                        tau = timeNow
                         if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                             q_prim_vf(momxe + 1)%sf(k, -j, l) = acoustic_bc_params%Pbase + &
                                                                 acoustic_bc_params%Pamp* &
@@ -1191,7 +1192,7 @@ contains
                     end do
                     if (acoustic_bc_params%iwave == 1) then
                         ! Pressure : Planar wave
-                        tau = mytime
+                        tau = timeNow
                         if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
                             q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase + &
                                                                 acoustic_bc_params%Pamp* &
@@ -1210,8 +1211,8 @@ contains
                         radial_cc = sqrt(y_cc(k)**2._wp + x_cc(l)**2._wp)
 
                         if (radial_cc < rc) then
-                            tau = mytime + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
-                                                             (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
+                            tau = timeNow + radial_cc**2._wp/(2._wp*acoustic_bc_params%cson* &
+                                                              (acoustic_bc_params%focLen + acoustic_bc_params%focCal))
                             gFun = (1._wp/rbeta)
 
                             if (tau < (acoustic_bc_params%ncycles/acoustic_bc_params%freq)) then
