@@ -751,9 +751,6 @@ contains
 
                             ! Checking for NaNs and negative qvis
                             if (fQvis /= fQvis .or. fQth /= fQth .or. fQvis < 0._wp) then
-                                print *, 'Bubble intensity is NaN (or negative qvis)', bub_id, fQvis, fQth, h
-                                print *, 'Viscous damping', fR, mul0, fV
-                                print *, 'Thermal damping', heatflux_h, fR
                                 iter_count = adap_dt_max_iters
                             end if
                         end if
@@ -771,16 +768,16 @@ contains
                         h = 0.25_wp*h
                     end if
 
-                    if (iter_count >= adap_dt_max_iters) then
-                        print *, 'h small', h, t_new, bub_id, fR, fV, fshell
-                        print *, 'errs', err(1), err(2), err(3), err(4), err(5)
-                        print *, 'tmp R', myR_tmp1(1), myR_tmp1(2), myR_tmp1(3), myR_tmp1(4)
-                        print *, 'tmp V', myV_tmp1(1), myV_tmp1(2), myV_tmp1(3), myV_tmp1(4)
-                        print *, 'tmp Pb', myPb_tmp1(1), myPb_tmp1(2), myPb_tmp1(3), myPb_tmp1(4)
-                        print *, 'tmp mass_v', myMv_tmp1(1), myMv_tmp1(2), myMv_tmp1(3), myMv_tmp1(4)
-                        print *, 'old vals', fR, fV, fpb, fmass_v, fP, t_new, t_new/(0.5_wp*dt)
-                        print *, 'otherVars', fmass_n, fbeta_c, fbeta_t, fCson, fshell, fRbuck, fRrupt
-                    end if
+                    ! if (iter_count >= adap_dt_max_iters) then
+                    !     print *, 'h small', h, t_new, bub_id, fR, fV, fshell
+                    !     print *, 'errs', err(1), err(2), err(3), err(4), err(5)
+                    !     print *, 'tmp R', myR_tmp1(1), myR_tmp1(2), myR_tmp1(3), myR_tmp1(4)
+                    !     print *, 'tmp V', myV_tmp1(1), myV_tmp1(2), myV_tmp1(3), myV_tmp1(4)
+                    !     print *, 'tmp Pb', myPb_tmp1(1), myPb_tmp1(2), myPb_tmp1(3), myPb_tmp1(4)
+                    !     print *, 'tmp mass_v', myMv_tmp1(1), myMv_tmp1(2), myMv_tmp1(3), myMv_tmp1(4)
+                    !     print *, 'old vals', fR, fV, fpb, fmass_v, fP, t_new, t_new/(0.5_wp*dt)
+                    !     print *, 'otherVars', fmass_n, fbeta_c, fbeta_t, fCson, fshell, fRbuck, fRrupt
+                    ! end if
 
                 end if
             end do
