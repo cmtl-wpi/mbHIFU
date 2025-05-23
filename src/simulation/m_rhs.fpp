@@ -904,7 +904,7 @@ contains
         end if
 
         if (bubbles_lagrange) then
-            if (f_approx_equal(mytime, 0._wp)) then
+            if (f_approx_equal(mytime, dt)) then
                 call s_initial_pressure_correction( &
                     q_prim_qp%vf(1:sys_size))
             end if
