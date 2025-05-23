@@ -478,15 +478,11 @@ contains
         if (lag_params%cluster_type /= 1) then
 
             if (proc_rank == 0) print *, 'Performing s_initial_pressure_correction '
-            !call s_smear_voidfraction()
 
             !$acc parallel loop gang vector default(present) private(k, myalpha_rho, myalpha, Re, cell)
             do k = 1, nBubs
                 ! Obtaining driving pressure
                 call s_get_pinf(k, q_prim_vf, 1, pinf, cell, aux1, aux2, myRcell)
-                if (pinf < 0) print *, "Negative pressure (Press correction)", pinf
-
-                !print*, q_prim_vf(E_idx)%sf(cell(1), cell(2), cell(3))
 
                 ! Obtain liquid density and computing speed of sound from pinf
                 !$acc loop seq
@@ -517,9 +513,6 @@ contains
                 volparticle = 4._wp/3._wp*pi*bub_R0(k)**3._wp ! volume
                 gas_mv(k, 1) = pv*volparticle*(1._wp/(R_v*Tw))*(massflag) ! vapermass
                 gas_mg(k) = (gas_p(k, 1) - pv*(massflag))*volparticle*(1._wp/(R_n*Tw)) ! gasmass
-                if (gas_mg(k) <= 0._wp) then
-                    stop 'the initial mass of gas inside the bubble is negative. Check your initial conditions (Press correction)'
-                end if
                 totalmass = gas_mg(k) + gas_mv(k, 1) ! totalmass
 
                 ! Bubble natural frequency
@@ -529,11 +522,7 @@ contains
                     omegaN = (3._wp*(gas_p(k, 1) - pv*(massflag)) + 4._wp*(lag_params%ss0_ctdBub)/bub_R0(k))/rhol
                 end if
 
-                if (pv*(massflag) > gas_p(k, 1)) then
-                    call s_mpi_abort('Not allowed: bubble initially located in a region with pressure below the vapor pressure. (Press correction)')
-                end if
                 omegaN = sqrt(omegaN/bub_R0(k)**2._wp)
-
                 cpparticle = concvap*cp_v + (1._wp - concvap)*cp_n
                 kparticle = concvap*k_vl + (1._wp - concvap)*k_nl
 
@@ -545,9 +534,6 @@ contains
                 PeG = bub_R0(k)**2._wp*omegaN/lag_params%diffcoefvap
                 call s_transcoeff(1._wp, PeG, Re_trans, Im_trans)
                 gas_betaC(k) = Re_trans*lag_params%diffcoefvap
-
-                if (gas_mg(k) <= 0._wp) call s_mpi_abort("Negative gas mass in the bubble, check if the bubble is in the domain.")
-                !if (k == 1) print *, 's_initial_pressure_correction', k, gas_betaT(k), gas_betaC(k)
 
             end do
 
