@@ -904,6 +904,10 @@ contains
         end if
 
         if (bubbles_lagrange) then
+            if (f_approx_equal(mytime, 0._wp)) then
+                call s_initial_pressure_correction( &
+                    q_prim_qp%vf(1:sys_size))
+            end if
             ! RHS additions for sub-grid bubbles_lagrange
             call nvtxStartRange("RHS-EL-BUBBLES-SRC")
             call s_compute_bubbles_EL_source( &
