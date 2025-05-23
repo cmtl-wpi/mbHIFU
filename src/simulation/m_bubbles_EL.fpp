@@ -305,6 +305,7 @@ contains
         call s_transfer_data_to_tmp(transferShell)
         call s_start_bubble_interaction
         call s_smear_voidfraction()
+        if (save_count == 0) call s_initial_pressure_correction()
 
         if (save_count == 0) then
             ! Create ./D directory
