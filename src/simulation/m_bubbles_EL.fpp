@@ -538,6 +538,11 @@ contains
 
             end do
 
+            !$acc update host(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
+            !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
+            !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt,       &
+            !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, nBubs)
+
             transferShell = .true.
             call s_transfer_data_to_tmp(transferShell)
             call s_smear_voidfraction()
