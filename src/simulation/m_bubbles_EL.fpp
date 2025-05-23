@@ -468,7 +468,7 @@ contains
         real(wp) :: pinf, aux1, aux2, massflag, volparticle
         real(wp) :: concvap, totalmass, kparticle, cpparticle
         real(wp) :: omegaN, PeG, PeT, cson, rhol, Re_trans, Im_trans
-        real(wp) :: gamma, pi_inf, qv
+        real(wp) :: gamma, pi_inf, qv, myRcell
         real(wp), dimension(contxe) :: myalpha_rho, myalpha
         real(wp), dimension(2) :: Re
         integer, dimension(3) :: cell
@@ -483,17 +483,16 @@ contains
             !$acc parallel loop gang vector default(present) private(k, myalpha_rho, myalpha, Re, cell)
             do k = 1, nBubs
                 ! Obtaining driving pressure
-                call s_get_pinf(k, q_prim_vf, 1, pinf, cell, aux1, aux2)
+                call s_get_pinf(k, q_prim_vf, 1, pinf, cell, aux1, aux2, myRcell)
                 if (pinf < 0) print *, "Negative pressure (Press correction)", pinf
 
                 !print*, q_prim_vf(E_idx)%sf(cell(1), cell(2), cell(3))
 
                 ! Obtain liquid density and computing speed of sound from pinf
                 !$acc loop seq
-                do i = 1, contxe
-                    myalpha_rho(i) = q_prim_vf(advxb + i - 1)%sf(cell(1), cell(2), cell(3))* &
-                                     q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
-                    myalpha(i) = q_prim_vf(advxb + i - 1)%sf(cell(1), cell(2), cell(3))
+                do i = 1, num_fluids
+                    myalpha_rho(i) = q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
+                    myalpha(i) = q_prim_vf(E_idx + i)%sf(cell(1), cell(2), cell(3))
                 end do
                 call s_convert_species_to_mixture_variables_acc(rhol, gamma, pi_inf, qv, myalpha, &
                                                                 myalpha_rho, Re, cell(1), cell(2), cell(3))
@@ -531,7 +530,7 @@ contains
                 end if
 
                 if (pv*(massflag) > gas_p(k, 1)) then
-                    stop 'Not allowed: bubble initially located in a region with pressure below the vapor pressure. (Press correction)'
+                    call s_mpi_abort('Not allowed: bubble initially located in a region with pressure below the vapor pressure. (Press correction)')
                 end if
                 omegaN = sqrt(omegaN/bub_R0(k)**2._wp)
 
@@ -547,8 +546,8 @@ contains
                 call s_transcoeff(1._wp, PeG, Re_trans, Im_trans)
                 gas_betaC(k) = Re_trans*lag_params%diffcoefvap
 
-                if (gas_mg(k) <= 0._wp) stop "Negative gas mass in the bubble, check if the bubble is in the domain."
-                if (k == 1) print *, 's_initial_pressure_correction', k, gas_betaT(k), gas_betaC(k)
+                if (gas_mg(k) <= 0._wp) call s_mpi_abort("Negative gas mass in the bubble, check if the bubble is in the domain.")
+                !if (k == 1) print *, 's_initial_pressure_correction', k, gas_betaT(k), gas_betaC(k)
 
             end do
 
