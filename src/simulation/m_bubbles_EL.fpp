@@ -817,13 +817,6 @@ contains
             if (p > 0 .or. lag_params%interaction_model == 2) then
                 ! Total number of interacting bubbles
                 bub_int_ids(j, 1) = nb_local
-                if (nb_local - 1 > 0) then
-                    print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
-                        proc_rank, &
-                        j, &
-                        nb_local - 1
-
-                end if
             else
                 ! Compute and update the mean inter-bubble distance lambda_c
                 !bub_lambda_c(j) = 1._wp/(nb_local**(1._wp/3._wp))
@@ -855,6 +848,20 @@ contains
             ! end if
 
         end do
+
+        !$acc update host(bub_int_ids)
+
+        if (p > 0 .or. lag_params%interaction_model == 2) then
+            do j = 1, nBubs
+                if (bub_int_ids(j, 1) - 1 > 0) then
+                    print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
+                        proc_rank, &
+                        j, &
+                        int(bub_int_ids(j, 1) - 1)
+
+                end if
+            end do
+        end if
 
         ! call s_mpi_barrier()
         ! call s_mpi_abort('debugging s_start_bubble_interaction')
