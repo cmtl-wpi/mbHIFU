@@ -315,8 +315,8 @@ contains
         end if
 
         if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
-        if (lag_params%write_bubbles) call s_write_lag_particles(qtime)
-        call s_write_void_evol(qtime)
+        if (lag_params%write_bubbles) call s_write_lag_particles(qtime, .false.)
+        call s_write_void_evol(qtime, .false.)
 
     end subroutine s_read_input_bubbles
 
@@ -472,8 +472,9 @@ contains
         real(wp), dimension(contxe) :: myalpha_rho, myalpha
         real(wp), dimension(2) :: Re
         integer, dimension(3) :: cell
+        character(LEN=path_len + 2*name_len) :: file_loc
         integer :: i, k
-        logical :: transferShell
+        logical :: transferShell, file_exist
 
         if (lag_params%cluster_type /= 1) then
 
@@ -542,9 +543,9 @@ contains
             call s_smear_voidfraction()
 
             !Replace files
-            if (lag_params%write_bubbles) call s_write_lag_particles(0._wp)
+            if (lag_params%write_bubbles) call s_write_lag_particles(0._wp, .true.)
             call s_write_restart_lag_bubbles(0) ! Needed for post_processing
-            call s_write_void_evol(0._wp)
+            call s_write_void_evol(0._wp, .true.)
 
         end if
 
@@ -1800,9 +1801,9 @@ contains
             if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
             if (lag_params%write_bubbles) then
                 !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
-                call s_write_lag_particles(mytime)
+                call s_write_lag_particles(mytime, .false.)
             end if
-            call s_write_void_evol(mytime)
+            call s_write_void_evol(mytime, .false.)
 
         elseif (time_stepper == 2) then ! 2nd order TVD RK
             if (stage == 1) then
@@ -1838,9 +1839,9 @@ contains
                 if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
                     !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
-                    call s_write_lag_particles(mytime)
+                    call s_write_lag_particles(mytime, .false.)
                 end if
-                call s_write_void_evol(mytime)
+                call s_write_void_evol(mytime, .false.)
 
             end if
 
@@ -1889,9 +1890,9 @@ contains
                 if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
                     !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
-                    call s_write_lag_particles(mytime)
+                    call s_write_lag_particles(mytime, .false.)
                 end if
-                call s_write_void_evol(mytime)
+                call s_write_void_evol(mytime, .false.)
 
             end if
 
@@ -2141,9 +2142,10 @@ contains
 
     !> Subroutine that writes on each time step the changes of the lagrangian bubbles.
         !!  @param q_time Current time
-    subroutine s_write_lag_particles(qtime)
+    subroutine s_write_lag_particles(qtime, replace)
 
         real(wp), intent(in) :: qtime
+        logical, intent(in) :: replace
         integer :: k
 
         logical :: file_exist
@@ -2153,7 +2155,7 @@ contains
         file_loc = trim(case_dir)//'/D/'//trim(file_loc)
         inquire (FILE=trim(file_loc), EXIST=file_exist)
 
-        if (.not. file_exist) then
+        if (.not. file_exist .or. replace) then
             open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
             write (11, *) 'currentTime, particleID, x, y, z, ', &
                 'coreVaporMass, coreVaporConcentration, radius, interfaceVelocity, ', &
@@ -2220,9 +2222,10 @@ contains
             !!       of the particles (void fraction) in the computatioational domain
             !!       on each time step.
             !!  @param q_time Current time
-    subroutine s_write_void_evol(qtime)
+    subroutine s_write_void_evol(qtime, replace)
 
         real(wp), intent(in) :: qtime
+        logical, intent(in) :: replace
         real(wp) :: volcell, voltot
         real(wp) :: lag_void_max, lag_void_avg, lag_vol
         real(wp) :: void_max_glb, void_avg_glb, vol_glb
@@ -2237,7 +2240,7 @@ contains
             write (file_loc, '(A)') 'voidfraction.dat'
             file_loc = trim(case_dir)//'/D/'//trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
-            if (.not. file_exist) then
+            if (.not. file_exist .or. replace) then
                 open (12, FILE=trim(file_loc), FORM='formatted', position='rewind')
                 !write (12, *) 'currentTime, averageVoidFraction, ', &
                 !    'maximumVoidFraction, totalParticlesVolume', 'maxRadius', 'minRadius'
