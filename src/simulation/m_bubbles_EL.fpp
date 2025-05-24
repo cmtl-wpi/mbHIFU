@@ -456,7 +456,7 @@ contains
 
         if (gas_betaT(bub_id) /= gas_betaT(bub_id) .or. gas_betaC(bub_id) /= gas_betaC(bub_id)) then
             print *, bub_id, gas_betaT(bub_id), gas_betaC(bub_id)
-            stop "NaN mass and heat transfer coefficients"
+            call s_mpi_abort("NaN mass and heat transfer coefficients")
         end if
 
     end subroutine s_add_bubbles
@@ -472,9 +472,9 @@ contains
         real(wp), dimension(contxe) :: myalpha_rho, myalpha
         real(wp), dimension(2) :: Re
         integer, dimension(3) :: cell
-        character(LEN=path_len + 2*name_len) :: file_loc
         integer :: i, k
-        logical :: transferShell, file_exist
+        logical :: transferShell
+        complex(wp) :: imag, trans, c1, c2, c3
 
         if (lag_params%cluster_type /= 1) then
 
@@ -529,11 +529,22 @@ contains
 
                 ! Mass and heat transfer coefficients (based on Preston 2007)
                 PeT = totalmass/volparticle*cpparticle*bub_R0(k)**2._wp*omegaN/kparticle
-                call s_transcoeff(1._wp, PeT, Re_trans, Im_trans)
+                imag = (0._wp, 1._wp)
+                c1 = imag*PeT
+                c2 = sqrt(c1)
+                c3 = (exp(c2) - exp(-c2))/(exp(c2) + exp(-c2)) ! tanh(c2)
+                trans = ((c2/c3 - 1._wp)**(-1) - 3._wp/c1)**(-1) ! transfer function
+                Re_trans = trans
+                Im_trans = aimag(trans)
                 gas_betaT(k) = Re_trans*kparticle
 
                 PeG = bub_R0(k)**2._wp*omegaN/lag_params%diffcoefvap
-                call s_transcoeff(1._wp, PeG, Re_trans, Im_trans)
+                c1 = imag*PeG
+                c2 = sqrt(c1)
+                c3 = (exp(c2) - exp(-c2))/(exp(c2) + exp(-c2)) ! tanh(c2)
+                trans = ((c2/c3 - 1._wp)**(-1) - 3._wp/c1)**(-1) ! transfer function
+                Re_trans = trans
+                Im_trans = aimag(trans)
                 gas_betaC(k) = Re_trans*lag_params%diffcoefvap
 
             end do
