@@ -563,6 +563,8 @@ contains
             call s_write_restart_lag_bubbles(0) ! Needed for post_processing
             call s_write_void_evol(0._wp, .true.)
 
+            call s_mpi_barrier()
+
         end if
 
     end subroutine s_initial_pressure_correction
