@@ -396,121 +396,243 @@ contains
 
         smearGrid = mapCells - (-mapCells) ! Include the cell that contains the bubble (3+1+3)
 
-        !$acc parallel loop gang vector default(present) private(l, cell, scoord, center) &
-        !$acc copyin(smearGrid)
-        do l = 1, nBubs
+        if (hifu_params%cartesian) then
 
-            !> Is the particle in the domain?
-            particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb_hf(m_hf + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb_hf(-1 - buff_size)) .and. &
-                                  (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
-                                  (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
+            !$acc parallel loop gang vector default(present) private(l, cell, scoord, center) &
+            !$acc copyin(smearGrid)
+            do l = 1, nBubs
 
-            if (particle_in_domain) then
+                !> Is the particle in the domain?
+                particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb_hf(m_hf + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb_hf(-1 - buff_size)) .and. &
+                                    (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
+                                    (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
 
-                !> Find cell of the bubble in the heat solver domain
-                cell = -buff_size
-                !x
-                do while (lbk_pos(l, 1, 1) < x_cb_hf(cell(1) - 1))
-                    cell(1) = cell(1) - 1
-                end do
-                do while (lbk_pos(l, 1, 1) > x_cb_hf(cell(1)))
-                    cell(1) = cell(1) + 1
-                end do
-                !y
-                do while (lbk_pos(l, 2, 1) < y_cb_hf(cell(2) - 1))
-                    cell(2) = cell(2) - 1
-                end do
-                do while (lbk_pos(l, 2, 1) > y_cb_hf(cell(2)))
-                    cell(2) = cell(2) + 1
-                end do
-                !z
-                do while (lbk_pos(l, 3, 1) < z_cb_hf(cell(3) - 1))
-                    cell(3) = cell(3) - 1
-                end do
-                do while (lbk_pos(l, 3, 1) > z_cb_hf(cell(3)))
-                    cell(3) = cell(3) + 1
-                end do
-                !coordinates in computational space
-                scoord(1) = cell(1) + (lbk_pos(l, 1, 1) - x_cb_hf(cell(1) - 1))/dx_hf(cell(1))
-                scoord(2) = cell(2) + (lbk_pos(l, 2, 1) - y_cb_hf(cell(2) - 1))/dy_hf(cell(2))
-                scoord(3) = cell(3) + (lbk_pos(l, 3, 1) - z_cb_hf(cell(3) - 1))/dz_hf(cell(3))
-                !cell
-                cell(:) = int(scoord(:))
+                if (particle_in_domain) then
 
-                !> Gasussian parameters and cells to smear
-                volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
-                call s_compute_stddsv(cell, volpart, stddsv)
-                center(1:3) = lbk_pos(l, 1:3, 2)
+                    !> Find cell of the bubble in the heat solver domain
+                    cell = -buff_size
+                    !x
+                    do while (lbk_pos(l, 1, 1) < x_cb_hf(cell(1) - 1))
+                        cell(1) = cell(1) - 1
+                    end do
+                    do while (lbk_pos(l, 1, 1) > x_cb_hf(cell(1)))
+                        cell(1) = cell(1) + 1
+                    end do
+                    !y
+                    do while (lbk_pos(l, 2, 1) < y_cb_hf(cell(2) - 1))
+                        cell(2) = cell(2) - 1
+                    end do
+                    do while (lbk_pos(l, 2, 1) > y_cb_hf(cell(2)))
+                        cell(2) = cell(2) + 1
+                    end do
+                    !z
+                    do while (lbk_pos(l, 3, 1) < z_cb_hf(cell(3) - 1))
+                        cell(3) = cell(3) - 1
+                    end do
+                    do while (lbk_pos(l, 3, 1) > z_cb_hf(cell(3)))
+                        cell(3) = cell(3) + 1
+                    end do
+                    !coordinates in computational space
+                    scoord(1) = cell(1) + (lbk_pos(l, 1, 1) - x_cb_hf(cell(1) - 1))/dx_hf(cell(1))
+                    scoord(2) = cell(2) + (lbk_pos(l, 2, 1) - y_cb_hf(cell(2) - 1))/dy_hf(cell(2))
+                    scoord(3) = cell(3) + (lbk_pos(l, 3, 1) - z_cb_hf(cell(3) - 1))/dz_hf(cell(3))
+                    !cell
+                    cell(:) = int(scoord(:))
 
-                !> Smearing
-                normGaussSum = 0._wp
-                !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+: normGaussSum)
-                do i = 0, smearGrid
-                    do j = 0, smearGrid
-                        do k = 0, smearGrid
+                    !> Gasussian parameters and cells to smear
+                    volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
+                    call s_compute_stddsv(cell, volpart, stddsv)
+                    center(1:3) = lbk_pos(l, 1:3, 2)
 
-                            cellaux(1) = cell(1) + i - mapCells
-                            cellaux(2) = cell(2) + j - mapCells
-                            cellaux(3) = cell(3) + k - mapCells
+                    !> Smearing
+                    normGaussSum = 0._wp
+                    !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+: normGaussSum)
+                    do i = 0, smearGrid
+                        do j = 0, smearGrid
+                            do k = 0, smearGrid
 
-                            !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
-                            celloutside = .false.
-                            if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
-                                celloutside = .true.
-                            end if
-                            if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
-                                celloutside = .true.
-                            end if
+                                cellaux(1) = cell(1) + i - mapCells
+                                cellaux(2) = cell(2) + j - mapCells
+                                cellaux(3) = cell(3) + k - mapCells
 
-                            if (.not. celloutside) then
-                                nodecoord(1) = x_cc_hf(cellaux(1))
-                                nodecoord(2) = y_cc_hf(cellaux(2))
-                                nodecoord(3) = z_cc_hf(cellaux(3))
-                                call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
-                                !func = func / sumFun !Adjusted intensity
-                                ! Relocate cells for bubbles intersecting symmetric boundaries
-                                if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
-                                    call s_shift_cell_symmetric_bc(cellaux, cell)
+                                !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
+                                celloutside = .false.
+                                if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
+                                    celloutside = .true.
+                                end if
+                                if ((cellaux(3) > p_hf + buff_size) .or. (cellaux(2) > n_hf + buff_size) .or. (cellaux(1) > m_hf + buff_size)) then
+                                    celloutside = .true.
                                 end if
 
-                            else
-                                func = 0._wp
-                                cellaux(1) = cell(1)
-                                cellaux(2) = cell(2)
-                                cellaux(3) = cell(3)
-                            end if
+                                if (.not. celloutside) then
+                                    nodecoord(1) = x_cc_hf(cellaux(1))
+                                    nodecoord(2) = y_cc_hf(cellaux(2))
+                                    nodecoord(3) = z_cc_hf(cellaux(3))
+                                    call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
+                                    !func = func / sumFun !Adjusted intensity
+                                    ! Relocate cells for bubbles intersecting symmetric boundaries
+                                    if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+                                        call s_shift_cell_symmetric_bc(cellaux, cell)
+                                    end if
 
-                            !Summation of the normalized gaussian function
-                            normGaussSum = normGaussSum + func*(dx_hf(cellaux(1))*dy_hf(cellaux(2))*dz_hf(cellaux(3)))
+                                else
+                                    func = 0._wp
+                                    cellaux(1) = cell(1)
+                                    cellaux(2) = cell(2)
+                                    cellaux(3) = cell(3)
+                                end if
 
-                            !Update qvis field
-                            addFun1 = func*lbk_qvis(l)
-                            !$acc atomic update
-                            updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
-                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-                                + addFun1
+                                !Summation of the normalized gaussian function
+                                normGaussSum = normGaussSum + func*(dx_hf(cellaux(1))*dy_hf(cellaux(2))*dz_hf(cellaux(3)))
 
-                            !Update qth field
-                            addFun2 = func*lbk_qth(l)
-                            !$acc atomic update
-                            updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
-                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-                                + addFun2
+                                !Update qvis field
+                                addFun1 = func*lbk_qvis(l)
+                                !$acc atomic update
+                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                    updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                    + addFun1
 
+                                !Update qth field
+                                addFun2 = func*lbk_qth(l)
+                                !$acc atomic update
+                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                    updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                    + addFun2
+
+                            end do
                         end do
                     end do
-                end do
 
-                ! Summation of normal gaussian weights must be equal to one, except from the cells at the buffers since some surrounding cells can be outside the domain.
-                ! Tolerance of 0.01 defined
-                if ((cell(1) > 0 .and. cell(1) <= m_hf) .and. (cell(2) > 0 .and. cell(2) <= n_hf) .and. &
-                    (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum - 1._wp) > 0.01_wp) then
-                    print *, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
+                    ! Summation of normal gaussian weights must be equal to one, except from the cells at the buffers since some surrounding cells can be outside the domain.
+                    ! Tolerance of 0.01 defined
+                    if ((cell(1) > 0 .and. cell(1) <= m_hf) .and. (cell(2) > 0 .and. cell(2) <= n_hf) .and. &
+                        (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum - 1._wp) > 0.01_wp) then
+                        print *, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
+                    end if
+
                 end if
 
-            end if
+            end do
 
-        end do
+        elseif (p>0 .and. .not. cyl_coord) then
+
+            !$acc parallel loop gang vector default(present) private(l, cell, scoord, center) &
+            !$acc copyin(smearGrid)
+            do l = 1, nBubs
+
+                !> Is the particle in the domain?
+                particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb(m + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb(-1 - buff_size)) .and. &
+                                    (lbk_pos(l, 2, 1) < y_cb(n + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb(-1 - buff_size)) .and. &
+                                    (lbk_pos(l, 3, 1) < z_cb(p + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb(-1 - buff_size)))
+
+                if (particle_in_domain) then
+
+                    !> Find cell of the bubble in the heat solver domain
+                    cell = -buff_size
+                    !x
+                    do while (lbk_pos(l, 1, 1) < x_cb(cell(1) - 1))
+                        cell(1) = cell(1) - 1
+                    end do
+                    do while (lbk_pos(l, 1, 1) > x_cb(cell(1)))
+                        cell(1) = cell(1) + 1
+                    end do
+                    !y
+                    do while (lbk_pos(l, 2, 1) < y_cb(cell(2) - 1))
+                        cell(2) = cell(2) - 1
+                    end do
+                    do while (lbk_pos(l, 2, 1) > y_cb(cell(2)))
+                        cell(2) = cell(2) + 1
+                    end do
+                    !z
+                    do while (lbk_pos(l, 3, 1) < z_cb(cell(3) - 1))
+                        cell(3) = cell(3) - 1
+                    end do
+                    do while (lbk_pos(l, 3, 1) > z_cb(cell(3)))
+                        cell(3) = cell(3) + 1
+                    end do
+                    !coordinates in computational space
+                    scoord(1) = cell(1) + (lbk_pos(l, 1, 1) - x_cb(cell(1) - 1))/dx(cell(1))
+                    scoord(2) = cell(2) + (lbk_pos(l, 2, 1) - y_cb(cell(2) - 1))/dy(cell(2))
+                    scoord(3) = cell(3) + (lbk_pos(l, 3, 1) - z_cb(cell(3) - 1))/dz(cell(3))
+                    !cell
+                    cell(:) = int(scoord(:))
+
+                    !> Gasussian parameters and cells to smear
+                    volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
+                    call s_compute_stddsv(cell, volpart, stddsv)
+                    center(1:3) = lbk_pos(l, 1:3, 2)
+
+                    !> Smearing
+                    normGaussSum = 0._wp
+                    !$acc loop collapse(3) gang vector private(cellaux, nodecoord) reduction(+: normGaussSum)
+                    do i = 0, smearGrid
+                        do j = 0, smearGrid
+                            do k = 0, smearGrid
+
+                                cellaux(1) = cell(1) + i - mapCells
+                                cellaux(2) = cell(2) + j - mapCells
+                                cellaux(3) = cell(3) + k - mapCells
+
+                                !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
+                                celloutside = .false.
+                                if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
+                                    celloutside = .true.
+                                end if
+                                if ((cellaux(3) > p + buff_size) .or. (cellaux(2) > n + buff_size) .or. (cellaux(1) > m + buff_size)) then
+                                    celloutside = .true.
+                                end if
+
+                                if (.not. celloutside) then
+                                    nodecoord(1) = x_cc(cellaux(1))
+                                    nodecoord(2) = y_cc(cellaux(2))
+                                    nodecoord(3) = z_cc(cellaux(3))
+                                    call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
+                                    !func = func / sumFun !Adjusted intensity
+                                    ! Relocate cells for bubbles intersecting symmetric boundaries
+                                    if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+                                        call s_shift_cell_symmetric_bc(cellaux, cell)
+                                    end if
+
+                                else
+                                    func = 0._wp
+                                    cellaux(1) = cell(1)
+                                    cellaux(2) = cell(2)
+                                    cellaux(3) = cell(3)
+                                end if
+
+                                !Summation of the normalized gaussian function
+                                normGaussSum = normGaussSum + func*(dx(cellaux(1))*dy(cellaux(2))*dz(cellaux(3)))
+
+                                !Update qvis field
+                                addFun1 = func*lbk_qvis(l)
+                                !$acc atomic update
+                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                    updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                    + addFun1
+
+                                !Update qth field
+                                addFun2 = func*lbk_qth(l)
+                                !$acc atomic update
+                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
+                                    updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), cellaux(3)) &
+                                    + addFun2
+
+                            end do
+                        end do
+                    end do
+
+                    ! Summation of normal gaussian weights must be equal to one, except from the cells at the buffers since some surrounding cells can be outside the domain.
+                    ! Tolerance of 0.01 defined
+                    if ((cell(1) > 0 .and. cell(1) <= m) .and. (cell(2) > 0 .and. cell(2) <= n) .and. &
+                        (cell(3) > 0 .and. cell(3) <= p) .and. abs(normGaussSum - 1._wp) > 0.01_wp) then
+                        print *, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
+                    end if
+
+                end if
+
+            end do
+
+        end if
 
         ! Populate symmetric boundaries
         if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then

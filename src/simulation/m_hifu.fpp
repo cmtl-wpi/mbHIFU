@@ -25,8 +25,7 @@ module m_hifu
 
     implicit none
 
-    type(vector_field), allocatable, dimension(:) :: q_hifu !< HIFU vector field
-    type(vector_field) :: q_hifu_3d
+    type(vector_field) :: q_hifu, q_hifu_3d !< HIFU vector fields
     !$acc declare create(q_hifu, q_hifu_3d)
 
     real(wp), allocatable, dimension(:) :: shear_viscous_fluids, bulk_viscous_fluids, abs_coef_fluids, rho_cp_fluids, tdiff_fluids
@@ -1185,7 +1184,7 @@ contains
                     do k = 0, n
                         do j = 0, m
                             q_hifu_3d%vf(i)%sf(j, k, l) = q_hifu%vf(i)%sf(j, k, 0)
-                            !if (i==1 .and. j==0 .and. k==0 .and. l==0) print*, q_hifu_3d%vf(i)%sf(j, k, l), q_hifu(i)%sf(j, k, 0), hifu_params%Tref
+                            !if (i==1 .and. j==0 .and. k==0 .and. l==0) print*, q_hifu_3d%vf(i)%sf(j, k, l), q_hifu%vf(i)%sf(j, k, 0), hifu_params%Tref
                         end do
                     end do
                 end do
@@ -1425,7 +1424,7 @@ contains
             do k = -buff_size, n_hf + buff_size
                 do j = -buff_size, m_hf + buff_size
                     q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = 1._wp
-                    q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0)
+                    q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0)
                     q_hifu_3d%vf(hifu_params%qus_idx)%sf(j, k, l) = 0._wp
                     q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l) = 0._wp
                     q_hifu_3d%vf(hifu_params%qth_idx)%sf(j, k, l) = 0._wp
@@ -1513,7 +1512,7 @@ contains
         do i = cell2D_xb, cell2D_xe
             !$acc loop seq
             do q = cell2D_rb, cell2D_re
-                valAvg = valAvg + q_hifu(hifu_params%qus_idx)%sf(i, q, 0)
+                valAvg = valAvg + q_hifu%vf(hifu_params%qus_idx)%sf(i, q, 0)
                 nSamples = nSamples + 1._wp
             end do
         end do
@@ -1538,64 +1537,13 @@ contains
                 if (cell2D_r > n + buff_size) return
             end do
 
-            f_interpolate_qus = q_hifu(hifu_params%qus_idx)%sf(cell2D_x, cell2D_r, 0)
+            f_interpolate_qus = q_hifu%vf(hifu_params%qus_idx)%sf(cell2D_x, cell2D_r, 0)
 
         else
 
             f_interpolate_qus = valAvg/nSamples
 
         end if
-
-        ! OLD SLOW CODE
-        ! r_cc = sqrt(y_cc_hf(k)**2._wp + z_cc_hf(l)**2._wp)
-        ! minDist_old = abs(dflt_real)
-
-        ! tmp1 = sqrt(y_cb_hf(k - 1)**2._wp + z_cb_hf(l - 1)**2._wp)
-        ! tmp2 = sqrt(y_cb_hf(k)**2._wp + z_cb_hf(l)**2._wp)
-        ! tmp3 = sqrt(y_cb_hf(k - 1)**2._wp + z_cb_hf(l)**2._wp)
-        ! tmp4 = sqrt(y_cb_hf(k)**2._wp + z_cb_hf(l - 1)**2._wp)
-
-        ! r_cb_1 = min(min(min(tmp1, tmp2), tmp3), tmp4)
-        ! r_cb_2 = max(max(max(tmp1, tmp2), tmp3), tmp4)
-
-        ! if (abs(r_cb_1 - r_cb_2) < 0.5_wp*dz_hf(l)) r_cb_1 = 0._wp
-
-        ! if ((x_cc_hf(j) > x_cb(-1)) .and. (x_cc_hf(j) < x_cb(m)) .and. &
-        !     (r_cc > y_cb(-1)) .and. (r_cc < y_cb(n))) then
-
-        !         nSamples = 0._wp
-        !         valAvg = 0._wp
-
-        !         !> Average the values of the 2D-cell centers that are in the 3D-cell boundaries
-        !             ! If zero 2D-cell centers are in the 3D-cell -> Take the value of the closest 2D-cell
-        !         !$acc loop seq
-        !         do i = 0, m
-        !             !$acc loop seq
-        !             do q = 0, n
-        !                 ! Find closest 2D-cell center to the 3D-cell center
-        !                 minDist = sqrt((x_cc(i) - x_cc_hf(j))**2._wp + (y_cc(q) - r_cc)**2._wp)
-        !                 if (minDist_old /= minDist) valCloseCell = q_hifu(hifu_params%qus_idx)%sf(i, q, 0)
-        !                 minDist_old = minDist
-
-        !                 !Average 2D-cell centers within the 3D-cell boundaries
-        !                 if (x_cc(i) >= x_cb_hf(j-1) .and. x_cc(i) <= x_cb_hf(j) .and. &
-        !                     y_cc(q) >= r_cb_1 .and. y_cc(q) <= r_cb_2) then
-
-        !                         nSamples = nSamples + 1._wp
-        !                         valAvg = valAvg + q_hifu(hifu_params%qus_idx)%sf(i, q, 0)
-
-        !                 end if
-
-        !             end do
-        !         end do
-
-        !         if (nSamples == 0._wp) then
-        !             f_interpolate_qus = valCloseCell
-        !         else
-        !             f_interpolate_qus = valAvg/nSamples
-        !         end if
-
-        ! end if
 
     end function f_interpolate_qus
 
@@ -1691,8 +1639,8 @@ contains
         !$acc parallel loop collapse(2) gang vector default(present) reduction(MAX: max_old) reduction(MIN: min_old) copy(max_old, min_old)
         do k = 0, n
             do j = 0, m
-                max_old = max(max_old, q_hifu(hifu_params%qus_idx)%sf(j, k, 0)/q_hifu(hifu_params%tsamp_idx)%sf(j, k, 0))
-                min_old = min(min_old, q_hifu(hifu_params%qus_idx)%sf(j, k, 0)/q_hifu(hifu_params%tsamp_idx)%sf(j, k, 0))
+                max_old = max(max_old, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, 0)/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, 0))
+                min_old = min(min_old, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, 0)/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, 0))
             end do
         end do
 
@@ -1846,6 +1794,64 @@ contains
 
     end subroutine s_restore_initial_setup
 
+    subroutine s_initialize_pure_3D()
+
+        real(wp) :: t_samp
+
+        t_samp = q_hifu%vf(hifu_params%qus_idx)%sf(0,0,0)
+        call s_print_hifu_source_stats(q_hifu%vf(hifu_params%qus_idx), t_samp, hifu_params%qus_idx)
+
+        if (bubbles_lagrange) then
+            if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
+            call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
+                                    mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
+            call s_print_hifu_source_stats(q_hifu%vf(hifu_params%qvis_idx), t_samp, hifu_params%qvis_idx)
+            call s_print_hifu_source_stats(q_hifu%vf(hifu_params%qth_idx), t_samp, hifu_params%qth_idx)
+        end if
+
+    end subroutine s_initialize_pure_3D
+
+    subroutine s_print_hifu_source_stats(q_print, t_samp, idx)
+
+        type(scalar_field), dimension(1), intent(in) :: q_print
+        real(wp), intent(in) :: t_samp
+        integer, intent(in) :: idx
+
+        real(wp) :: max_val, min_val, tmp_local, tmp_global
+        integer :: j, k, l
+
+        max_val = -abs(dflt_real)
+        min_val = abs(dflt_real)
+
+        !$acc parallel loop collapse(3) gang vector default(present) reduction(MAX: max_val) &
+        !$acc reduction(MIN: min_val) copy(max_val, min_val) copyin(t_samp)
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    max_val = max(max_val, q_print(1)%sf(j, k, l)/t_samp)
+                    min_val = min(min_val, q_print(1)%sf(j, k, l)/t_samp)
+                end do
+            end do
+        end do
+
+        if (num_procs>1) then
+            tmp_local = max_val
+            call s_mpi_allreduce_max(tmp_local, tmp_global)
+            max_val = tmp_global
+
+            tmp_local = min_val
+            call s_mpi_allreduce_min(tmp_local, tmp_global)
+            min_val = tmp_global
+        end if
+
+        if (proc_rank == 0) then
+            if (idx == hifu_params%qus_idx) print*, 'q_us (min, max):', min_val, max_val
+            if (idx == hifu_params%qvis_idx) print*, 'q_vis smeared (min, max):', min_val, max_val
+            if (idx == hifu_params%qth_idx) print*, 'q_th smeared (min, max):', min_val, max_val
+        end if
+
+    end subroutine s_print_hifu_source_stats
+
     !Calculate the rhs value from heat transfer eqn discretized with finite volumes.
     subroutine s_rhs_heatEqn(q_cons_vf, pb, mv, t_step, bc_type)
 
@@ -1980,7 +1986,7 @@ contains
             if (p == 0 .and. cyl_coord) then !< Axisymmetric rhs
 
                 ! call s_populate_HIFU_variables_buffers(q_hifu)
-                call s_populate_variables_buffers(q_hifu, pb, mv, bc_type)
+                call s_populate_variables_buffers(q_hifu%vf, pb, mv, bc_type)
 
                 !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
                 !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
@@ -1992,23 +1998,23 @@ contains
                             CFL_heat = -100._wp
 
                             !<  Zeroing RHS_heat
-                            q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
+                            q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
 
                             !> Find temperature derivatives at the faces of the cell
-                            dTdx_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j - 1, k, l))/(x_cc(j) - x_cc(j - 1))
-                            dTdx_R = (q_hifu(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(x_cc(j + 1) - x_cc(j))
-                            dTdr_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k - 1, l))/(y_cc(k) - y_cc(k - 1))
-                            dTdr_R = (q_hifu(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(y_cc(k + 1) - y_cc(k))
+                            dTdx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, l))/(x_cc(j) - x_cc(j - 1))
+                            dTdx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))/(x_cc(j + 1) - x_cc(j))
+                            dTdr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, l))/(y_cc(k) - y_cc(k - 1))
+                            dTdr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))/(y_cc(k + 1) - y_cc(k))
 
                             !> Find temperature and streaming velocities at the faces of the cell
-                            Tx_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) + q_hifu(hifu_params%T_idx)%sf(j - 1, k, l))/2._wp
-                            Ux_L = (q_hifu(hifu_params%u_idx)%sf(j, k, l) + q_hifu(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
-                            Tx_R = (q_hifu(hifu_params%T_idx)%sf(j, k, l) + q_hifu(hifu_params%T_idx)%sf(j + 1, k, l))/2._wp
-                            Ux_R = (q_hifu(hifu_params%u_idx)%sf(j, k, l) + q_hifu(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
-                            Tr_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) + q_hifu(hifu_params%T_idx)%sf(j, k - 1, l))/2._wp
-                            Ur_L = (q_hifu(hifu_params%v_idx)%sf(j, k, l) + q_hifu(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
-                            Tr_R = (q_hifu(hifu_params%T_idx)%sf(j, k, l) + q_hifu(hifu_params%T_idx)%sf(j, k + 1, l))/2._wp
-                            Ur_R = (q_hifu(hifu_params%v_idx)%sf(j, k, l) + q_hifu(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
+                            Tx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, l))/2._wp
+                            Ux_L = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
+                            Tx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l))/2._wp
+                            Ux_R = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
+                            Tr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, l))/2._wp
+                            Ur_L = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
+                            Tr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l))/2._wp
+                            Ur_R = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
 
                             !> Get thermal properties
                             alpha = 0._wp
@@ -2029,29 +2035,29 @@ contains
                             end if
 
                             !> Obtain rhs (see notes)
-                            q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) + &
+                            q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) + &
                                                                         tdiff*(1._wp/dx(j))*(dTdx_R - dTdx_L) + &
                                                                         tdiff*(1._wp/(2._wp*y_cc(k)*dy(k)))*((2._wp*y_cc(k) + dy(k))*dTdr_R - (2._wp*y_cc(k) - dy(k))*dTdr_L)
 
-                            if ((q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) > 0._wp) .and. (t_step < hifu_params%stepStopSource)) then
+                            if ((q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) > 0._wp) .and. (t_step < hifu_params%stepStopSource)) then
                                 !> Adding the heat source terms
-                                q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) + &
-                                                                            (1._wp/(rho_cp))*(1._wp/q_hifu(hifu_params%tsamp_idx)%sf(j, k, l))*q_hifu(qus_hifu_idx_ht)%sf(j, k, l) + &  !Acoustic intensity
-                                                                            (1._wp/(rho_cp))*(1._wp/q_hifu(hifu_params%tsamp_idx)%sf(j, k, l))*q_hifu(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
-                                                                            (1._wp/(rho_cp))*(1._wp/q_hifu(hifu_params%tsamp_idx)%sf(j, k, l))*q_hifu(hifu_params%qth_idx)%sf(j, k, l)         !Thermal intensity
+                                q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) + &
+                                                                            (1._wp/(rho_cp))*(1._wp/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l))*q_hifu%vf(qus_hifu_idx_ht)%sf(j, k, l) + &  !Acoustic intensity
+                                                                            (1._wp/(rho_cp))*(1._wp/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l))*q_hifu%vf(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
+                                                                            (1._wp/(rho_cp))*(1._wp/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l))*q_hifu%vf(hifu_params%qth_idx)%sf(j, k, l)         !Thermal intensity
 
                                 if (hifu_params%streaming) then
                                     !> Convected heat flux
-                                    q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) - &
-                                                                                (1._wp/q_hifu(hifu_params%tsamp_idx)%sf(j, k, l))*( & !Double check this
+                                    q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) - &
+                                                                                (1._wp/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l))*( & !Double check this
                                                                                 (1._wp/dx(j))*(Ux_R*Tx_R - Ux_L*Tx_L) + &
                                                                                 (1._wp/(2._wp*y_cc(k)*dy(k)))*((2._wp*y_cc(k) + dy(k))*Ur_R*Tr_R - (2._wp*y_cc(k) - dy(k))*Ur_L*Tr_L))
                                 end if
                             end if
 
                             !Checking NaNs
-                            if (q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) /= q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)) then
-                                print*, 'NaNs in q hifu rhs', q_hifu(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
+                            if (q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) /= q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)) then
+                                print*, 'NaNs in q hifu rhs', q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
                                 print*, 'Current courant number', dx(j), dy(k), dz(l)
                                 print*, 'Therm. properties', tdiff, rho_cp, dt
                                 print*, "NaNs in q hifu rhs"
@@ -2224,7 +2230,7 @@ contains
 
                 else ! 3D cartesian (all stages)
 
-                    call s_populate_variables_buffers(q_hifu, pb, mv, bc_type)
+                    call s_populate_variables_buffers(q_hifu%vf, pb, mv, bc_type)
 
                     !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
                     !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
@@ -2236,20 +2242,20 @@ contains
                                 CFL_heat = -100._wp
 
                                 !<  Zeroing RHS_heat
-                                q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
+                                q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) = 0._wp
 
                                 !> Temperature derivatives at the cell center. METHOD: Second order centered difference approximation
-                                dTdx = (q_hifu(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu(hifu_params%T_idx)%sf(j - 1, k, l))/(x_cc(j + 1) - x_cc(j - 1))
-                                dTdx_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j - 2, k, l))/(x_cc(j) - x_cc(j - 2))
-                                dTdx_R = (q_hifu(hifu_params%T_idx)%sf(j + 2, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(x_cc(j + 2) - x_cc(j))
+                                dTdx = (q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, l))/(x_cc(j + 1) - x_cc(j - 1))
+                                dTdx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j - 2, k, l))/(x_cc(j) - x_cc(j - 2))
+                                dTdx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j + 2, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))/(x_cc(j + 2) - x_cc(j))
 
-                                dTdr = (q_hifu(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu(hifu_params%T_idx)%sf(j, k - 1, l))/(y_cc(k + 1) - y_cc(k - 1))
-                                dTdr_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k - 2, l))/(y_cc(k) - y_cc(k - 2))
-                                dTdr_R = (q_hifu(hifu_params%T_idx)%sf(j, k + 2, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(y_cc(k + 2) - y_cc(k))
+                                dTdr = (q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, l))/(y_cc(k + 1) - y_cc(k - 1))
+                                dTdr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k - 2, l))/(y_cc(k) - y_cc(k - 2))
+                                dTdr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k + 2, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))/(y_cc(k + 2) - y_cc(k))
 
-                                dTdz = (q_hifu(hifu_params%T_idx)%sf(j, k, l + 1) - q_hifu(hifu_params%T_idx)%sf(j, k, l - 1))/(z_cc(l + 1) - z_cc(l - 1))
-                                dTdz_L = (q_hifu(hifu_params%T_idx)%sf(j, k, l) - q_hifu(hifu_params%T_idx)%sf(j, k, l - 2))/(z_cc(l) - z_cc(l - 2))
-                                dTdz_R = (q_hifu(hifu_params%T_idx)%sf(j, k, l + 2) - q_hifu(hifu_params%T_idx)%sf(j, k, l))/(z_cc(l + 2) - z_cc(l))
+                                dTdz = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l + 1) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, l - 1))/(z_cc(l + 1) - z_cc(l - 1))
+                                dTdz_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, l - 2))/(z_cc(l) - z_cc(l - 2))
+                                dTdz_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l + 2) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))/(z_cc(l + 2) - z_cc(l))
 
                                 !> Find temperature derivatives at the faces of the cell
                                 dTdx_L = (dTdx*(x_cc(j) - x_cb(j - 1)) + dTdx_L*(x_cb(j-1) - x_cc(j-1)))/(x_cc(j) - x_cc(j-1))
@@ -2277,22 +2283,22 @@ contains
                                 end if
 
                                 !> Obtain rhs (see notes)
-                                q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = & 
-                                            q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) + tdiff*( &
+                                q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) = & 
+                                            q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) + tdiff*( &
                                             (1._wp/dx(j))*(dTdx_R - dTdx_L) + &
                                             (1._wp/dy(k))*(dTdr_R - dTdr_L) + &
                                             (1._wp/dz(l))*(dTdz_R - dTdz_L))
 
 
-                                if ((q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) > 0._wp) .and. &
+                                if ((q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) > 0._wp) .and. &
                                                             (t_step < hifu_params%stepStopSource)) then
                                     !> Adding the heat source terms
-                                    q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) = &
-                                            q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) + &
-                                            (1._wp/(rho_cp*q_hifu(hifu_params%tsamp_idx)%sf(j, k, l)))*( &
-                                            q_hifu(qus_hifu_idx_ht)%sf(j, k, l) + &         !Acoustic intensity
-                                            q_hifu(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
-                                            q_hifu(hifu_params%qth_idx)%sf(j, k, l))        !Thermal intensity
+                                    q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) = &
+                                            q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) + &
+                                            (1._wp/(rho_cp*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l)))*( &
+                                            q_hifu%vf(qus_hifu_idx_ht)%sf(j, k, l) + &         !Acoustic intensity
+                                            q_hifu%vf(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
+                                            q_hifu%vf(hifu_params%qth_idx)%sf(j, k, l))        !Thermal intensity
 
 
                                     if (hifu_params%streaming) then
@@ -2303,14 +2309,14 @@ contains
                                 end if
 
                                 !Checking NaNs
-                                if (q_hifu(hifu_params%T_idx + 1)%sf(j, k, l) /= &
-                                                q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)) then
-                                    print*, 'NaNs in q hifu rhs', q_hifu(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
+                                if (q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l) /= &
+                                                q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)) then
+                                    print*, 'NaNs in q hifu rhs', q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l), j, k, l
                                     print*, 'dx, dy, dz', dx(j), dy(k), dz(l)
                                     print*, 'x, y, z', x_cc(j), y_cc(k), z_cc(l)
-                                    print*, 'Heat sources: ', q_hifu(qus_hifu_idx_ht)%sf(j, k, l), &
-                                                            q_hifu(hifu_params%qvis_idx)%sf(j, k, l), &
-                                                            q_hifu(hifu_params%qth_idx)%sf(j, k, l)
+                                    print*, 'Heat sources: ', q_hifu%vf(qus_hifu_idx_ht)%sf(j, k, l), &
+                                                            q_hifu%vf(hifu_params%qvis_idx)%sf(j, k, l), &
+                                                            q_hifu%vf(hifu_params%qth_idx)%sf(j, k, l)
                                     print*, "Reduce dt!!"
                                     abortFlag = 1._wp
                                 end if
@@ -2481,8 +2487,9 @@ contains
         integer :: i
 
         do i = 1, sys_size_hifu
-            @:DEALLOCATE(q_hifu(i)%sf)
+            @:DEALLOCATE(q_hifu%vf(i)%sf)
         end do
+        @:DEALLOCATE(q_hifu%vf)
 
         @:DEALLOCATE(shear_viscous_fluids)
         @:DEALLOCATE(bulk_viscous_fluids)

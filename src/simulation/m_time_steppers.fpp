@@ -437,16 +437,16 @@ contains
                     do k = 0, n
                         do j = 0, m
                             !Forward euler time scheme, explicit
-                            q_hifu(hifu_params%T_idx)%sf(j, k, l) = q_hifu(hifu_params%T_idx)%sf(j, k, l) &
-                                                                    + dt*q_hifu(hifu_params%T_idx + 1)%sf(j, k, l)
+                            q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) &
+                                                                    + dt*q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)
                             ! Max and min
-                            temp_max = max(temp_max, q_hifu(hifu_params%T_idx)%sf(j, k, l))
-                            temp_min = min(temp_min, q_hifu(hifu_params%T_idx)%sf(j, k, l))
+                            temp_max = max(temp_max, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
+                            temp_min = min(temp_min, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
 
                             if (temp_max > 15000._wp) print *, temp_max, j, k, l
 
-                            if (q_hifu(hifu_params%T_idx)%sf(j, k, l) /= q_hifu(hifu_params%T_idx)%sf(j, k, l)) then
-                                print *, 'NaNs in q hifu temp', q_hifu(hifu_params%T_idx)%sf(j, k, l), j, k, l
+                            if (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%T_idx)%sf(j, k, l)) then
+                                print *, 'NaNs in q hifu temp', q_hifu%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l
                             end if
                         end do
                     end do

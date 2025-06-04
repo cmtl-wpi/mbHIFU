@@ -918,23 +918,6 @@ contains
                     end if
 
                 end if
-
-            ! else if (present(q_hifu_vf)) then
-
-            !     if (hifu_params%sampling .and. .not. hifu_params%heatSolver) then
-            !         call s_start_HIFU_vars()
-            !         if (proc_rank==0) print*, 'Initialize: Start calculating intensity avg'
-            !     else
-            !         call s_mpi_abort('Heat transfer eqn! Something when wrong. Exiting...')
-            !     end if
-
-            !     if (cfl_dt) then
-            !         call s_write_data_files(q_cons_vf, q_T_sf, q_cons_vf, t_step=n_start, &
-            !                                 q_hifu_vf=q_hifu)
-            !     else
-            !         call s_write_data_files(q_cons_vf, q_T_sf, q_cons_vf, t_step=t_step_start, &
-            !                                 q_hifu_vf=q_hifu)
-            !     end if
     
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
@@ -1366,11 +1349,7 @@ contains
                 call s_initialize_derived_variables_module()
                 call s_initialize_derived_variables()
             elseif (p>0 .and. .not. cyl_coord) then
-                if (bubbles_lagrange) then
-                    if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
-                    call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
-                                          mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
-                end if
+                call s_initialize_pure_3D()
             end if
 
         end if
@@ -1387,7 +1366,7 @@ contains
                         probe_wrt_dv = .false.
                     end if
                 else
-                !$acc update host(q_hifu(hifu_params%T_idx)%sf)
+                !$acc update host(q_hifu%vf(hifu_params%T_idx)%sf)
                 end if
             else
                 do i = 1, sys_size
@@ -1450,7 +1429,7 @@ contains
             call s_HIFU_stages(t_step, hifu_write_output, exitFlag) 
             if (hifu_write_output) then
                 do i = 1, sys_size_hifu
-                    !$acc update host(q_hifu(i)%sf)
+                    !$acc update host(q_hifu%vf(i)%sf)
                 end do
 
                 if (cfl_dt) then
@@ -1460,7 +1439,7 @@ contains
                 end if
 
                 call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, &
-                                                        save_count, q_hifu_vf=q_hifu)
+                                                        save_count, q_hifu_vf=q_hifu%vf)
             end if
 
             if (.not. exitFlag) return
@@ -1571,16 +1550,16 @@ contains
                 end if
             else
                 do i = 1, sys_size_hifu
-                    !$acc update host(q_hifu(i)%sf)
+                    !$acc update host(q_hifu%vf(i)%sf)
                 end do
-                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu)
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu%vf)
             end if
         elseif (hifu_params%sampling) then
             do i = 1, sys_size_hifu
-                !$acc update host(q_hifu(i)%sf)
+                !$acc update host(q_hifu%vf(i)%sf)
             end do
             call s_write_Pmax(save_count)
-            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu)
+            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu%vf)
         end if
 
         if (.not. hifu_params%heatSolver) then
@@ -1685,8 +1664,7 @@ contains
         call s_read_data_files(q_cons_ts(1)%vf)
 
         if (hifu_params%sampling .or. hifu_params%heatSolver) then
-            call s_read_data_files(q_cons_ts(1)%vf, q_hifu_vf=q_hifu)
-            ! call s_populate_HIFU_variables_buffers(q_hifu)
+            call s_read_data_files(q_cons_ts(1)%vf, q_hifu_vf=q_hifu%vf)
         end if
 
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
@@ -1805,7 +1783,7 @@ contains
 
         if (hifu_params%sampling .or. hifu_params%heatSolver) then
             do i = 1, sys_size_hifu
-                !$acc update device(q_hifu(i)%sf)
+                !$acc update device(q_hifu%vf(i)%sf)
             end do
         end if
 

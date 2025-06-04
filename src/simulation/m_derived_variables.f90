@@ -164,7 +164,7 @@ contains
 
             !call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
             if (hifu) then
-                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag, q_hifu)
+                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag, q_hifu%vf)
             else
                 call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
             end if
