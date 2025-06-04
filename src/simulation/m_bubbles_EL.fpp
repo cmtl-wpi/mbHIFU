@@ -546,6 +546,8 @@ contains
                 Re_trans = trans
                 Im_trans = aimag(trans)
                 gas_betaC(k) = Re_trans*lag_params%diffcoefvap
+                
+                !intfc_ac(k,1) = 0._wp
 
             end do
 
@@ -563,7 +565,7 @@ contains
             call s_write_restart_lag_bubbles(0) ! Needed for post_processing
             call s_write_void_evol(0._wp, .true.)
 
-            call s_mpi_barrier()
+            !call s_mpi_barrier()
 
         end if
 
@@ -795,8 +797,10 @@ contains
                         (mtn_posPrev(k, 2, 1) < ye_smear) .and. (mtn_posPrev(k, 2, 1) >= yb_smear) .and. &
                         (mtn_posPrev(k, 3, 1) < ze_smear) .and. (mtn_posPrev(k, 3, 1) >= zb_smear)) then
 
-                        nb_local = nb_local + 1
-                        bub_int_ids(j, nb_local + 1) = k
+                        if (k /= j) then
+                            nb_local = nb_local + 1
+                            bub_int_ids(j, nb_local + 1) = k
+                        end if
 
                     end if
                 end do
@@ -857,13 +861,17 @@ contains
 
         if (p > 0 .or. lag_params%interaction_model == 2) then
             do j = 1, nBubs
-                if (bub_int_ids(j, 1) - 1 > 0) then
+                if (bub_int_ids(j, 1) /= 0) then
                     print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
                         proc_rank, &
                         j, &
-                        int(bub_int_ids(j, 1) - 1)
+                        int(bub_int_ids(j, 1))
 
                 end if
+
+                !if (j==1) print*, bub_int_ids(j, :), 'debugging s_start_bubble_interaction'
+                !if (j==50) print*, bub_int_ids(j, :), 'debugging s_start_bubble_interaction'
+                !if (j==100) print*, bub_int_ids(j, :), 'debugging s_start_bubble_interaction'
             end do
         end if
 
@@ -904,6 +912,7 @@ contains
 
         integer :: i, k, l
 
+        integer :: total_ids, bub_idx
         call nvtxStartRange("LAGRANGE-BUBBLE-DYNAMICS")
 
         !< BUBBLE DYNAMICS
@@ -943,10 +952,20 @@ contains
             if (myR > myRrupt) myShell = 0._wp
             myLag_time = mytime - dt
             myPout = 0._wp !Self-scaterred pressure
-            if (any(lag_params%interaction_model == (/1, 3/))) myPout = bub_interact(k)
+            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/1, 3/))) myPout = bub_interact(k)
             myInt = 0._wp !Interaction term from surrounding bubbles
-            if (any(lag_params%interaction_model == (/2, 3/))) myInt = bub_interact(k)
+            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) myInt = bub_interact(k)
 
+            !if (myInt /= myInt) then 
+            !    print*, 'nan Interaction term', k, bub_interact(k)
+            !    total_ids = int(bub_int_ids(k, 1))
+            !    print*, total_ids
+            !    do i = 2, total_ids + 1
+            !        bub_idx = bub_int_ids(k, i)
+            !        print*, bub_idx
+            !    end do
+            !    print*, bub_int_ids(k, :)
+            !end if
             ! Vapor and heat fluxes
             myVapFlux = f_vflux(myR, myV, myPb, myMass_v, k, myMass_n, myBeta_c, myR_m, mygamma_m, myShell)
             myPbdot = f_bpres_dot(myVapFlux, myR, myV, myPb, myMass_v, k, myBeta_t, myR_m, mygamma_m, myShell)
@@ -1349,7 +1368,7 @@ contains
         real(wp) :: myR0, myR, myV, myPb, myShell, myRbuck, myRrupt, myDist, myA
 
         real(wp) :: Pcell, Rcell, Pw, myRho, myPout, sumPout
-        real(wp) :: preterm1, term2, aux, denom, c1, c2
+        real(wp) :: preterm1, term2, aux, denom, c1, c2, myInt
         integer :: bub_idx, total_ids
         integer :: i, k
 
@@ -1450,24 +1469,33 @@ contains
 
                 ! Number of the bubbles in the smearing volume (Self-inclusive)
                 total_ids = int(bub_int_ids(k, 1))
-
                 sumPout = 0._wp
-                !$acc loop seq
-                do i = 2, total_ids + 1
-                    bub_idx = bub_int_ids(k, i)
-                    ! Current interacting bubble state
-                    myR = intfc_rad(bub_idx, 2)
-                    myV = intfc_vel(bub_idx, 2)
-                    myA = intfc_ac(bub_idx, 2)
-                    myDist = (mtn_posPrev(bub_idx, 1, 2) - mtn_posPrev(k, 1, 2))**2._wp + &
+
+                if (total_ids + 1 >= 2) then
+                    !$acc loop seq
+                    do i = 2, total_ids + 1
+                        bub_idx = bub_int_ids(k, i)
+                        ! Current interacting bubble state
+                        myR = intfc_rad(bub_idx, 2)
+                        myV = intfc_vel(bub_idx, 2)
+                        myA = intfc_ac(bub_idx, 2)
+                        myDist = (mtn_posPrev(bub_idx, 1, 2) - mtn_posPrev(k, 1, 2))**2._wp + &
                              (mtn_posPrev(bub_idx, 2, 2) - mtn_posPrev(k, 2, 2))**2._wp + &
                              (mtn_posPrev(bub_idx, 3, 2) - mtn_posPrev(k, 3, 2))**2._wp
-                    myDist = sqrt(myDist)
+                        myDist = sqrt(myDist)
 
-                    if (bub_idx /= k) then  ! non-inclusive for Aditya's model
-                        sumPout = sumPout - (2._wp*myR*myV**2._wp + myA*myR**2._wp)/myDist
-                    end if
-                end do
+                        !if (bub_idx /= k .and. .not. f_approx_equal(myDist, 0._wp)) then  ! non-inclusive for Aditya's model
+                         myInt = (2._wp*myR*myV**2._wp + myA*myR**2._wp)/myDist
+                        if (myInt /= myInt) then
+                            print*, myR, myV, myA, myDist, 'Bub', k, 'with bub', bub_idx
+                        else
+                            sumPout = sumPout - myInt
+                        end if
+
+                        !if (k==50) print*, 'bub-50:', k, bub_int_ids(k, 1), bub_idx, sumPout, myR, myV, myA, myDist
+                        !if (k==50) print*, 'bub-50: bub_int_ids', bub_int_ids(k, i)
+                    end do
+                end if
 
                 ! I term: sum over bubbles
                 bub_interact(k) = sumPout
@@ -1477,6 +1505,7 @@ contains
 
         end if
 
+        !call s_mpi_barrier()
     end subroutine s_calculate_scattered_pressure
 
     !> The purpose of this procedure is obtain the bubble driving pressure p_inf (OLD VERSION)

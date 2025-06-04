@@ -54,7 +54,7 @@ contains
         real(wp), dimension(1:lag_params%nBubs_glb), intent(in), optional :: lbk_qvis, lbk_qth
 
         if (hifu_params%heatSolver) then
-            if (hifu_params%cartesian) then
+            if (hifu_params%cartesian .or. (p>0 .and. .not. cyl_coord)) then
                 !call s_deltafunc_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
                 call s_gaussian_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
             else
@@ -468,6 +468,11 @@ contains
                                 nodecoord(3) = z_cc_hf(cellaux(3))
                                 call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
                                 !func = func / sumFun !Adjusted intensity
+                                ! Relocate cells for bubbles intersecting symmetric boundaries
+                                if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+                                    call s_shift_cell_symmetric_bc(cellaux, cell)
+                                end if
+
                             else
                                 func = 0._wp
                                 cellaux(1) = cell(1)
@@ -506,6 +511,11 @@ contains
             end if
 
         end do
+
+        ! Populate symmetric boundaries
+        if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+            call s_populate_symmetric_bc(updatedvar)
+        end if
 
         if (proc_rank == 0) print *, 'Bubble sources smeared with Gaussian kernel: qvis & qth'
 

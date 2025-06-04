@@ -1357,12 +1357,22 @@ contains
             end if
         end if
 
-        if (t_step == t_step_start .and. hifu_params%heatSolver .and. hifu_params%stg3_3d) then
-            ! Transforming from 2d axisymmetric to 3d cylindrical coords
-            call s_finalize_derived_variables_module()
-            call s_initialize_from_2d_to_3d()
-            call s_initialize_derived_variables_module()
-            call s_initialize_derived_variables()
+        if (t_step == t_step_start .and. hifu_params%heatSolver) then
+
+            if (hifu_params%stg3_3d) then
+                ! Transforming from 2d axisymmetric to 3d cylindrical coords
+                call s_finalize_derived_variables_module()
+                call s_initialize_from_2d_to_3d()
+                call s_initialize_derived_variables_module()
+                call s_initialize_derived_variables()
+            elseif (p>0 .and. .not. cyl_coord) then
+                if (bubbles_lagrange) then
+                    if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
+                    call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
+                                          mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
+                end if
+            end if
+
         end if
 
         probe_wrt_dv = .true.

@@ -337,7 +337,7 @@ contains
                (1._wp + tmp1)*(fCpbw - fCp)/fRho + &
                cdot_star*fR/(fRho*fC)
 
-        if (lag_params%interaction_model == 2) tmp2 = tmp2 + fInt
+        if (lag_params%pressure_corrector .and. lag_params%interaction_model == 2) tmp2 = tmp2 + fInt
 
         if (.not. f_is_default(Re_inv)) denom = denom + 4._wp*Re_inv/(fRho*fC)
 
@@ -650,6 +650,7 @@ contains
 
         if (h /= h) then
             print *, 'Altering initial h (from/to)', bub_id, h, 0.1_wp*0.5_wp*dt
+            print *, fRho, fP, fR, fV, fR0, fpb, fpbdot, fCson, fInt, fshell, fRbuck, fRcell
             h = 0.1_wp*0.5_wp*dt
         end if
 
@@ -720,6 +721,10 @@ contains
                     fR = myR_tmp1(4)
                     fV = myV_tmp1(4)
                     fAc = 0.5_wp*fAc21 + 0.5_wp*fAc22
+
+                    !if (bub_id == 50) then
+                    !    print*, 'ss:', fR, fV, fAc, fAc21, fAc22, t_new
+                    !end if
 
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
@@ -981,7 +986,7 @@ contains
                              myPb_tmp(4), mydPbdt_tmp(4), alf, fntait, fBtait, &
                              f_bub_adv_src, f_divu, &
                              fCson, fInt, fshell, fRbuck, fRcell)
-
+        fAc = myA_tmp(4)
         ! Estimate error
         err_R = (-5._wp*h/24._wp)*(myV_tmp(2) + myV_tmp(3) - 2._wp*myV_tmp(4)) &
                 /max(abs(myR_tmp(1)), abs(myR_tmp(4)))

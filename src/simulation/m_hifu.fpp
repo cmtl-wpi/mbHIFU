@@ -25,7 +25,7 @@ module m_hifu
 
     implicit none
 
-    type(scalar_field), allocatable, dimension(:) :: q_hifu !< HIFU vector field
+    type(vector_field), allocatable, dimension(:) :: q_hifu !< HIFU vector field
     type(vector_field) :: q_hifu_3d
     !$acc declare create(q_hifu, q_hifu_3d)
 
@@ -58,14 +58,14 @@ contains
         hifu_params%v_idx = 14
 
         ! Allocating the cell-average RHS variables
-        @:ALLOCATE(q_hifu(1:sys_size_hifu))
+        @:ALLOCATE(q_hifu%vf(1:sys_size_hifu))
 
         do i = 1, sys_size_hifu
-            @:ALLOCATE(q_hifu(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
+            @:ALLOCATE(q_hifu%vf(i)%sf(idwbuff(1)%beg:idwbuff(1)%end, &
                 idwbuff(2)%beg:idwbuff(2)%end, &
                 idwbuff(3)%beg:idwbuff(3)%end))
-            @:ACC_SETUP_SFs(q_hifu(i))
         end do
+        @:ACC_SETUP_VFs(q_hifu)
 
         ! Fluids' properties needed (GPU)
         @:ALLOCATE(shear_viscous_fluids(1: num_fluids))
@@ -97,7 +97,7 @@ contains
             do k = idwbuff(3)%beg, idwbuff(3)%end
                 do j = idwbuff(2)%beg, idwbuff(2)%end
                     do i = idwbuff(1)%beg, idwbuff(1)%end
-                        q_hifu(l)%sf(i, j, k) = 0._wp
+                        q_hifu%vf(l)%sf(i, j, k) = 0._wp
                     end do
                 end do
             end do
@@ -108,11 +108,11 @@ contains
             do j = idwbuff(2)%beg, idwbuff(2)%end
                 do i = idwbuff(1)%beg, idwbuff(1)%end
                     !Initial Temperature
-                    q_hifu(hifu_params%T_idx)%sf(i, j, k) = hifu_params%Tref
+                    q_hifu%vf(hifu_params%T_idx)%sf(i, j, k) = hifu_params%Tref
                     !Initialize Pmax
-                    q_hifu(hifu_params%P_idx)%sf(i, j, k) = min(dflt_real, -dflt_real)
+                    q_hifu%vf(hifu_params%P_idx)%sf(i, j, k) = min(dflt_real, -dflt_real)
                     !Initialize Pmin
-                    q_hifu(hifu_params%P_idx + 1)%sf(i, j, k) = max(dflt_real, -dflt_real)
+                    q_hifu%vf(hifu_params%P_idx + 1)%sf(i, j, k) = max(dflt_real, -dflt_real)
                 end do
             end do
         end do
@@ -590,8 +590,8 @@ contains
                                                       ((gamma_h + 1._wp)*pres_h + pi_inf_h)/rho_h, myalpha, 0._wp, c_c_h, cson_h)
                         
                         !Obtaining Pmax and Pmin fields
-                        q_hifu(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu(hifu_params%P_idx)%sf(j, k, l), pres_h)
-                        q_hifu(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
 
                         !>> Compute intensity form acoustic damping
 
@@ -599,11 +599,11 @@ contains
                         intensity_ac_prms = 0._wp
                         if (cfl_dt) then
                             if (mytime >= t_stop) then
-                                intensity_ac_prms = absCoef*(q_hifu(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
-                                intensity_ac_prms = absCoef*(q_hifu(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                             end if
                         end if
 
@@ -617,15 +617,15 @@ contains
                         varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
                         intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB !intensity is "q_us_ac"
 
-                        q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) &
+                        q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
-                        q_hifu(hifu_params%qus_idx)%sf(j, k, l) = q_hifu(hifu_params%qus_idx)%sf(j, k, l) &
+                        q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l) &
                                                                                             + intensity_ac*hdid     ! Sampling acoustic intensity
-                        q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) = intensity_ac_prms * &
-                                                                       q_hifu(hifu_params%tsamp_idx)%sf(j, k, l)    ! Sampling acoustic intensity (prms)
+                        q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l) = intensity_ac_prms * &
+                                                                       q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l)    ! Sampling acoustic intensity (prms)
                         
                         ! Checking for NaNs
-                        if (q_hifu(hifu_params%qus_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)) then
                             print*, 'Acoustic intensity is NaN', j, k, l, hdid, intensity_ac
                             print*, 'viscosities (bulk & shear)', bulkVisc, shearVisc
                             print*, 'var: A, B', varA, varB, ep11, ep22, ep33, ep13
@@ -633,9 +633,9 @@ contains
                             abortFlag = 1
                         end if
 
-                        if (q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l)) then
                             print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms, &
-                                                        absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
+                                                        absCoef,q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
                                                         hifu_params%atmPres, rho_h, cson_h
                             abortFlag = 1
                         end if
@@ -643,20 +643,20 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu(hifu_params%u_idx)%sf(j, k, l) = q_hifu(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu(hifu_params%v_idx)%sf(j, k, l) = q_hifu(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > y_cc(k) .and. y_cc(k) > 0._wp)
                         radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
-                            focalIntensity_ac = max(focalIntensity_ac, q_hifu(hifu_params%qus_idx)%sf(j, k, l))
-                            focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l))
+                            focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
+                            focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l))
                         end if
 
                         !Intensity summation through the domain
-                        sumIntensity_ac = sumIntensity_ac + q_hifu(hifu_params%qus_idx)%sf(j, k, l)
+                        sumIntensity_ac = sumIntensity_ac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
 
                     end do
                 end do
@@ -675,11 +675,11 @@ contains
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
             end if
 
-            !$acc update host(q_hifu(hifu_params%tsamp_idx)%sf)
+            !$acc update host(q_hifu%vf(hifu_params%tsamp_idx)%sf)
 
             if (proc_rank == 0) write (99, '(6x,5E24.8)') &
                                         mytime, &
-                                        q_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0), &
+                                        q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
                                         focalIntensity_ac, &
                                         focalIntensity_ac_prms, &
                                         sumIntensity_ac
@@ -754,8 +754,8 @@ contains
                                                 ((gamma_h + 1._wp)*pres_h + pi_inf_h)/rho_h, myalpha, 0._wp, c_c_h, cson_h)
 
                         !Obtaining Pmax and Pmin fields
-                        q_hifu(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu(hifu_params%P_idx)%sf(j, k, l), pres_h)
-                        q_hifu(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
 
                         !>> Compute intensity form acoustic damping
 
@@ -763,11 +763,11 @@ contains
                         intensity_ac_prms = 0._wp
                         if (cfl_dt) then
                             if (mytime >= t_stop) then
-                                intensity_ac_prms = absCoef*(q_hifu(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
-                                intensity_ac_prms = absCoef*(q_hifu(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                             end if
                         end if
 
@@ -797,15 +797,15 @@ contains
 
                         end if
 
-                        q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu(hifu_params%tsamp_idx)%sf(j, k, l) &
+                        q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
-                        q_hifu(hifu_params%qus_idx)%sf(j, k, l) = q_hifu(hifu_params%qus_idx)%sf(j, k, l) &
+                        q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l) &
                                                                                             + intensity_ac*hdid     ! Sampling acoustic intensity
-                        q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) = intensity_ac_prms * &
-                                                                       q_hifu(hifu_params%tsamp_idx)%sf(j, k, l)    ! Sampling acoustic intensity (prms)
+                        q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l) = intensity_ac_prms * &
+                                                                       q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l)    ! Sampling acoustic intensity (prms)
                         
                         ! Checking for NaNs
-                        if (q_hifu(hifu_params%qus_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)) then
                             print*, 'Acoustic intensity is NaN', j, k, l, hdid, intensity_ac
                             print*, 'viscosities (bulk & shear)', bulkVisc, shearVisc
                             print*, 'var: A, B', varA, varB, ep11, ep22, ep33, ep13
@@ -813,9 +813,9 @@ contains
                             abortFlag = 1
                         end if
 
-                        if (q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l)) then
                             print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms, &
-                                                        absCoef,q_hifu(hifu_params%P_idx)%sf(j, k, l), &
+                                                        absCoef,q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
                                                         hifu_params%atmPres, rho_h, cson_h
                             abortFlag = 1
                         end if
@@ -823,8 +823,8 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu(hifu_params%u_idx)%sf(j, k, l) = q_hifu(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu(hifu_params%v_idx)%sf(j, k, l) = q_hifu(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
@@ -833,12 +833,12 @@ contains
                         !if (p>0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
-                            focalIntensity_ac = max(focalIntensity_ac, q_hifu(hifu_params%qus_idx)%sf(j, k, l))
-                            focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu(hifu_params%qus_prms_idx)%sf(j, k, l))
+                            focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
+                            focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l))
                         end if
 
                         !Intensity summation through the domain
-                        sumIntensity_ac = sumIntensity_ac + q_hifu(hifu_params%qus_idx)%sf(j, k, l)
+                        sumIntensity_ac = sumIntensity_ac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
 
                     end do
                 end do
@@ -857,11 +857,11 @@ contains
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
             end if
 
-            !$acc update host(q_hifu(hifu_params%tsamp_idx)%sf)
+            !$acc update host(q_hifu%vf(hifu_params%tsamp_idx)%sf)
 
             if (proc_rank == 0) write (99, '(6x,5E24.8)') &
                                         mytime, &
-                                        q_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0), &
+                                        q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
                                         focalIntensity_ac, &
                                         focalIntensity_ac_prms, &
                                         sumIntensity_ac
@@ -936,16 +936,16 @@ contains
                                 x_cc(j), &
                                 y_cc(k), &
                                 z_cc(l), &
-                                q_hifu(hifu_params%P_idx)%sf(j, k, l), &
-                                q_hifu(hifu_params%P_idx + 1)%sf(j, k, l)
+                                q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
+                                q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
 
                         else
                             write (100, '(6x,5E24.8)') &
                                 mytime, &
                                 x_cc(j), &
                                 y_cc(k), &
-                                q_hifu(hifu_params%P_idx)%sf(j, k, l), &
-                                q_hifu(hifu_params%P_idx + 1)%sf(j, k, l)
+                                q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
+                                q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
                         end if
                         
                     end if
@@ -1184,7 +1184,7 @@ contains
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
-                            q_hifu_3d%vf(i)%sf(j, k, l) = q_hifu(i)%sf(j, k, 0)
+                            q_hifu_3d%vf(i)%sf(j, k, l) = q_hifu%vf(i)%sf(j, k, 0)
                             !if (i==1 .and. j==0 .and. k==0 .and. l==0) print*, q_hifu_3d%vf(i)%sf(j, k, l), q_hifu(i)%sf(j, k, 0), hifu_params%Tref
                         end do
                     end do
