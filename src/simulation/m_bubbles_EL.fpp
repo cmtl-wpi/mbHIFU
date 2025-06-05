@@ -1020,9 +1020,9 @@ contains
                 gas_mv(k, 1) = myMass_v
                 mrmtnt_shell(k, 1) = myShell
                 if (hifu_params%sampling) then
-                    if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage
                     bub_qvis(k) = bub_qvis(k) + myQvis  !> Viscous damping of the bubble (Watts)
                     bub_qth(k) = bub_qth(k) + myQth     !> Thermal damping of the bubble (Watts)
+                    if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage, bub_qvis(k), bub_qth(k)
                 end if
 
             else

@@ -1796,40 +1796,37 @@ contains
 
     subroutine s_initialize_pure_3D()
 
-        real(wp) :: t_samp
-
-        t_samp = q_hifu%vf(hifu_params%qus_idx)%sf(0,0,0)
-        call s_print_hifu_source_stats(q_hifu%vf(hifu_params%qus_idx), t_samp, hifu_params%qus_idx)
+        call s_print_hifu_source_stats(hifu_params%qus_idx)
 
         if (bubbles_lagrange) then
             if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
             call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
                                     mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
-            call s_print_hifu_source_stats(q_hifu%vf(hifu_params%qvis_idx), t_samp, hifu_params%qvis_idx)
-            call s_print_hifu_source_stats(q_hifu%vf(hifu_params%qth_idx), t_samp, hifu_params%qth_idx)
+            call s_print_hifu_source_stats(hifu_params%qvis_idx)
+            call s_print_hifu_source_stats(hifu_params%qth_idx)
         end if
 
     end subroutine s_initialize_pure_3D
 
-    subroutine s_print_hifu_source_stats(q_print, t_samp, idx)
+    subroutine s_print_hifu_source_stats(idx)
 
-        type(scalar_field), dimension(1), intent(in) :: q_print
-        real(wp), intent(in) :: t_samp
         integer, intent(in) :: idx
 
-        real(wp) :: max_val, min_val, tmp_local, tmp_global
+        real(wp) :: max_val, min_val, tmp_local, tmp_global, val_test
         integer :: j, k, l
 
         max_val = -abs(dflt_real)
         min_val = abs(dflt_real)
 
         !$acc parallel loop collapse(3) gang vector default(present) reduction(MAX: max_val) &
-        !$acc reduction(MIN: min_val) copy(max_val, min_val) copyin(t_samp)
+        !$acc reduction(MIN: min_val) copy(max_val, min_val) copyin(idx)
         do l = 0, p
             do k = 0, n
                 do j = 0, m
-                    max_val = max(max_val, q_print(1)%sf(j, k, l)/t_samp)
-                    min_val = min(min_val, q_print(1)%sf(j, k, l)/t_samp)
+                    val_test = q_hifu%vf(idx)%sf(j, k, l)/&
+                                           q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l)
+                    max_val = max(max_val, val_test)
+                    min_val = min(min_val, val_test)
                 end do
             end do
         end do

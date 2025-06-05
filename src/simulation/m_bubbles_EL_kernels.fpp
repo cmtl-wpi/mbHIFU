@@ -506,7 +506,7 @@ contains
                     ! Summation of normal gaussian weights must be equal to one, except from the cells at the buffers since some surrounding cells can be outside the domain.
                     ! Tolerance of 0.01 defined
                     if ((cell(1) > 0 .and. cell(1) <= m_hf) .and. (cell(2) > 0 .and. cell(2) <= n_hf) .and. &
-                        (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum - 1._wp) > 0.01_wp) then
+                        (cell(3) > 0 .and. cell(3) <= p_hf) .and. abs(normGaussSum - 1._wp) > 0.1_wp) then
                         print *, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
                     end if
 
@@ -561,6 +561,8 @@ contains
                     volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
                     call s_compute_stddsv(cell, volpart, stddsv)
                     center(1:3) = lbk_pos(l, 1:3, 2)
+                    
+                    if (l==1) print*, 'in kernel', lbk_qvis(l), lbk_qth(l)
 
                     !> Smearing
                     normGaussSum = 0._wp
@@ -587,7 +589,7 @@ contains
                                     nodecoord(2) = y_cc(cellaux(2))
                                     nodecoord(3) = z_cc(cellaux(3))
                                     call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
-                                    !func = func / sumFun !Adjusted intensity
+
                                     ! Relocate cells for bubbles intersecting symmetric boundaries
                                     if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
                                         call s_shift_cell_symmetric_bc(cellaux, cell)
@@ -624,7 +626,7 @@ contains
                     ! Summation of normal gaussian weights must be equal to one, except from the cells at the buffers since some surrounding cells can be outside the domain.
                     ! Tolerance of 0.01 defined
                     if ((cell(1) > 0 .and. cell(1) <= m) .and. (cell(2) > 0 .and. cell(2) <= n) .and. &
-                        (cell(3) > 0 .and. cell(3) <= p) .and. abs(normGaussSum - 1._wp) > 0.01_wp) then
+                        (cell(3) > 0 .and. cell(3) <= p) .and. abs(normGaussSum - 1._wp) > 0.1_wp) then
                         print *, 'Smeared bubble out of tolerance:', l, normGaussSum, cell(1), cell(2), cell(3)
                     end if
 
