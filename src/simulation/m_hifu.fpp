@@ -174,7 +174,7 @@ contains
 
             cfl_dt = .false.
             t_step_save = hifu_params%t_step_save_stg3
-            t_step_stop = hifu_params%t_step_stop_stg3
+            t_step_stop = hifu_params%t_step_stop_stg3 - 1
 
             if (hifu_params%stg3_3d) then
                 p = hifu_params%p
@@ -306,7 +306,7 @@ contains
                     stop 'Define dt_stg3 or cfl_stg3'
                 end if
                 t_step_save = hifu_params%t_step_save_stg3
-                t_step_stop = hifu_params%t_step_stop_stg3
+                t_step_stop = hifu_params%t_step_stop_stg3 - 1
                 finaltime = t_step_stop*dt
 
                 if (hifu_params%stg3_3d) then
@@ -363,7 +363,7 @@ contains
                 end if
 
                 t_step_save = hifu_params%t_step_save_stg3
-                t_step_stop = hifu_params%t_step_stop_stg3
+                t_step_stop = hifu_params%t_step_stop_stg3 - 1
                 finaltime = t_step_stop*dt
 
                 if (hifu_params%stg3_3d) then
