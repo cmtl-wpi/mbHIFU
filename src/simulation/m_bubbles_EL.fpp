@@ -952,7 +952,8 @@ contains
             if (myR > myRrupt) myShell = 0._wp
             myLag_time = mytime - dt
             myPout = 0._wp !Self-scaterred pressure
-            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/1, 3/))) myPout = bub_interact(k)
+            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/1, 3/)) .and. &
+                .not. adap_dt) myPout = bub_interact(k)
             myInt = 0._wp !Interaction term from surrounding bubbles
             if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) myInt = bub_interact(k)
 
@@ -982,7 +983,8 @@ contains
             end do
             call s_convert_species_to_mixture_variables_acc(myRho, gamma, pi_inf, qv, myalpha, &
                                                             myalpha_rho, Re, cell(1), cell(2), cell(3))
-            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/1, 3/))) then
+            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/1, 3/)) .and. &
+                .not. adap_dt) then
                 !Kazuki's model to adjust Pinf
                 if (p > 0) then
                     myPinf = myPinf + myPout
@@ -1417,7 +1419,7 @@ contains
 
         ! end if
 
-        if (any(lag_params%interaction_model == (/1, 3/)) .and. p > 0) then !Kazuki's model (DV version)
+        if (any(lag_params%interaction_model == (/1, 3/)) .and. p > 0 .and. .not. adap_dt) then !Kazuki's model (DV version)
             !$acc parallel loop gang vector default(present) private(k, cell)
             do k = 1, nBubs
                 ! Current bubble state

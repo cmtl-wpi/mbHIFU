@@ -66,8 +66,11 @@ contains
             if (bubbles_euler) then
                 c_liquid = sqrt(fntait*(fP + fBtait)/(fRho*(1._wp - alf)))
             else
-                !pout = f_pout(fpbdot, fP, fCpbw, fRho, fR, fV, fshell, fRcell)
-                !fCpinf = fCpinf - pout
+                if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/1, 3/)) &
+                    .and. adap_dt) then
+                    pout = f_pout(fpbdot, fP, fCpbw, fRho, fR, fV, fshell, fRcell)
+                    fCpinf = fCpinf - pout
+                end if
                 c_liquid = fCson
             end if
             f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid, fInt, fshell, fRbuck)
