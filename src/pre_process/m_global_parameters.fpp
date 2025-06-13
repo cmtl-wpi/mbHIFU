@@ -290,6 +290,8 @@ module m_global_parameters
 
     !> @name Acoustic wave generator (boundary condition)
     type(acoustic_bc_parameters) :: acoustic_bc_params    !< Acoustic wave parameters
+    real(wp), target, allocatable, dimension(:) :: in_bc_pressure, in_bc_time
+    integer :: in_bc_samples
     real(wp) :: mytime       !< Current simulation time
 
 contains

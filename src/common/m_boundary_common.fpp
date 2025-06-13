@@ -66,6 +66,19 @@ contains
         end if
 #endif
 
+#ifdef MFC_SIMULATION
+    
+    if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_ACOUSTIC_WAVE) .and. &
+        acoustic_bc_params%iwave == 3) then
+
+        @:ALLOCATE(in_bc_pressure(0:200))
+        @:ALLOCATE(in_bc_time(0:200))
+
+        call s_read_txt_input_acoustic
+    end if
+    
+#endif
+
     end subroutine s_initialize_boundary_common_module
 
     !>  The purpose of this procedure is to populate the buffers
@@ -1155,6 +1168,12 @@ contains
                         else
                             q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase
                         end if
+
+                    elseif (acoustic_bc_params%iwave == 3) then
+                        ! Pressure : Customized planar wave
+                        q_prim_vf(momxe + 1)%sf(-j, k, l) = f_interpolate_customized_acoustic_bc(timeNow)
+                        q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
+                        if (j == 1 .and. k == 0 .and. l == 0) print*, timeNow, q_prim_vf(momxe + 1)%sf(-j, k, l)
                     end if
                 end do
             end if
@@ -1178,6 +1197,10 @@ contains
                         else
                             q_prim_vf(momxe + 1)%sf(k, -j, l) = acoustic_bc_params%Pbase
                         end if
+                    elseif (acoustic_bc_params%iwave == 3) then
+                        ! Pressure : Customized planar wave
+                        q_prim_vf(momxe + 1)%sf(k, -j, l) = f_interpolate_customized_acoustic_bc(timeNow)
+                        q_prim_vf(1)%sf(k, -j, l) = acoustic_bc_params%rho
                     end if
                 end do
             end if
@@ -1226,12 +1249,71 @@ contains
                         else
                             q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase
                         end if
+
+                    elseif (acoustic_bc_params%iwave == 3) then
+                        ! Pressure : Customized planar wave
+                        q_prim_vf(momxe + 1)%sf(k, l, -j) = f_interpolate_customized_acoustic_bc(timeNow)
+                        q_prim_vf(1)%sf(k, l, -j) = acoustic_bc_params%rho
+
                     end if
                 end do
             end if
         end if
 
     end subroutine s_acoustic_bc
+
+    subroutine s_read_txt_input_acoustic()
+
+        integer :: i, ios
+        logical :: file_exist
+        real(wp), dimension(2) :: txt_line
+
+        character(LEN=path_len + 2*name_len) :: path_D_dir
+
+        inquire (file='input/pressureProfile.txt', exist=file_exist)
+
+        print*, 'Customized acoustic planar wave activated:'
+
+        if (file_exist) then
+            open (94, file='input/pressureProfile.txt', form='formatted', iostat=ios)
+            in_bc_samples = 0
+            do while (ios == 0)
+                read (94, *, iostat=ios) (txt_line(i), i=1, 2)
+                if (ios /= 0) cycle
+                in_bc_samples = in_bc_samples + 1
+                in_bc_pressure(in_bc_samples) = txt_line(2)
+                in_bc_time(in_bc_samples) = txt_line(1)
+                print*, in_bc_samples, in_bc_time(in_bc_samples), in_bc_pressure(in_bc_samples)
+            end do
+            close (94)
+        else
+            call s_mpi_abort("Customizes pressure acoustic BC requieres input/pressureProfile.txt")
+        end if
+
+        !$acc update device(in_bc_pressure, in_bc_time, in_bc_samples)
+
+    end subroutine s_read_txt_input_acoustic
+
+    function f_interpolate_customized_acoustic_bc(timeNow)
+        !$acc routine seq
+        real(wp), intent(in) :: timeNow
+        integer :: i
+        real(wp) :: f_interpolate_customized_acoustic_bc
+
+        f_interpolate_customized_acoustic_bc = acoustic_bc_params%Pbase
+
+        ! Linear search for t in [time(i), time(i+1)]
+        do i = 1, in_bc_samples - 1
+            if (timeNow >= in_bc_time(i) .and. timeNow <= in_bc_time(i+1)) then
+                f_interpolate_customized_acoustic_bc = &
+                    f_interpolate_customized_acoustic_bc + (&
+                    in_bc_pressure(i) + (in_bc_pressure(i+1) - in_bc_pressure(i)) * &
+                    (timeNow - in_bc_time(i)) / (in_bc_time(i+1) - in_bc_time(i)))
+                return
+            end if
+        end do
+
+    end function f_interpolate_customized_acoustic_bc
 
     subroutine s_axis_cylindrical_sector_hifu(q_prim_vf, pb, mv, bc_dir, bc_loc, k, l)
 #ifdef _CRAYFTN
