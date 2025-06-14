@@ -778,7 +778,7 @@ contains
                 ze_smear = z_cb(smear_idx)
             end if
 
-            if (lag_params%interaction_model == 2 .and. p == 0) then
+            if (any(lag_params%interaction_model == (/2, 3/)) .and. p == 0) then
 
                 yb_smear = mtn_posPrev(j, 2, 1) - abs(xe_smear - xb_smear)
                 ye_smear = mtn_posPrev(j, 2, 1) + abs(xe_smear - xb_smear)
@@ -790,7 +790,7 @@ contains
 
             ! Find bubbles inside the boundaries
             nb_local = 0
-            if (lag_params%interaction_model == 2) then
+            if (any(lag_params%interaction_model == (/2, 3/))) then
                 !$acc loop seq
                 do k = 1, nBubs
                     if ((mtn_posPrev(k, 1, 1) < xe_smear) .and. (mtn_posPrev(k, 1, 1) >= xb_smear) .and. &
@@ -822,7 +822,7 @@ contains
                 end do
             end if
 
-            if (p > 0 .or. lag_params%interaction_model == 2) then
+            if (any(lag_params%interaction_model == (/2, 3/))) then
                 ! Total number of interacting bubbles
                 bub_int_ids(j, 1) = nb_local
             else
@@ -859,7 +859,7 @@ contains
 
         !$acc update host(bub_int_ids)
 
-        if (p > 0 .or. lag_params%interaction_model == 2) then
+        if (p > 0 .or. any(lag_params%interaction_model == (/2, 3/))) then
             do j = 1, nBubs
                 if (bub_int_ids(j, 1) /= 0) then
                     print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
