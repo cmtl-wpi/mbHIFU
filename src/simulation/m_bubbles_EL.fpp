@@ -870,7 +870,7 @@ contains
             safeStop = tmp_val
         end if
 
-        if (proc_rank==0) print*, 'Maximum number of interacting bubbles is:', safeStop
+        if (proc_rank==0) print*, 'Maximum number of interacting bubbles is:', int(safeStop)
 
         if (safeStop > max_bub_int) then
             call s_mpi_abort('Failed getting interacting bubbles.')
@@ -879,7 +879,7 @@ contains
 
         !$acc update host(bub_int_ids)
 
-        if (p > 0 .or. any(lag_params%interaction_model == (/2, 3/))) then
+        if (p > 0 .or. any(lag_params%interaction_model == (/2, 3/)) .and. nBubs < 1000) then
             do j = 1, nBubs
                 if (bub_int_ids(j, 1) /= 0) then
                     print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
@@ -888,15 +888,8 @@ contains
                         int(bub_int_ids(j, 1))
 
                 end if
-
-                !if (j==1) print*, bub_int_ids(j, :), 'debugging s_start_bubble_interaction'
-                !if (j==50) print*, bub_int_ids(j, :), 'debugging s_start_bubble_interaction'
-                !if (j==100) print*, bub_int_ids(j, :), 'debugging s_start_bubble_interaction'
             end do
         end if
-
-        ! call s_mpi_barrier()
-        ! call s_mpi_abort('debugging s_start_bubble_interaction')
 
     end subroutine s_start_bubble_interaction
 
