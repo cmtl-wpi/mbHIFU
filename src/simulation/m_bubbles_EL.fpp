@@ -879,7 +879,7 @@ contains
 
         !$acc update host(bub_int_ids)
 
-        if (p > 0 .or. any(lag_params%interaction_model == (/2, 3/)) .and. lag_params%nBubs_glb < 100) then
+        if ((p > 0 .or. any(lag_params%interaction_model == (/2, 3/))) .and. lag_params%nBubs_glb < 100) then
             do j = 1, nBubs
                 if (bub_int_ids(j, 1) /= 0) then
                     print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
