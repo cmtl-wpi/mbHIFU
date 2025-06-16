@@ -870,8 +870,9 @@ contains
             safeStop = tmp_val
         end if
 
+        if (proc_rank==0) print*, 'Maximum number of interacting bubbles is:', safeStop
+
         if (safeStop > max_bub_int) then
-            if (proc_rank==0) print*, 'Maximum number of interacting bubbles is:', safeStop
             call s_mpi_abort('Failed getting interacting bubbles.')
         end if
 
