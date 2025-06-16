@@ -50,7 +50,8 @@ module m_constants
     integer, parameter :: mapCells = 3 !< Number of cells around the bubble where the smoothening function will have effect
     real(wp), parameter :: R_uni = 8314._wp !< Universal gas constant - J/kmol/K
     integer, parameter :: num_noise = 100 !< Number of fluctuations in the stochastic clousure to find the corrected Pinf (2D model reduction)
-
+    integer, parameter :: max_bub_int = 2500 !< Limits the maximum number of interacting bubbles
+    
     ! Strang Splitting constants
     real(wp), parameter :: dflt_adap_dt_tol = 1e-4_wp !< Default tolerance for adaptive step size
     integer, parameter :: adap_dt_max_iters = 1000000 !< Maximum number of iterations

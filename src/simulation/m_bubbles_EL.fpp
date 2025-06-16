@@ -162,7 +162,7 @@ contains
         ! 1: emitted Pout, 2: sum of Pouts from volume of influence (self-inclusive)
         @:ALLOCATE(bub_interact(1:nBubs_glb))
         ! 1: number of interacting bubbles (self-inclusive), 2:nBubs_glb+1: IDs in the volume of influence (self-inclusive)
-        @:ALLOCATE(bub_int_ids(1:nBubs_glb, 1:min(1001, nBubs_glb+1)))
+        @:ALLOCATE(bub_int_ids(1:nBubs_glb, 1:min(max_bub_int, nBubs_glb+1)))
         !@:ALLOCATE(bub_lambda_c(1:nBubs_glb))
         !@:ALLOCATE(bub_rnd_phase(1:nBubs_glb, 1:num_noise))
 
@@ -702,6 +702,7 @@ contains
         integer :: smear_idx
         real(wp) :: num_rn1, num_rn2, num_rn
         real(wp) :: st_dev_rn, mean_rn
+        real(wp) :: safeStop, tmp_val
 
         if (.not. lag_params%pressure_corrector) return
 
@@ -709,7 +710,8 @@ contains
         ! mean_rn = 0.5_wp*pi
         ! st_dev_rn = 1._wp
 
-        !$acc parallel loop gang vector default(present) private(j, cell, scoord)
+        safeStop = 0._wp
+        !$acc parallel loop gang vector default(present) private(j, cell, scoord) reduction(MAX: safeStop) copy(safeStop)
         do j = 1, nBubs
 
             ! Is the bubble in the physical domain?
@@ -799,7 +801,10 @@ contains
 
                         if (k /= j) then
                             nb_local = nb_local + 1
-                            bub_int_ids(j, nb_local + 1) = k
+                            if (nb_local <= max_bub_int) then
+                                bub_int_ids(j, nb_local + 1) = k
+                            end if
+                            safeStop = max(safeStop, 1._wp*nb_local)
                         end if
 
                     end if
@@ -813,7 +818,10 @@ contains
                         if (p > 0) then
                             if ((mtn_pos(k, 3, 1) < ze_smear) .and. (mtn_pos(k, 3, 1) >= zb_smear)) then
                                 nb_local = nb_local + 1
-                                bub_int_ids(j, nb_local + 1) = k
+                                if (nb_local <= max_bub_int) then
+                                    bub_int_ids(j, nb_local + 1) = k
+                                end if
+                                safeStop = max(safeStop, 1._wp*nb_local)
                             end if
                         else
                             nb_local = nb_local + 1
@@ -856,6 +864,17 @@ contains
             ! end if
 
         end do
+
+        if (num_procs > 1) then
+            call s_mpi_allreduce_max(safeStop, tmp_val)
+            safeStop = tmp_val
+        end if
+
+        if (safeStop > max_bub_int) then
+            if (proc_rank==0) print*, 'Maximum number of interacting bubbles is:', safeStop
+            call s_mpi_abort('Failed getting interacting bubbles.')
+        end if
+
 
         !$acc update host(bub_int_ids)
 
