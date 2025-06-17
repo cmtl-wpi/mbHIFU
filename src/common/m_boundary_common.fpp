@@ -1173,7 +1173,7 @@ contains
                         ! Pressure : Customized planar wave
                         q_prim_vf(momxe + 1)%sf(-j, k, l) = f_interpolate_customized_acoustic_bc(timeNow)
                         q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
-                        if (j == 1 .and. k == 0 .and. l == 0) print*, timeNow, q_prim_vf(momxe + 1)%sf(-j, k, l)
+                        !if (j == 1 .and. k == 0 .and. l == 0) print*, timeNow, q_prim_vf(momxe + 1)%sf(-j, k, l)
                     end if
                 end do
             end if
@@ -1272,7 +1272,7 @@ contains
 
         inquire (file='input/pressureProfile.txt', exist=file_exist)
 
-        print*, 'Customized acoustic planar wave activated:'
+        print*, 'Customized acoustic planar wave activated:', proc_rank
 
         if (file_exist) then
             open (94, file='input/pressureProfile.txt', form='formatted', iostat=ios)
