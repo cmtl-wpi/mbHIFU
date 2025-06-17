@@ -1305,8 +1305,7 @@ contains
         ! Linear search for t in [time(i), time(i+1)]
         do i = 1, in_bc_samples - 1
             if (timeNow >= in_bc_time(i) .and. timeNow <= in_bc_time(i+1)) then
-                f_interpolate_customized_acoustic_bc = &
-                    f_interpolate_customized_acoustic_bc + (&
+                f_interpolate_customized_acoustic_bc = (&
                     in_bc_pressure(i) + (in_bc_pressure(i+1) - in_bc_pressure(i)) * &
                     (timeNow - in_bc_time(i)) / (in_bc_time(i+1) - in_bc_time(i)))
                 return
