@@ -721,7 +721,7 @@ contains
                         varB = 0._wp
                         varC = 0._wp
 
-                        mtd_idx = 1
+                        mtd_idx = 2
                         call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
                         call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
                         call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
