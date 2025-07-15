@@ -502,7 +502,7 @@ contains
 
         logical :: axialCondition, radialCondition, condition
         real(wp) :: shearVisc, bulkVisc, absCoef
-        real(wp) :: varA, varB
+        real(wp) :: varA, varB, varC
         real(wp) :: duxdx, duxdr, durdx, durdr, ep11, ep22, ep33, ep12, ep13, ep23
         real(wp), dimension(3) :: duxdn, duydn, duzdn
         real(wp) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac, intensity_ac_prms
@@ -729,7 +729,7 @@ contains
                             durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
                         
                         else if (.not. cyl_coord .and. p > 0) then
-                            mtd_idx = 2
+                            mtd_idx = 1
                             call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
                             call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
                             call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
@@ -789,11 +789,16 @@ contains
                             ep12 = 0.5_wp*(duxdn(2) + duydn(1))
                             ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
                             ep23 = 0.5_wp*(duydn(3) + duzdn(2))
-                            varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                            varB = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
-                            varB = varB + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                            intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
+                            !varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                            !varB = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
+                            !varB = varB + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                            !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
+                             varA = ep11 + ep22 + ep33
+                             varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                             varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
+                             varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                             intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
                         end if
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &

@@ -54,7 +54,8 @@ contains
             cfl_dt = .false.
             t_step_start = hifu_params%t_step_save_stg3
             t_step_save = hifu_params%t_step_save_stg3
-            t_step_stop = hifu_params%t_step_stop_stg3 - 1
+            !t_step_stop = hifu_params%t_step_stop_stg3 - 1
+            t_step_stop = hifu_params%t_step_save_stg3
 
             if (hifu_params%stg3_3d) then
 
