@@ -567,11 +567,9 @@ contains
                         durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
 
                         !>> Get pressure, density and speed of sound
-                        !$acc loop seq
                         do i = 1, contxe
-                            myalpha_rho(i) = q_prim_vf(advxb + i - 1)%sf(j, k, l)* &
-                                            q_prim_vf(i)%sf(j, k, l)
-                            myalpha(i) = q_prim_vf(advxb + i - 1)%sf(j, k, l)
+                            myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
+                            myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
                         end do
 
                         call s_convert_species_to_mixture_variables_acc(rho_h, gamma_h, pi_inf_h, qv_h, myalpha, &
@@ -650,6 +648,10 @@ contains
                         radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
+                            print*, cson_h, pres_h, rho_h
+                            print*, absCoef, shearVisc, bulkVisc
+                            print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                            print*, 'visc terms focus', varA, varB
                             focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
                             focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l))
                         end if
@@ -839,9 +841,10 @@ contains
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
                             ! print*, j, k, l, sys_size, hdid, dt, proc_rank
-                            ! print*, cson_h, pres_h, rho_h
-                            ! print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
-                            print*, 'visc terms focus', bulkVisc*varB, 2._wp*shearVisc*varC
+                            print*, cson_h, pres_h, rho_h
+                            print*, absCoef, shearVisc, bulkVisc
+                            print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                            print*, 'visc terms focus', varB, varC
                             ! print*, 'strain', ep11, ep22, ep33, ep13, ep12, ep23
                             ! print*, 'prim', q_prim_vf(1)%sf(j, k, l), q_prim_vf(2)%sf(j, k, l), q_prim_vf(3)%sf(j, k, l), q_prim_vf(4)%sf(j, k, l), q_prim_vf(5)%sf(j, k, l), q_prim_vf(6)%sf(j, k, l), q_prim_vf(7)%sf(j, k, l), q_prim_vf(8)%sf(j, k, l)
                             ! print*, 'cons', q_cons_vf(1)%sf(j, k, l), q_cons_vf(2)%sf(j, k, l), q_cons_vf(3)%sf(j, k, l), q_cons_vf(4)%sf(j, k, l), q_cons_vf(5)%sf(j, k, l), q_cons_vf(6)%sf(j, k, l), q_cons_vf(7)%sf(j, k, l), q_cons_vf(8)%sf(j, k, l)
