@@ -814,8 +814,8 @@ contains
                             !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
                              varA = ep11 + ep22 + ep33
-                             varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                             !varB = varA**2._wp
+                             !varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                             varB = varA**2._wp
                              varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
                              varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
                              intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
@@ -860,6 +860,7 @@ contains
                             print*, j, k, l, sys_size, hdid, dt
                             print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
                             print*, 'visc terms', bulkVisc*varB, 2._wp*shearVisc*varC
+                            print*, 'strain', ep11, ep22, ep33, ep13, ep12, ep23
                             print*, 'prim', q_prim_vf(1)%sf(j, k, l), q_prim_vf(2)%sf(j, k, l), q_prim_vf(3)%sf(j, k, l), q_prim_vf(4)%sf(j, k, l), q_prim_vf(5)%sf(j, k, l), q_prim_vf(6)%sf(j, k, l), q_prim_vf(7)%sf(j, k, l), q_prim_vf(8)%sf(j, k, l)
                             print*, 'cons', q_cons_vf(1)%sf(j, k, l), q_cons_vf(2)%sf(j, k, l), q_cons_vf(3)%sf(j, k, l), q_cons_vf(4)%sf(j, k, l), q_cons_vf(5)%sf(j, k, l), q_cons_vf(6)%sf(j, k, l), q_cons_vf(7)%sf(j, k, l), q_cons_vf(8)%sf(j, k, l)
                             focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
