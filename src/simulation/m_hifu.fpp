@@ -721,23 +721,23 @@ contains
                         varB = 0._wp
                         varC = 0._wp
 
-                        ! mtd_idx = 1
-                        ! call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
-                        ! call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
-                        ! call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
+                        mtd_idx = 1
+                        call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
+                        call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
+                        call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
 
                         !> First order centered difference approximation
-                        duxdn(1) = (q_prim_vf(contxe + 1)%sf(j + 1, k, l) - q_prim_vf(contxe + 1)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                        duxdn(2) = (q_prim_vf(contxe + 1)%sf(j, k + 1, l) - q_prim_vf(contxe + 1)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                        duxdn(3) = (q_prim_vf(contxe + 1)%sf(j, k, l + 1) - q_prim_vf(contxe + 1)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+                        ! duxdn(1) = (q_prim_vf(contxe + 1)%sf(j + 1, k, l) - q_prim_vf(contxe + 1)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                        ! duxdn(2) = (q_prim_vf(contxe + 1)%sf(j, k + 1, l) - q_prim_vf(contxe + 1)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                        ! duxdn(3) = (q_prim_vf(contxe + 1)%sf(j, k, l + 1) - q_prim_vf(contxe + 1)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
 
-                        duydn(1) = (q_prim_vf(contxe + 2)%sf(j + 1, k, l) - q_prim_vf(contxe + 2)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                        duydn(2) = (q_prim_vf(contxe + 2)%sf(j, k + 1, l) - q_prim_vf(contxe + 2)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                        duydn(3) = (q_prim_vf(contxe + 2)%sf(j, k, l + 1) - q_prim_vf(contxe + 2)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+                        ! duydn(1) = (q_prim_vf(contxe + 2)%sf(j + 1, k, l) - q_prim_vf(contxe + 2)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                        ! duydn(2) = (q_prim_vf(contxe + 2)%sf(j, k + 1, l) - q_prim_vf(contxe + 2)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                        ! duydn(3) = (q_prim_vf(contxe + 2)%sf(j, k, l + 1) - q_prim_vf(contxe + 2)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
 
-                        duzdn(1) = (q_prim_vf(contxe + 3)%sf(j + 1, k, l) - q_prim_vf(contxe + 3)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                        duzdn(2) = (q_prim_vf(contxe + 3)%sf(j, k + 1, l) - q_prim_vf(contxe + 3)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                        duzdn(3) = (q_prim_vf(contxe + 3)%sf(j, k, l + 1) - q_prim_vf(contxe + 3)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+                        ! duzdn(1) = (q_prim_vf(contxe + 3)%sf(j + 1, k, l) - q_prim_vf(contxe + 3)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                        ! duzdn(2) = (q_prim_vf(contxe + 3)%sf(j, k + 1, l) - q_prim_vf(contxe + 3)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                        ! duzdn(3) = (q_prim_vf(contxe + 3)%sf(j, k, l + 1) - q_prim_vf(contxe + 3)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
 
                         !>> Get pressure, density and speed of sound
                         do i = 1, contxe
