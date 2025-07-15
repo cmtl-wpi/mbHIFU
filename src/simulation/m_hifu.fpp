@@ -729,14 +729,27 @@ contains
                             durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
                         
                         else if (.not. cyl_coord .and. p > 0) then
-                            mtd_idx = 1
-                            call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
-                            call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
-                            call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
+                            ! mtd_idx = 1
+                            ! call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
+                            ! call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
+                            ! call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
+
+                            duxdn(1) = (q_prim_vf(contxe + 1)%sf(j + 1, k, l) - q_prim_vf(contxe + 1)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                            duxdn(2) = (q_prim_vf(contxe + 1)%sf(j, k + 1, l) - q_prim_vf(contxe + 1)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                            duxdn(3) = (q_prim_vf(contxe + 1)%sf(j, k, l + 1) - q_prim_vf(contxe + 1)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+
+                            duydn(1) = (q_prim_vf(contxe + 2)%sf(j + 1, k, l) - q_prim_vf(contxe + 2)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                            duydn(2) = (q_prim_vf(contxe + 2)%sf(j, k + 1, l) - q_prim_vf(contxe + 2)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                            duydn(3) = (q_prim_vf(contxe + 2)%sf(j, k, l + 1) - q_prim_vf(contxe + 2)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+
+                            duzdn(1) = (q_prim_vf(contxe + 3)%sf(j + 1, k, l) - q_prim_vf(contxe + 3)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                            duzdn(2) = (q_prim_vf(contxe + 3)%sf(j, k + 1, l) - q_prim_vf(contxe + 3)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                            duzdn(3) = (q_prim_vf(contxe + 3)%sf(j, k, l + 1) - q_prim_vf(contxe + 3)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+
                         end if
 
                         !>> Get pressure, density and speed of sound
-                        do i = 1, num_fluids
+                        do i = 1, contxe
                             myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
                             myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
                         end do
@@ -751,7 +764,7 @@ contains
                                                 pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
                         call s_compute_speed_of_sound(pres_h, rho_h, gamma_h, pi_inf_h, &
                                                 ((gamma_h + 1._wp)*pres_h + pi_inf_h)/rho_h, myalpha, 0._wp, c_c_h, cson_h)
-
+                                     
                         !Obtaining Pmax and Pmin fields
                         q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), pres_h)
                         q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
