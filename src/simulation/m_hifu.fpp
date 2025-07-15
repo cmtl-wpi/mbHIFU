@@ -749,10 +749,16 @@ contains
                         end if
 
                         !>> Get pressure, density and speed of sound
+                        ! do i = 1, contxe
+                        !     myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
+                        !     myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
+                        ! end do
                         do i = 1, contxe
-                            myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
-                            myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
+                            myalpha_rho(i) = q_prim_vf(advxb + i - 1)%sf(j, k, l)* &
+                                            q_prim_vf(i)%sf(j, k, l)
+                            myalpha(i) = q_prim_vf(advxb + i - 1)%sf(j, k, l)
                         end do
+
                         call s_convert_species_to_mixture_variables_acc(rho_h, gamma_h, pi_inf_h, qv_h, myalpha, &
                                                                 myalpha_rho, Re_h, j, k, l)
 
@@ -808,7 +814,8 @@ contains
                             !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
                              varA = ep11 + ep22 + ep33
-                             varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                             !varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                             varB = varA**2.wp
                              varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
                              varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
                              intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
@@ -850,7 +857,7 @@ contains
                         !if (p>0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
-                            print*, j, k, l, sys_size
+                            print*, j, k, l, sys_size, hdid, dt
                             print*, 'prim', q_prim_vf(1)%sf(j, k, l), q_prim_vf(2)%sf(j, k, l), q_prim_vf(3)%sf(j, k, l), q_prim_vf(4)%sf(j, k, l), q_prim_vf(5)%sf(j, k, l), q_prim_vf(6)%sf(j, k, l), q_prim_vf(7)%sf(j, k, l), q_prim_vf(8)%sf(j, k, l)
                             print*, 'cons', q_cons_vf(1)%sf(j, k, l), q_cons_vf(2)%sf(j, k, l), q_cons_vf(3)%sf(j, k, l), q_cons_vf(4)%sf(j, k, l), q_cons_vf(5)%sf(j, k, l), q_cons_vf(6)%sf(j, k, l), q_cons_vf(7)%sf(j, k, l), q_cons_vf(8)%sf(j, k, l)
                             focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
