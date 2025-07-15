@@ -292,7 +292,7 @@ contains
                 end do
             end do
 
-            write (varname, '(A)') 'avgAcousticIntensity'
+            write (varname, '(A)') 'avgAcousPRMS'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
 
