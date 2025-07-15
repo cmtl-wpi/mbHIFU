@@ -719,34 +719,35 @@ contains
                         !>> Get the strain rate tensor (using central finite difference)
                         varA = 0._wp
                         varB = 0._wp
+                        varC = 0._wp
 
                         ! Only for axysimmetric assumption
-                        if (cyl_coord .and. p == 0) then
-                            duxdx = (q_prim_vf(contxe + 1)%sf(j + 1, k, 0) - q_prim_vf(contxe + 1)%sf(j - 1, k, 0))/(x_cc(j + 1) - x_cc(j - 1))
-                            duxdr = (q_prim_vf(contxe + 1)%sf(j, k + 1, 0) - q_prim_vf(contxe + 1)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
+                        ! if (cyl_coord .and. p == 0) then
+                        !     duxdx = (q_prim_vf(contxe + 1)%sf(j + 1, k, 0) - q_prim_vf(contxe + 1)%sf(j - 1, k, 0))/(x_cc(j + 1) - x_cc(j - 1))
+                        !     duxdr = (q_prim_vf(contxe + 1)%sf(j, k + 1, 0) - q_prim_vf(contxe + 1)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
 
-                            durdx = (q_prim_vf(contxe + 2)%sf(j + 1, k, 0) - q_prim_vf(contxe + 2)%sf(j - 1, k, 0))/(x_cc(j + 1) - x_cc(j - 1))
-                            durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
+                        !     durdx = (q_prim_vf(contxe + 2)%sf(j + 1, k, 0) - q_prim_vf(contxe + 2)%sf(j - 1, k, 0))/(x_cc(j + 1) - x_cc(j - 1))
+                        !     durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
                         
-                        else if (.not. cyl_coord .and. p > 0) then
+                        ! else if (.not. cyl_coord .and. p > 0) then
                             ! mtd_idx = 1
                             ! call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
                             ! call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
                             ! call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
 
-                            duxdn(1) = (q_prim_vf(contxe + 1)%sf(j + 1, k, l) - q_prim_vf(contxe + 1)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                            duxdn(2) = (q_prim_vf(contxe + 1)%sf(j, k + 1, l) - q_prim_vf(contxe + 1)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                            duxdn(3) = (q_prim_vf(contxe + 1)%sf(j, k, l + 1) - q_prim_vf(contxe + 1)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+                        duxdn(1) = (q_prim_vf(contxe + 1)%sf(j + 1, k, l) - q_prim_vf(contxe + 1)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                        duxdn(2) = (q_prim_vf(contxe + 1)%sf(j, k + 1, l) - q_prim_vf(contxe + 1)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                        duxdn(3) = (q_prim_vf(contxe + 1)%sf(j, k, l + 1) - q_prim_vf(contxe + 1)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
 
-                            duydn(1) = (q_prim_vf(contxe + 2)%sf(j + 1, k, l) - q_prim_vf(contxe + 2)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                            duydn(2) = (q_prim_vf(contxe + 2)%sf(j, k + 1, l) - q_prim_vf(contxe + 2)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                            duydn(3) = (q_prim_vf(contxe + 2)%sf(j, k, l + 1) - q_prim_vf(contxe + 2)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+                        duydn(1) = (q_prim_vf(contxe + 2)%sf(j + 1, k, l) - q_prim_vf(contxe + 2)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                        duydn(2) = (q_prim_vf(contxe + 2)%sf(j, k + 1, l) - q_prim_vf(contxe + 2)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                        duydn(3) = (q_prim_vf(contxe + 2)%sf(j, k, l + 1) - q_prim_vf(contxe + 2)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
 
-                            duzdn(1) = (q_prim_vf(contxe + 3)%sf(j + 1, k, l) - q_prim_vf(contxe + 3)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                            duzdn(2) = (q_prim_vf(contxe + 3)%sf(j, k + 1, l) - q_prim_vf(contxe + 3)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                            duzdn(3) = (q_prim_vf(contxe + 3)%sf(j, k, l + 1) - q_prim_vf(contxe + 3)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
+                        duzdn(1) = (q_prim_vf(contxe + 3)%sf(j + 1, k, l) - q_prim_vf(contxe + 3)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
+                        duzdn(2) = (q_prim_vf(contxe + 3)%sf(j, k + 1, l) - q_prim_vf(contxe + 3)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
+                        duzdn(3) = (q_prim_vf(contxe + 3)%sf(j, k, l + 1) - q_prim_vf(contxe + 3)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
 
-                        end if
+                        ! end if
 
                         !>> Get pressure, density and speed of sound
                         ! do i = 1, contxe
@@ -792,34 +793,35 @@ contains
                         ! Shear stress method
                         ! Intensity is "q_us_ac"
                         intensity_ac = 0._wp
-                        if (cyl_coord .and. p == 0) then !Axisymmetric
-                            ep11 = durdr
-                            ep22 = vel_h(2)/y_cc(k)
-                            ep33 = duxdx
-                            ep13 = 0.5_wp*(durdx + duxdr)
-                            varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                            varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
-                            intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
+                        ! if (cyl_coord .and. p == 0) then !Axisymmetric
+                        !     ep11 = durdr
+                        !     ep22 = vel_h(2)/y_cc(k)
+                        !     ep33 = duxdx
+                        !     ep13 = 0.5_wp*(durdx + duxdr)
+                        !     varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                        !     varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
+                        !     intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
-                        else if (.not. cyl_coord .and. p > 0) then !Cartesian 3D
-                            ep11 = duxdn(1)
-                            ep22 = duydn(2)
-                            ep33 = duzdn(3)
-                            ep12 = 0.5_wp*(duxdn(2) + duydn(1))
-                            ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
-                            ep23 = 0.5_wp*(duydn(3) + duzdn(2))
-                            !varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                            !varB = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
-                            !varB = varB + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                            !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
+                        ! else if (.not. cyl_coord .and. p > 0) then !Cartesian 3D
+                        ep11 = duxdn(1)
+                        ep22 = duydn(2)
+                        ep33 = duzdn(3)
+                        ep12 = 0.5_wp*(duxdn(2) + duydn(1))
+                        ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
+                        ep23 = 0.5_wp*(duydn(3) + duzdn(2))
+                        !varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                        !varB = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
+                        !varB = varB + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
-                             varA = ep11 + ep22 + ep33
-                             !varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                             varB = varA**2._wp
-                             varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
-                             varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                             intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
-                        end if
+                        varA = ep11 + ep22 + ep33
+                        !varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                        varB = varA**2._wp
+                        varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
+                        varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
+                        intensity_ac = 2._wp * intensity_ac
+                        ! end if
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
