@@ -788,21 +788,18 @@ contains
                         !varB = varB + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
                         !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
-                        ! varA = ep11 + ep22 + ep33
-                        ! !varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                        ! varB = varA**2._wp
-                        ! varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
-                        ! varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                        ! intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
-                        ! intensity_ac = 2._wp * intensity_ac
-                        
                         varA = ep11 + ep22 + ep33
-                        ! varB = (8._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp)
-                        ! varB = varB - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33)
-                        ! varB = varB + 6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                        varB = 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp) + (ep11**2._wp + ep22**2._wp + ep33**2._wp)
-                        varB = varB - (1._wp/3._wp)*(varA**2._wp)
-                        intensity_ac = intensity_ac + bulkVisc*(varA**2._wp) + 2._wp*shearVisc*varB
+                        !varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                        varB = varA**2._wp
+                        varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
+                        varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
+                        intensity_ac = 2._wp * intensity_ac
+                        
+                        ! varA = ep11 + ep22 + ep33
+                        ! varB = 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp) + (ep11**2._wp + ep22**2._wp + ep33**2._wp)
+                        ! varB = varB - (1._wp/3._wp)*(varA**2._wp)
+                        ! intensity_ac = intensity_ac + bulkVisc*(varA**2._wp) + 2._wp*shearVisc*varB
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
