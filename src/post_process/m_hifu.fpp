@@ -39,7 +39,7 @@ contains
         else if (hifu_params%stg2) then
             if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 2 -> Post_process'
             if (cfl_dt) then
-                !n_start = int(hifu_params%t_stop_stg1/t_save)
+                if (n_start == 0) n_start = int(hifu_params%t_stop_stg1/t_save)
                 t_stop = hifu_params%t_stop_stg2
             else
                 if (mod(hifu_params%t_step_stop_stg1, t_step_save) == 0) then
