@@ -855,7 +855,7 @@ contains
                             print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
                             print*, 'visc terms', bulkVisc*varB, 2._wp*shearVisc*varC
                             print*, 'strain', ep11, ep22, ep33, ep13, ep12, ep23
-                            call s_mpi_abort('Debug sampler 3D')
+                            !call s_mpi_abort('Debug sampler 3D')
                         end if
 
                         !Intensity summation through the domain
