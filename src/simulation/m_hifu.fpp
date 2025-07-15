@@ -814,8 +814,8 @@ contains
                             !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
                              varA = ep11 + ep22 + ep33
-                             !varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                             varB = varA**2._wp
+                             varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                             !varB = varA**2._wp
                              varC = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
                              varC = varC + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
                              intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
