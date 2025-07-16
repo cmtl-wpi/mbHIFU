@@ -614,8 +614,8 @@ contains
                         !varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
                         varB = (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + &
                                                                                                             2._wp*(ep13**2._wp)
-                        !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB !intensity is "q_us_ac"
-                        intensity_ac = intensity_ac + bulkVisc*(ep11 + ep22 + ep33)**2._wp + 2._wp*shearVisc*varB !intensity is "q_us_ac"
+                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB !intensity is "q_us_ac"
+                        !intensity_ac = intensity_ac + bulkVisc*(ep11 + ep22 + ep33)**2._wp + 2._wp*shearVisc*varB !intensity is "q_us_ac"
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
