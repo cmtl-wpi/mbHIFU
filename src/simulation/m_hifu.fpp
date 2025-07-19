@@ -582,7 +582,7 @@ contains
 
                         call s_compute_pressure(q_cons_vf(E_idx)%sf(j, k, l), 0._wp, 0.5_wp*rho_h*dot_product(vel_h, vel_h), &
                                                                         pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
-
+        
                         call s_compute_speed_of_sound(pres_h, rho_h, gamma_h, pi_inf_h, &
                                                       ((gamma_h + 1._wp)*pres_h + pi_inf_h)/rho_h, myalpha, 0._wp, c_c_h, cson_h)
                         
@@ -595,8 +595,10 @@ contains
                         ! PRMS method (calculate only during the last time step in stage2 -> need developed Pmax field)
                         intensity_ac_prms = 0._wp
                         if (cfl_dt) then
-                            if (mytime >= t_stop) then
+                            if (mytime >= t_stop - dt*0.5) then
                                 intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                            !else
+                            !    if (proc_rank==0 .and. j==0 .and. k==0) print*, 'no calculated', mytime
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
@@ -611,9 +613,9 @@ contains
                         ep33 = duxdx
                         ep13 = 0.5_wp*(durdx + duxdr)
                         varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                        !varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
-                        varB = (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + &
-                                                                                                            2._wp*(ep13**2._wp)
+                        varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
+                        !varB = (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + &
+                        !                                                                                    2._wp*(ep13**2._wp)
                         intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB !intensity is "q_us_ac"
                         !intensity_ac = intensity_ac + bulkVisc*(ep11 + ep22 + ep33)**2._wp + 2._wp*shearVisc*varB !intensity is "q_us_ac"
 
@@ -796,9 +798,11 @@ contains
 
                         varA = ep11 + ep22 + ep33
                         varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                        varC = (8._wp/3._wp)*varB - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
+                                                           6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
                         !varB = varA**2._wp
-                        varC = (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + &
-                                                                                2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        !varC = (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + &
+                        !                                                        2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
                         intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
                         !intensity_ac = 2._wp * intensity_ac
                         
