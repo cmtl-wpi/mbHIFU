@@ -502,7 +502,7 @@ contains
 
         logical :: axialCondition, radialCondition, condition
         real(wp) :: shearVisc, bulkVisc, absCoef
-        real(wp) :: varA, varB, varC
+        real(wp) :: varA, varB
         real(wp) :: duxdx, duxdr, durdx, durdr, ep11, ep22, ep33, ep12, ep13, ep23
         real(wp), dimension(3) :: duxdn, duydn, duzdn
         real(wp) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac, intensity_ac_prms
@@ -547,6 +547,7 @@ contains
                             bulkVisc = bulkVisc + q_prim_vf(E_idx + i)%sf(j, k, l) * bulk_viscous_fluids(i)
                             absCoef = absCoef + q_prim_vf(E_idx + i)%sf(j, k, l) * abs_coef_fluids(i)
                         end do
+
                         shearVisc = 1._wp/shearVisc
                         bulkVisc = 1._wp/bulkVisc
 
@@ -567,6 +568,7 @@ contains
                         durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
 
                         !>> Get pressure, density and speed of sound
+                        !$acc loop seq
                         do i = 1, contxe
                             myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
                             myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
@@ -597,8 +599,6 @@ contains
                         if (cfl_dt) then
                             if (mytime >= t_stop - dt*0.5) then
                                 intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
-                            !else
-                            !    if (proc_rank==0 .and. j==0 .and. k==0) print*, 'no calculated', mytime
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
@@ -614,10 +614,7 @@ contains
                         ep13 = 0.5_wp*(durdx + duxdr)
                         varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
                         varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
-                        !varB = (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + &
-                        !                                                                                    2._wp*(ep13**2._wp)
                         intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB !intensity is "q_us_ac"
-                        !intensity_ac = intensity_ac + bulkVisc*(ep11 + ep22 + ep33)**2._wp + 2._wp*shearVisc*varB !intensity is "q_us_ac"
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
@@ -653,10 +650,6 @@ contains
                         radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
-                            print*, cson_h, pres_h, rho_h
-                            print*, absCoef, shearVisc, bulkVisc
-                            print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
-                            print*, 'visc terms focus', varA, varB
                             focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
                             focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l))
                         end if
@@ -726,27 +719,14 @@ contains
                         !>> Get the strain rate tensor (using central finite difference)
                         varA = 0._wp
                         varB = 0._wp
-                        varC = 0._wp
 
-                        mtd_idx = 1
+                        mtd_idx = 2
                         call s_space_derivative(q_prim_vf(contxe + 1), j, k, l, duxdn, mtd_idx)
                         call s_space_derivative(q_prim_vf(contxe + 2), j, k, l, duydn, mtd_idx)
                         call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
 
-                        !> First order centered difference approximation
-                        ! duxdn(1) = (q_prim_vf(contxe + 1)%sf(j + 1, k, l) - q_prim_vf(contxe + 1)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                        ! duxdn(2) = (q_prim_vf(contxe + 1)%sf(j, k + 1, l) - q_prim_vf(contxe + 1)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                        ! duxdn(3) = (q_prim_vf(contxe + 1)%sf(j, k, l + 1) - q_prim_vf(contxe + 1)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
-
-                        ! duydn(1) = (q_prim_vf(contxe + 2)%sf(j + 1, k, l) - q_prim_vf(contxe + 2)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                        ! duydn(2) = (q_prim_vf(contxe + 2)%sf(j, k + 1, l) - q_prim_vf(contxe + 2)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                        ! duydn(3) = (q_prim_vf(contxe + 2)%sf(j, k, l + 1) - q_prim_vf(contxe + 2)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
-
-                        ! duzdn(1) = (q_prim_vf(contxe + 3)%sf(j + 1, k, l) - q_prim_vf(contxe + 3)%sf(j - 1, k, l))/ (x_cc(j + 1) - x_cc(j - 1))
-                        ! duzdn(2) = (q_prim_vf(contxe + 3)%sf(j, k + 1, l) - q_prim_vf(contxe + 3)%sf(j, k - 1, l))/ (y_cc(k + 1) - y_cc(k - 1))
-                        ! duzdn(3) = (q_prim_vf(contxe + 3)%sf(j, k, l + 1) - q_prim_vf(contxe + 3)%sf(j, k, l - 1))/ (z_cc(l + 1) - z_cc(l - 1))
-
                         !>> Get pressure, density and speed of sound
+                        !$acc loop seq
                         do i = 1, contxe
                             myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
                             myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
@@ -782,8 +762,7 @@ contains
                             end if
                         end if
 
-                        ! Shear stress method
-                        ! Intensity is "q_us_ac"
+                        ! Shear stress method: Intensity is "q_us_ac"
                         intensity_ac = 0._wp
                         ep11 = duxdn(1)
                         ep22 = duydn(2)
@@ -791,25 +770,12 @@ contains
                         ep12 = 0.5_wp*(duxdn(2) + duydn(1))
                         ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
                         ep23 = 0.5_wp*(duydn(3) + duzdn(2))
-                        !varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                        !varB = (ep11 - varA/3._wp)**2._wp + (ep22 - varA/3._wp)**2._wp + (ep33 - varA/3._wp)**2._wp
-                        !varB = varB + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                        !intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB 
 
-                        varA = ep11 + ep22 + ep33
-                        varB = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                        varC = (8._wp/3._wp)*varB - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
+                        varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
+                        varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
                                                            6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                        !varB = varA**2._wp
-                        !varC = (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + &
-                        !                                                        2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                        intensity_ac = intensity_ac + bulkVisc*varB + 2._wp*shearVisc*varC
-                        !intensity_ac = 2._wp * intensity_ac
-                        
-                        ! varA = ep11 + ep22 + ep33
-                        ! varB = 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp) + (ep11**2._wp + ep22**2._wp + ep33**2._wp)
-                        ! varB = varB - (1._wp/3._wp)*(varA**2._wp)
-                        ! intensity_ac = intensity_ac + bulkVisc*(varA**2._wp) + 2._wp*shearVisc*varB
+
+                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
@@ -847,25 +813,8 @@ contains
                         !if (p>0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
                         condition = (axialCondition .and. radialCondition)
                         if (condition) then
-                            ! print*, j, k, l, sys_size, hdid, dt, proc_rank
-                            print*, cson_h, pres_h, rho_h
-                            print*, absCoef, shearVisc, bulkVisc
-                            print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
-                            print*, 'visc terms focus', varB, varC, (2._wp/3._wp)*(ep11**2._wp + ep22**2._wp + ep33**2._wp - ep11*ep22 - ep11*ep33 - ep22*ep33) + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
-                            ! print*, 'strain', ep11, ep22, ep33, ep13, ep12, ep23
-                            ! print*, 'prim', q_prim_vf(1)%sf(j, k, l), q_prim_vf(2)%sf(j, k, l), q_prim_vf(3)%sf(j, k, l), q_prim_vf(4)%sf(j, k, l), q_prim_vf(5)%sf(j, k, l), q_prim_vf(6)%sf(j, k, l), q_prim_vf(7)%sf(j, k, l), q_prim_vf(8)%sf(j, k, l)
-                            ! print*, 'cons', q_cons_vf(1)%sf(j, k, l), q_cons_vf(2)%sf(j, k, l), q_cons_vf(3)%sf(j, k, l), q_cons_vf(4)%sf(j, k, l), q_cons_vf(5)%sf(j, k, l), q_cons_vf(6)%sf(j, k, l), q_cons_vf(7)%sf(j, k, l), q_cons_vf(8)%sf(j, k, l)
                             focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
                             focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l))
-                        end if
-
-                        if (proc_rank==96 .and. j==5 .and. k==5 .and. l==5) then
-                            ! print*, j, k, l, sys_size, hdid, dt, proc_rank
-                            ! print*, cson_h, pres_h, rho_h
-                            print*, 'q_ac', (absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h))*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l), q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
-                            print*, 'visc terms', bulkVisc*varB, 2._wp*shearVisc*varC
-                            ! print*, 'strain', ep11, ep22, ep33, ep13, ep12, ep23
-                            !call s_mpi_abort('Debug sampler 3D')
                         end if
 
                         !Intensity summation through the domain

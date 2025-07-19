@@ -591,19 +591,6 @@ contains
         call nvtxStartRange("TIMESTEP")
 
         call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg, 1)
-        
-        if (hifu_params%sampling .and. .not. adap_dt) then !HIFU sampling vars
-            !call s_convert_conservative_to_primitive_variables( &
-            !                                    q_cons_ts(1)%vf, &
-            !                                    q_T_sf, &
-            !                                    q_prim_vf, &
-            !                                    idwint, &
-                                            
-            call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, &
-                                                q_prim_vf, &
-                                                t_step, &
-                                                dt)
-        end if
 
         if (run_time_info) then
             call s_write_run_time_information(q_prim_vf, t_step)
@@ -1031,16 +1018,6 @@ contains
 
             time = time + (finish - start)
         end if
-
-!        if (hifu_params%sampling .and. .not. adap_dt) then !HIFU sampling vars
-!!            call s_convert_conservative_to_primitive_variables( &
-!                                                q_cons_ts(1)%vf, &
-!                                                q_T_sf, &
-!                                                q_prim_vf, &
-!                                                idwint, &
-!                                                gm_alpha_qp%vf)
-!
-
 
     end subroutine s_3rd_order_tvd_rk
 
