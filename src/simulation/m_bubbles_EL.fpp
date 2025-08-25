@@ -82,8 +82,9 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:) :: mrmtnt_Rrupt     !< Rupture radius (Marmotant model)
     real(wp), allocatable, dimension(:) :: bub_qvis         !< Time-averaged viscous intensity (HIFU)
     real(wp), allocatable, dimension(:) :: bub_qth          !< Time-averaged thermal intensity (HIFU)
+    real(wp), allocatable, dimension(:) :: bub_hifu_rad     !< Time-averaged radius
 
-    !$acc declare create(mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth)
+    !$acc declare create(mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad)
 
 contains
 
@@ -158,6 +159,8 @@ contains
         ! hifu
         @:ALLOCATE(bub_qvis(1:nBubs_glb))
         @:ALLOCATE(bub_qth(1:nBubs_glb))
+        @:ALLOCATE(bub_hifu_rad(1:nBubs_glb))
+        
         ! Interbubble interaction
         ! 1: emitted Pout, 2: sum of Pouts from volume of influence (self-inclusive)
         @:ALLOCATE(bub_interact(1:nBubs_glb))
@@ -292,7 +295,7 @@ contains
         !$acc update device(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
         !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
         !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt,       &
-        !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, nBubs)
+        !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, nBubs)
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
@@ -349,6 +352,7 @@ contains
         mtn_vel(bub_id, 1:3, 1) = inputBubble(4:6)
         bub_qvis(bub_id) = 0._wp
         bub_qth(bub_id) = 0._wp
+        bub_hifu_rad(bub_id) = 0._wp
         bub_interact(bub_id) = 0._wp
 
         if (cyl_coord .and. p == 0) then
@@ -554,7 +558,7 @@ contains
             !$acc update host(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
             !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
             !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt,       &
-            !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, nBubs)
+            !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, nBubs)
 
             transferShell = .true.
             call s_transfer_data_to_tmp(transferShell)
@@ -581,7 +585,7 @@ contains
         character(LEN=path_len + 2*name_len) :: file_loc
 
 #ifdef MFC_MPI
-        real(wp), dimension(26) :: inputvals
+        real(wp), dimension(27) :: inputvals
         integer, dimension(MPI_STATUS_SIZE) :: status
         integer(kind=MPI_OFFSET_KIND) :: disp
         integer :: view
@@ -592,7 +596,7 @@ contains
         integer, dimension(2) :: gsizes, lsizes, start_idx_part
         integer :: ifile, ierr, tot_data, id
         integer :: i
-        integer :: varsExtra = 6
+        integer :: varsExtra = 7
 
         write (file_loc, '(a,i0,a)') 'lag_bubbles_mpi_io_', save_count, '.dat'
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
@@ -671,6 +675,7 @@ contains
                     bub_qvis(bub_id) = inputvals(24)
                     bub_qth(bub_id) = inputvals(25)
                     intfc_ac(bub_id, 1) = inputvals(26)
+                    bub_hifu_rad(bub_id) = inputvals(27)
 
                     bub_interact(bub_id) = 0._wp
 
@@ -911,7 +916,7 @@ contains
         real(wp) :: myConc_v, myR_m, mygamma_m, myPb, myMass_n, myMass_v, myPout, myInt
         real(wp) :: myR, myV, myBeta_c, myBeta_t, myR0, myPbdot, myShell, myRbuck, myMvdot
         real(wp) :: myPinf, aux1, aux2, myCson, myRho, myRrupt, myAc
-        real(wp) :: myQth, myQvis, myRcell
+        real(wp) :: myQth, myQvis, myRcell, myRmean
         real(wp) :: gamma, pi_inf, qv
         real(wp), dimension(contxe) :: myalpha_rho, myalpha
         real(wp), dimension(2) :: Re
@@ -1025,7 +1030,7 @@ contains
                                     k, myMass_v, myMass_n, myBeta_c, &
                                     myBeta_t, myCson, myInt, myShell, myRbuck, myRrupt, myRcell, &
                                     myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myAc, & !myPhase, &
-                                    myQvis, myQth, adap_dt_stop)
+                                    myQvis, myQth, myRmean, adap_dt_stop)
 
                 ! Update bubble state
                 intfc_rad(k, 1) = myR
@@ -1037,6 +1042,7 @@ contains
                 if (hifu_params%sampling) then
                     bub_qvis(k) = bub_qvis(k) + myQvis  !> Viscous damping of the bubble (Watts)
                     bub_qth(k) = bub_qth(k) + myQth     !> Thermal damping of the bubble (Watts)
+                    bub_hifu_rad(k) = bub_hifu_rad(k) + myRmean !> Mean radius (m*sec)
                     if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage, bub_qvis(k), bub_qth(k)
                 end if
 
@@ -1816,6 +1822,9 @@ contains
             end if
             bub_qth(k) = bub_qth(k) + hdid*heatFlux_h*4._wp*pi*fR_h**2._wp
 
+            !Mean radius
+            bub_hifu_rad(k) = bub_hifu_rad(k) + hdid * fR_h
+
             ! Checking for NaNs and negative qvis
             if (bub_qvis(k) /= bub_qvis(k) .or. &
                 bub_qth(k) /= bub_qth(k) .or. &
@@ -1832,6 +1841,18 @@ contains
         if (abortFlag_max > 0) stop "NaNs in viscous (or thermal) damping of the bubbles"
 
     end subroutine s_compute_bubble_heat_sources_HIFU
+
+    subroutine s_mean_radius_hifu(t_sampled)
+
+        real(wp), intent(in) :: t_sampled
+        integer :: k
+
+        !$acc parallel loop gang vector default(present) private(k) copyin (t_sampled)
+        do k = 1, nBubs
+            bub_hifu_rad(k) = bub_hifu_rad(k) / t_sampled ! meters
+        end do
+
+    end subroutine
 
     !>  This subroutine updates the Lagrange variables using the tvd RK time steppers.
         !!      The time derivative of the bubble variables must be stored at every stage to avoid precision errors.
@@ -2389,7 +2410,7 @@ contains
         integer :: view
         integer, dimension(2) :: gsizes, lsizes, start_idx_part
         integer, dimension(num_procs) :: part_order, part_ord_mpi
-        integer :: varsExtra = 6
+        integer :: varsExtra = 7
 
         bub_id = 0._wp
         if (nBubs /= 0) then
@@ -2497,6 +2518,7 @@ contains
                     MPI_IO_DATA_lag_bubbles(i, 25) = bub_qvis(k)
                     MPI_IO_DATA_lag_bubbles(i, 26) = bub_qth(k)
                     MPI_IO_DATA_lag_bubbles(i, 27) = intfc_ac(k, 1)
+                    MPI_IO_DATA_lag_bubbles(i, 28) = bub_hifu_rad(k)
 
                     !print*, k, proc_rank, MPI_IO_DATA_lag_bubbles(i, 1:26)
 
@@ -2616,6 +2638,7 @@ contains
             mrmtnt_Rrupt(i) = mrmtnt_Rrupt(i + 1)
             bub_qvis(i) = bub_qvis(i + 1)
             bub_qth(i) = bub_qth(i + 1)
+            bub_hifu_rad(i) = bub_hifu_rad(i + 1)
         end do
 
         !$acc end kernels
@@ -2678,6 +2701,7 @@ contains
         ! hifu
         @:DEALLOCATE(bub_qvis)
         @:DEALLOCATE(bub_qth)
+        @:DEALLOCATE(bub_hifu_rad)
 
         if (.not. hifu_params%heatSolver) then
             @:DEALLOCATE(Rmax_stats)

@@ -939,7 +939,7 @@ contains
     subroutine s_initialize_from_2d_to_3d()
 
         integer :: i, j, k, l
-        real(wp) :: dz_val, z_max
+        real(wp) :: dz_val, z_max, t_sampled
 
         ! Deallocate some old vars
         do i = 1, sys_size_HIFU
@@ -1021,7 +1021,9 @@ contains
 
             !> Smear qvis and qth from the bubbles
             if (bubbles_lagrange) then 
-                call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
+                t_sampled = q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(0,0,0)
+                call s_mean_radius_hifu(t_sampled)
+                call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                                 mtn_s, mtn_posPrev, q_hifu_3d, bub_qvis, bub_qth)
             end if
 
@@ -1174,7 +1176,9 @@ contains
             !Smear qvis and qth from the bubbles
             if (bubbles_lagrange) then 
                 ! call s_acc_identify_bubble_angle_rotation()
-                call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
+                t_sampled = q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(0,0,0)
+                call s_mean_radius_hifu(t_sampled)
+                call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                                         mtn_s, mtn_pos, q_hifu_3d, bub_qvis, bub_qth)
             end if
 
@@ -1777,11 +1781,15 @@ contains
 
     subroutine s_initialize_pure_3D()
 
+        real(wp) :: t_sampled
+
         call s_print_hifu_source_stats(hifu_params%qus_idx)
 
         if (bubbles_lagrange) then
             if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
-            call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
+            t_sampled = q_hifu%vf(hifu_params%tsamp_idx)%sf(0,0,0)
+            call s_mean_radius_hifu(t_sampled)
+            call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                     mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
             call s_print_hifu_source_stats(hifu_params%qvis_idx)
             call s_print_hifu_source_stats(hifu_params%qth_idx)
