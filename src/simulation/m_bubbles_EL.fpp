@@ -292,6 +292,15 @@ contains
         end if
 
         print *, " Lagrange bubbles running, in proc", proc_rank, "number:", bub_id, "/", id
+        
+        call s_mpi_barrier()
+        if (num_procs > 1) then
+            call s_mpi_allreduce_max(safeStop, tmp_val)
+            safeStop = tmp_val
+        end if
+        if (int(safeStop) > lag_params%nBubs_glb) then
+            call s_mpi_abort('Current number of bubbles is larger than nBubs_glb.')
+        end if
 
         call s_mpi_barrier()
         if (num_procs > 1) then

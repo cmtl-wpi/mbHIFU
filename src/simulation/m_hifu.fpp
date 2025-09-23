@@ -974,6 +974,8 @@ contains
                 !$acc update device(bc_x, bc_y, bc_z)
             end if
 
+            call s_initialize_bubbles_EL_kernels
+
             !> Allocate variables
             !x
             @:ALLOCATE(x_cb_hf(-1 - buff_size:m_hf + buff_size))

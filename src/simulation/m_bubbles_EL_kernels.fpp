@@ -471,9 +471,9 @@ contains
                                     call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
                                     !func = func / sumFun !Adjusted intensity
                                     ! Relocate cells for bubbles intersecting symmetric boundaries
-                                    if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
-                                        call s_shift_cell_symmetric_bc(cellaux, cell)
-                                    end if
+                                    !if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+                                    !    call s_shift_cell_symmetric_bc(cellaux, cell)
+                                    !end if
 
                                 else
                                     func = 0._wp
@@ -634,12 +634,17 @@ contains
 
             end do
 
+            ! Populate symmetric boundaries
+            if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+                call s_populate_symmetric_bc(updatedvar)
+            end if
+
         end if
 
         ! Populate symmetric boundaries
-        if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
-            call s_populate_symmetric_bc(updatedvar)
-        end if
+        !if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+        !    call s_populate_symmetric_bc(updatedvar)
+        !end if
 
         if (proc_rank == 0) print *, 'Bubble sources smeared with Gaussian kernel: qvis & qth'
 
