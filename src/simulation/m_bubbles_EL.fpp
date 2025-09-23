@@ -240,7 +240,7 @@ contains
         integer :: id, bub_id, save_count
         integer :: i, ios
         logical :: file_exist, indomain, transferShell
-
+        real(wp) :: safeStop, tmp_val
         character(LEN=path_len + 2*name_len) :: path_D_dir !<
 
         ! Initialize number of particles
@@ -267,15 +267,16 @@ contains
                     if (ios /= 0) cycle
                     indomain = particle_in_domain(inputBubble(1:3), .false.)
                     id = id + 1
-                    if (id > lag_params%nBubs_glb .and. proc_rank == 0) then
-                        call s_mpi_abort("Current number of bubbles is larger than nBubs_glb")
-                    end if
                     if (indomain) then
                         bub_id = bub_id + 1
-                        call s_add_bubbles(inputBubble, q_cons_vf, bub_id)
-                        lag_id(bub_id, 1) = id      !global ID
-                        lag_id(bub_id, 2) = bub_id  !local ID
-                        nBubs = bub_id              ! local number of bubbles
+                        if (bub_id > lag_params%nBubs_glb) then
+                            safeStop = 1._wp*bub_id
+                        else
+                            call s_add_bubbles(inputBubble, q_cons_vf, bub_id)
+                            lag_id(bub_id, 1) = id      !global ID
+                            lag_id(bub_id, 2) = bub_id  !local ID
+                            nBubs = bub_id              ! local number of bubbles
+                        end if
                     end if
                 end do
                 close (94)
@@ -289,6 +290,15 @@ contains
         end if
 
         print *, " Lagrange bubbles running, in proc", proc_rank, "number:", bub_id, "/", id
+
+        call s_mpi_barrier()
+        if (num_procs > 1) then
+            call s_mpi_allreduce_max(safeStop, tmp_val)
+            safeStop = tmp_val
+        end if
+        if (int(safeStop) > lag_params%nBubs_glb) then
+            call s_mpi_abort('Current number of bubbles is larger than nBubs_glb.')
+        end if
 
         !$acc update device(bubbles_lagrange, lag_params)
 
