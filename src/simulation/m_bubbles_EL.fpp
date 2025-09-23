@@ -241,9 +241,9 @@ contains
         real(wp) :: qtime
         integer :: id, bub_id, save_count
         integer :: i, ios
-        logical :: file_exist, indomain, transferShell
+        logical :: file_exist, read_flag, indomain, transferShell
         real(wp) :: safeStop, tmp_val
-        character(LEN=path_len + 2*name_len) :: path_D_dir !<
+        character(LEN=path_len + 2*name_len) :: path_D_dir, file_loc !<
 
         ! Initialize number of particles
         bub_id = 0
@@ -258,7 +258,14 @@ contains
             qtime = t_step_start*dt
         end if
 
-        if (save_count == 0) then
+        ! Read input file in the middle of a pure Euler simulation
+        write (file_loc, '(a,i0,a)') 'lag_bubbles_', save_count, '.dat'
+        file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+        inquire (file=trim(file_loc), exist=file_exist)
+        read_flag = .true.
+        if (file_exist) read_flag = .false.
+
+        if (read_flag) then
             if (proc_rank == 0) print *, 'Reading lagrange bubbles input file.'
             call s_mpi_barrier()
             inquire (file='input/lag_bubbles.dat', exist=file_exist)
@@ -323,7 +330,7 @@ contains
         call s_start_bubble_interaction
         call s_smear_voidfraction()
 
-        if (save_count == 0) then
+        if (read_flag) then
             ! Create ./D directory
             write (path_D_dir, '(A,I0,A,I0)') trim(case_dir)//'/D'
             call my_inquire(path_D_dir, file_exist)
