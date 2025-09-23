@@ -52,8 +52,8 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:, :) :: intfc_dveldt   !< Time derivative of bubble's interface velocity
     real(wp), allocatable, dimension(:, :) :: gas_dpdt       !< Time derivative of gas pressure
     real(wp), allocatable, dimension(:, :) :: gas_dmvdt      !< Time derivative of the vapor mass in the bubble
-    real(wp), allocatable, dimension(:, :, :) :: mtn_dposdt  !< Time derivative of the bubble's position
-    real(wp), allocatable, dimension(:, :, :) :: mtn_dveldt  !< Time derivative of the bubble's velocity
+    ! real(wp), allocatable, dimension(:, :, :) :: mtn_dposdt  !< Time derivative of the bubble's position
+    ! real(wp), allocatable, dimension(:, :, :) :: mtn_dveldt  !< Time derivative of the bubble's velocity
 
     real(wp), allocatable, dimension(:) :: bub_interact        !< Scattered pressure from each bubble
     real(wp), allocatable, dimension(:, :) :: bub_int_ids     !< Ids of the neighboring bubbles for pout interaction
@@ -150,8 +150,8 @@ contains
         @:ALLOCATE(intfc_dveldt(1:nBubs_glb, 1:lag_num_ts))
         @:ALLOCATE(gas_dpdt(1:nBubs_glb, 1:lag_num_ts))
         @:ALLOCATE(gas_dmvdt(1:nBubs_glb, 1:lag_num_ts))
-        @:ALLOCATE(mtn_dposdt(1:nBubs_glb, 1:3, 1:lag_num_ts))
-        @:ALLOCATE(mtn_dveldt(1:nBubs_glb, 1:3, 1:lag_num_ts))
+        ! @:ALLOCATE(mtn_dposdt(1:nBubs_glb, 1:3, 1:lag_num_ts))
+        ! @:ALLOCATE(mtn_dveldt(1:nBubs_glb, 1:3, 1:lag_num_ts))
         ! Marmotant model
         @:ALLOCATE(mrmtnt_shell(1:nBubs_glb, 1:2))
         @:ALLOCATE(mrmtnt_Rbuck(1:nBubs_glb))
@@ -306,8 +306,10 @@ contains
 
         !$acc update device(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
         !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
-        !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt,       &
+        !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt,       &
         !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, nBubs)
+
+        !!!!!$acc update device(mtn_dposdt, mtn_dveldt)
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
@@ -569,7 +571,7 @@ contains
 
             !$acc update host(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
             !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
-            !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt,       &
+            !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt,       &
             !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, nBubs)
 
             transferShell = .true.
@@ -1071,11 +1073,11 @@ contains
                 mrmtnt_shell(k, 2) = myShell
 
                 ! Bubble translation
-                !$acc loop seq
-                do l = 1, 3
-                    mtn_dposdt(k, l, stage) = 0._wp
-                    mtn_dveldt(k, l, stage) = 0._wp
-                end do
+                ! !$acc loop seq
+                ! do l = 1, 3
+                !     mtn_dposdt(k, l, stage) = 0._wp
+                !     mtn_dveldt(k, l, stage) = 0._wp
+                ! end do
 
             end if
 
@@ -1884,8 +1886,8 @@ contains
                 !u{1} = u{n} +  dt * RHS{n}
                 intfc_rad(k, 1) = intfc_rad(k, 1) + dt*intfc_draddt(k, 1)
                 intfc_vel(k, 1) = intfc_vel(k, 1) + dt*intfc_dveldt(k, 1)
-                mtn_pos(k, 1:3, 1) = mtn_pos(k, 1:3, 1) + dt*mtn_dposdt(k, 1:3, 1)
-                mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
+                ! mtn_pos(k, 1:3, 1) = mtn_pos(k, 1:3, 1) + dt*mtn_dposdt(k, 1:3, 1)
+                ! mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
                 gas_p(k, 1) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                 gas_mv(k, 1) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
                 mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
@@ -1907,8 +1909,8 @@ contains
                     !u{1} = u{n} +  dt * RHS{n}
                     intfc_rad(k, 2) = intfc_rad(k, 1) + dt*intfc_draddt(k, 1)
                     intfc_vel(k, 2) = intfc_vel(k, 1) + dt*intfc_dveldt(k, 1)
-                    mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 1) + dt*mtn_dposdt(k, 1:3, 1)
-                    mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
+                    ! mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 1) + dt*mtn_dposdt(k, 1:3, 1)
+                    ! mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
                     gas_p(k, 2) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
                 end do
@@ -1919,8 +1921,8 @@ contains
                     !u{1} = u{n} + (1/2) * dt * (RHS{n} + RHS{1})
                     intfc_rad(k, 1) = intfc_rad(k, 1) + dt*(intfc_draddt(k, 1) + intfc_draddt(k, 2))/2._wp
                     intfc_vel(k, 1) = intfc_vel(k, 1) + dt*(intfc_dveldt(k, 1) + intfc_dveldt(k, 2))/2._wp
-                    mtn_pos(k, 1:3, 1) = mtn_pos(k, 1:3, 1) + dt*(mtn_dposdt(k, 1:3, 1) + mtn_dposdt(k, 1:3, 2))/2._wp
-                    mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + dt*(mtn_dveldt(k, 1:3, 1) + mtn_dveldt(k, 1:3, 2))/2._wp
+                    ! mtn_pos(k, 1:3, 1) = mtn_pos(k, 1:3, 1) + dt*(mtn_dposdt(k, 1:3, 1) + mtn_dposdt(k, 1:3, 2))/2._wp
+                    ! mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + dt*(mtn_dveldt(k, 1:3, 1) + mtn_dveldt(k, 1:3, 2))/2._wp
                     gas_p(k, 1) = gas_p(k, 1) + dt*(gas_dpdt(k, 1) + gas_dpdt(k, 2))/2._wp
                     gas_mv(k, 1) = gas_mv(k, 1) + dt*(gas_dmvdt(k, 1) + gas_dmvdt(k, 2))/2._wp
                     if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) == 0._wp)) then
@@ -1947,8 +1949,8 @@ contains
                     !u{1} = u{n} +  dt * RHS{n}
                     intfc_rad(k, 2) = intfc_rad(k, 1) + dt*intfc_draddt(k, 1)
                     intfc_vel(k, 2) = intfc_vel(k, 1) + dt*intfc_dveldt(k, 1)
-                    mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 1) + dt*mtn_dposdt(k, 1:3, 1)
-                    mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
+                    ! mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 1) + dt*mtn_dposdt(k, 1:3, 1)
+                    ! mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*mtn_dveldt(k, 1:3, 1)
                     gas_p(k, 2) = gas_p(k, 1) + dt*gas_dpdt(k, 1)
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
                 end do
@@ -1959,8 +1961,8 @@ contains
                     !u{2} = u{n} + (1/4) * dt * [RHS{n} + RHS{1}]
                     intfc_rad(k, 2) = intfc_rad(k, 1) + dt*(intfc_draddt(k, 1) + intfc_draddt(k, 2))/4._wp
                     intfc_vel(k, 2) = intfc_vel(k, 1) + dt*(intfc_dveldt(k, 1) + intfc_dveldt(k, 2))/4._wp
-                    mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 1) + dt*(mtn_dposdt(k, 1:3, 1) + mtn_dposdt(k, 1:3, 2))/4._wp
-                    mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*(mtn_dveldt(k, 1:3, 1) + mtn_dveldt(k, 1:3, 2))/4._wp
+                    ! mtn_pos(k, 1:3, 2) = mtn_pos(k, 1:3, 1) + dt*(mtn_dposdt(k, 1:3, 1) + mtn_dposdt(k, 1:3, 2))/4._wp
+                    ! mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1) + dt*(mtn_dveldt(k, 1:3, 1) + mtn_dveldt(k, 1:3, 2))/4._wp
                     gas_p(k, 2) = gas_p(k, 1) + dt*(gas_dpdt(k, 1) + gas_dpdt(k, 2))/4._wp
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*(gas_dmvdt(k, 1) + gas_dmvdt(k, 2))/4._wp
                 end do
@@ -1970,8 +1972,8 @@ contains
                     !u{n+1} = u{n} + (2/3) * dt * [(1/4)* RHS{n} + (1/4)* RHS{1} + RHS{2}]
                     intfc_rad(k, 1) = intfc_rad(k, 1) + (2._wp/3._wp)*dt*(intfc_draddt(k, 1)/4._wp + intfc_draddt(k, 2)/4._wp + intfc_draddt(k, 3))
                     intfc_vel(k, 1) = intfc_vel(k, 1) + (2._wp/3._wp)*dt*(intfc_dveldt(k, 1)/4._wp + intfc_dveldt(k, 2)/4._wp + intfc_dveldt(k, 3))
-                    mtn_pos(k, 1:3, 1) = mtn_pos(k, 1:3, 1) + (2._wp/3._wp)*dt*(mtn_dposdt(k, 1:3, 1)/4._wp + mtn_dposdt(k, 1:3, 2)/4._wp + mtn_dposdt(k, 1:3, 3))
-                    mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + (2._wp/3._wp)*dt*(mtn_dveldt(k, 1:3, 1)/4._wp + mtn_dveldt(k, 1:3, 2)/4._wp + mtn_dveldt(k, 1:3, 3))
+                    ! mtn_pos(k, 1:3, 1) = mtn_pos(k, 1:3, 1) + (2._wp/3._wp)*dt*(mtn_dposdt(k, 1:3, 1)/4._wp + mtn_dposdt(k, 1:3, 2)/4._wp + mtn_dposdt(k, 1:3, 3))
+                    ! mtn_vel(k, 1:3, 1) = mtn_vel(k, 1:3, 1) + (2._wp/3._wp)*dt*(mtn_dveldt(k, 1:3, 1)/4._wp + mtn_dveldt(k, 1:3, 2)/4._wp + mtn_dveldt(k, 1:3, 3))
                     gas_p(k, 1) = gas_p(k, 1) + (2._wp/3._wp)*dt*(gas_dpdt(k, 1)/4._wp + gas_dpdt(k, 2)/4._wp + gas_dpdt(k, 3))
                     gas_mv(k, 1) = gas_mv(k, 1) + (2._wp/3._wp)*dt*(gas_dmvdt(k, 1)/4._wp + gas_dmvdt(k, 2)/4._wp + gas_dmvdt(k, 3))
                     if (lag_params%coatedBub_model .and. (mrmtnt_shell(k, 2) == 0._wp)) then
@@ -2643,8 +2645,8 @@ contains
             intfc_dveldt(i, 1:lag_num_ts) = intfc_dveldt(i + 1, 1:lag_num_ts)
             gas_dpdt(i, 1:lag_num_ts) = gas_dpdt(i + 1, 1:lag_num_ts)
             gas_dmvdt(i, 1:lag_num_ts) = gas_dmvdt(i + 1, 1:lag_num_ts)
-            mtn_dposdt(i, 1:3, 1:lag_num_ts) = mtn_dposdt(i + 1, 1:3, 1:lag_num_ts)
-            mtn_dveldt(i, 1:3, 1:lag_num_ts) = mtn_dveldt(i + 1, 1:3, 1:lag_num_ts)
+            ! mtn_dposdt(i, 1:3, 1:lag_num_ts) = mtn_dposdt(i + 1, 1:3, 1:lag_num_ts)
+            ! mtn_dveldt(i, 1:3, 1:lag_num_ts) = mtn_dveldt(i + 1, 1:3, 1:lag_num_ts)
             mrmtnt_shell(i, 1:2) = mrmtnt_shell(i + 1, 1:2)
             mrmtnt_Rbuck(i) = mrmtnt_Rbuck(i + 1)
             mrmtnt_Rrupt(i) = mrmtnt_Rrupt(i + 1)
@@ -2679,8 +2681,8 @@ contains
         @:DEALLOCATE(intfc_dveldt)
         @:DEALLOCATE(gas_dpdt)
         @:DEALLOCATE(gas_dmvdt)
-        @:DEALLOCATE(mtn_dposdt)
-        @:DEALLOCATE(mtn_dveldt)
+        ! @:DEALLOCATE(mtn_dposdt)
+        ! @:DEALLOCATE(mtn_dveldt)
         ! Marmotant model
         @:DEALLOCATE(mrmtnt_shell)
         @:DEALLOCATE(mrmtnt_Rbuck)
@@ -2732,8 +2734,8 @@ contains
             @:DEALLOCATE(intfc_dveldt)
             @:DEALLOCATE(gas_dpdt)
             @:DEALLOCATE(gas_dmvdt)
-            @:DEALLOCATE(mtn_dposdt)
-            @:DEALLOCATE(mtn_dveldt)
+            ! @:DEALLOCATE(mtn_dposdt)
+            ! @:DEALLOCATE(mtn_dveldt)
             ! Marmotant model
             @:DEALLOCATE(mrmtnt_shell)
             @:DEALLOCATE(mrmtnt_Rbuck)
