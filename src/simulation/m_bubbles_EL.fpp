@@ -515,6 +515,8 @@ contains
         integer :: i, k
         logical :: transferShell
         complex(wp) :: imag, trans, c1, c2, c3
+        real(wp) :: qtime
+        integer :: save_count
 
         if (lag_params%cluster_type /= 1) then
 
@@ -601,9 +603,17 @@ contains
             call s_smear_voidfraction()
 
             !Replace files
-            if (lag_params%write_bubbles) call s_write_lag_particles(0._wp, .true.)
-            call s_write_restart_lag_bubbles(0) ! Needed for post_processing
-            call s_write_void_evol(0._wp, .true.)
+            if (cfl_dt) then
+                save_count = n_start
+                qtime = n_start*t_save
+            else
+                save_count = t_step_start
+                qtime = t_step_start*dt
+            end if
+
+            if (lag_params%write_bubbles) call s_write_lag_particles(qtime, .true.)
+            call s_write_restart_lag_bubbles(save_count) ! Needed for post_processing
+            call s_write_void_evol(qtime, .true.)
 
             !call s_mpi_barrier()
 
