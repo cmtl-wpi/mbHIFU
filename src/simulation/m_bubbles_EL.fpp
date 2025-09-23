@@ -165,7 +165,9 @@ contains
         ! 1: emitted Pout, 2: sum of Pouts from volume of influence (self-inclusive)
         @:ALLOCATE(bub_interact(1:nBubs_glb))
         ! 1: number of interacting bubbles (self-inclusive), 2:nBubs_glb+1: IDs in the volume of influence (self-inclusive)
-        @:ALLOCATE(bub_int_ids(1:nBubs_glb, 1:min(max_bub_int, nBubs_glb+1)))
+        if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) then
+            @:ALLOCATE(bub_int_ids(1:nBubs_glb, 1:min(max_bub_int, nBubs_glb+1)))
+        end if
         !@:ALLOCATE(bub_lambda_c(1:nBubs_glb))
         !@:ALLOCATE(bub_rnd_phase(1:nBubs_glb, 1:num_noise))
 
@@ -831,13 +833,13 @@ contains
                         (mtn_pos(k, 2, 1) < ye_smear) .and. (mtn_pos(k, 2, 1) >= yb_smear)) then
 
                         if (p > 0) then
-                            if ((mtn_pos(k, 3, 1) < ze_smear) .and. (mtn_pos(k, 3, 1) >= zb_smear)) then
-                                nb_local = nb_local + 1
-                                if (nb_local <= max_bub_int) then
-                                    bub_int_ids(j, nb_local + 1) = k
-                                end if
-                                safeStop = max(safeStop, 1._wp*nb_local)
-                            end if
+                            ! if ((mtn_pos(k, 3, 1) < ze_smear) .and. (mtn_pos(k, 3, 1) >= zb_smear)) then
+                            !     nb_local = nb_local + 1
+                            !     if (nb_local <= max_bub_int) then
+                            !         !bub_int_ids(j, nb_local + 1) = k
+                            !     end if
+                            !     safeStop = max(safeStop, 1._wp*nb_local)
+                            ! end if
                         else
                             nb_local = nb_local + 1
                         end if
@@ -891,19 +893,19 @@ contains
             call s_mpi_abort('Failed getting interacting bubbles.')
         end if
 
+        if (any(lag_params%interaction_model == (/2, 3/))) then
+            !$acc update host(bub_int_ids)
+            if (lag_params%nBubs_glb < 100) then
+                do j = 1, nBubs
+                    if (bub_int_ids(j, 1) /= 0) then
+                        print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
+                            proc_rank, &
+                            j, &
+                            int(bub_int_ids(j, 1))
 
-        !$acc update host(bub_int_ids)
-
-        if ((p > 0 .or. any(lag_params%interaction_model == (/2, 3/))) .and. lag_params%nBubs_glb < 100) then
-            do j = 1, nBubs
-                if (bub_int_ids(j, 1) /= 0) then
-                    print '(" (proc: ", I3, ") Bubble ", I5, " interacts with ", I5, " bubbles.")', &
-                        proc_rank, &
-                        j, &
-                        int(bub_int_ids(j, 1))
-
-                end if
-            end do
+                    end if
+                end do
+            end if
         end if
 
     end subroutine s_start_bubble_interaction
@@ -2685,7 +2687,9 @@ contains
         @:DEALLOCATE(mrmtnt_Rrupt)
         ! bubble interaction
         @:DEALLOCATE(bub_interact)
-        @:DEALLOCATE(bub_int_ids)
+        if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) then
+            @:DEALLOCATE(bub_int_ids)
+        end if
         !@:DEALLOCATE(bub_lambda_c)
 
     end subroutine s_free_memory_stg3
@@ -2736,7 +2740,9 @@ contains
             @:DEALLOCATE(mrmtnt_Rrupt)
             ! bubble interaction
             @:DEALLOCATE(bub_interact)
-            @:DEALLOCATE(bub_int_ids)
+            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) then
+                @:DEALLOCATE(bub_int_ids)
+            end if
             !@:DEALLOCATE(bub_lambda_c)
         end if
 
