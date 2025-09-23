@@ -62,7 +62,9 @@ module m_bubbles_EL
 
     !$acc declare create(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC, bub_dphidt, &
     !$acc gas_p, gas_mv, intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel, intfc_ac, mtn_s, intfc_draddt, &
-    !$acc intfc_dveldt, gas_dpdt, gas_dmvdt, mtn_dposdt, mtn_dveldt)
+    !$acc intfc_dveldt, gas_dpdt, gas_dmvdt)
+
+    !!$acc declare create(mtn_dposdt, mtn_dveldt)
 
     !$acc declare create(bub_interact, bub_int_ids)
 
