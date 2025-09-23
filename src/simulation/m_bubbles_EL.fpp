@@ -265,7 +265,11 @@ contains
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
         inquire (file=trim(file_loc), exist=file_exist)
         read_flag = .true.
-        if (file_exist) read_flag = .false.
+        lag_params%initial_corrector = .true.
+        if (file_exist) then
+            read_flag = .false.
+            lag_params%initial_corrector = .false.
+        end if
 
         if (read_flag) then
             if (proc_rank == 0) print *, 'Reading lagrange bubbles input file.'
@@ -604,6 +608,8 @@ contains
             !call s_mpi_barrier()
 
         end if
+
+        lag_params%initial_corrector = .false.
 
     end subroutine s_initial_pressure_correction
 

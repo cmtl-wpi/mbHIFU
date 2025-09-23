@@ -904,7 +904,7 @@ contains
         end if
 
         if (bubbles_lagrange) then
-            if (f_approx_equal(mytime, dt) .and. .not. adap_dt .and. &
+            if (lag_params%initial_corrector .and. .not. adap_dt .and. &
                 stage == 1) then
                 call s_initial_pressure_correction( &
                     q_prim_qp%vf(1:sys_size))

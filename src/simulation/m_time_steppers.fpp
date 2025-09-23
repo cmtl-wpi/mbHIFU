@@ -1079,7 +1079,7 @@ contains
         elseif (bubbles_lagrange) then
 
             call s_populate_variables_buffers(q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf, bc_type)
-            if (f_approx_equal(mytime, dt) .and. stage == 1) then
+            if (lag_params%initial_corrector .and. stage == 1) then
                 call s_initial_pressure_correction(q_prim_vf)
             end if
             call s_compute_bubble_EL_dynamics(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf, stage)

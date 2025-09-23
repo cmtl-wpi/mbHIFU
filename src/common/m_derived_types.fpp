@@ -454,6 +454,7 @@ module m_derived_types
         integer :: influence         !< Number of cells around the bubble that limits the interacton volume
         real(wp) :: scaleVirtualSphere !< Extract pinf from the cells that intersect the surface of the virtual sphere.
         logical :: newModel_2D      !< New model to match experiments
+        logical :: initial_corrector    !< Activates s_initial_pressure_correction
 
     end type bubbles_lagrange_parameters
 
