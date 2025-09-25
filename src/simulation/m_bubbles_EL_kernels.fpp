@@ -440,7 +440,7 @@ contains
                     cell(:) = int(scoord(:))
 
                     !> Gasussian parameters and cells to smear
-                    volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
+                    volpart = 4._wp/3._wp*pi*lbk_rad(l, 1)**3._wp
                     call s_compute_stddsv(cell, volpart, stddsv)
                     center(1:3) = lbk_pos(l, 1:3, 2)
 
@@ -558,7 +558,7 @@ contains
                     cell(:) = int(scoord(:))
 
                     !> Gasussian parameters and cells to smear
-                    volpart = 4._wp/3._wp*pi*lbk_rad(l, 2)**3._wp
+                    volpart = 4._wp/3._wp*pi*lbk_rad(l, 1)**3._wp
                     call s_compute_stddsv(cell, volpart, stddsv)
                     center(1:3) = lbk_pos(l, 1:3, 2)
                     
