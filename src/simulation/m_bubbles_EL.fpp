@@ -313,6 +313,7 @@ contains
             call s_mpi_allreduce_max(safeStop, tmp_val)
             safeStop = tmp_val
         end if
+        if (proc_rank == 0) print*, 'Maximum number of bubbbles per processor is:', int(safeStop)
         if (int(safeStop) > lag_params%nBubs_glb) then
             call s_mpi_abort('Current number of bubbles is larger than nBubs_glb.')
         end if
