@@ -1174,6 +1174,8 @@ contains
             end if
         end if
 
+        nondim_time = mytime
+
         do i = 1, num_probes
             ! Zeroing out flow variables for all processors
             rho = 0._wp

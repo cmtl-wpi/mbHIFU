@@ -1125,6 +1125,289 @@ contains
 
     end subroutine s_mpi_sendrecv_variables_buffers
 
+    subroutine s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, mpi_dir, pbc_loc)
+
+        type(vector_field), intent(inout) :: q_beta
+        integer, intent(in) :: mpi_dir, pbc_loc, q_beta_size
+        logical, intent(in) :: hifu_EL_flag
+
+        integer :: i, j, k, l, r, q !< Generic loop iterators
+
+        integer :: buffer_counts(1:3), buffer_count
+
+        type(int_bounds_info) :: boundary_conditions(1:3)
+        integer :: beg_end(1:2), grid_dims(1:3)
+        integer :: dst_proc, src_proc, recv_tag, send_tag
+
+        logical :: beg_end_geq_0
+
+        integer :: pack_offset, unpack_offset
+        real(wp), pointer :: p_send, p_recv
+
+#ifdef MFC_MPI
+
+        nVars = q_beta_size
+        !$acc update device(nVars)
+
+        buffer_counts = (/ &
+                        (1+2*mapCells)*nVars*(n + 2*buff_size+ 1)*(p + 2*buff_size + 1), &
+                        (1+2*mapCells)*nVars*(m + 2*buff_size + 1)*(p + 2*buff_size + 1), &
+                        (1+2*mapCells)*nVars*(m + 2*buff_size + 1)*(n + 2*buff_size + 1) &
+                        /)
+
+        buffer_count = buffer_counts(mpi_dir)
+        boundary_conditions = (/bc_x, bc_y, bc_z/)
+        beg_end = (/boundary_conditions(mpi_dir)%beg, boundary_conditions(mpi_dir)%end/)
+        beg_end_geq_0 = beg_end(max(pbc_loc, 0) - pbc_loc + 1) >= 0
+
+        ! Implements:
+        ! pbc_loc  bc_x >= 0 -> [send/recv]_tag  [dst/src]_proc
+        ! -1 (=0)      0            ->     [1,0]       [0,0]      | 0 0 [1,0] [beg,beg]
+        ! -1 (=0)      1            ->     [0,0]       [1,0]      | 0 1 [0,0] [end,beg]
+        ! +1 (=1)      0            ->     [0,1]       [1,1]      | 1 0 [0,1] [end,end]
+        ! +1 (=1)      1            ->     [1,1]       [0,1]      | 1 1 [1,1] [beg,end]
+
+        send_tag = f_logical_to_int(.not. f_xor(beg_end_geq_0, pbc_loc == 1))
+        recv_tag = f_logical_to_int(pbc_loc == 1)
+
+        dst_proc = beg_end(1 + f_logical_to_int(f_xor(pbc_loc == 1, beg_end_geq_0)))
+        src_proc = beg_end(1 + f_logical_to_int(pbc_loc == 1))
+
+        grid_dims = (/m, n, p/)
+
+        pack_offset = -mapCells
+        if (f_xor(pbc_loc == 1, beg_end_geq_0)) then
+            pack_offset = grid_dims(mpi_dir) - mapCells
+        end if
+
+        unpack_offset = mapCells - 1
+        if (pbc_loc == 1) then
+            unpack_offset = grid_dims(mpi_dir) + mapCells + 1
+        end if
+
+        ! Pack Buffer to Send
+        #:for mpi_dir in [1, 2, 3]
+            if (mpi_dir == ${mpi_dir}$) then
+                #:if mpi_dir == 1
+                    !$acc parallel loop collapse(4) gang vector default(present) private(r)
+                    do l = -buff_size, p + buff_size
+                        do k = -buff_size, n + buff_size
+                            do j = 0, 2*mapCells
+                                do i = 1, nVars
+                                    ! r = (i - 1) + nVars*(j + buff_size*(k + (n + 1)*l))
+                                    r = (i - 1) + nVars* &
+                                        ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                         ((k + buff_size) + (n + 2*buff_size + 1)*j))
+                                    buff_send(r) = q_beta%vf(i)%sf(j + pack_offset, k, l)
+                                end do
+                            end do
+                        end do
+                    end do
+
+                #:elif mpi_dir == 2
+                    !$acc parallel loop collapse(4) gang vector default(present) private(r)
+                    do i = 1, nVars
+                        do l = -buff_size, p + buff_size
+                            do k = 0, 2*mapCells
+                                do j = -buff_size, m + buff_size
+                                    r = (i - 1) + nVars* &
+                                        ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                         ((l + buff_size) + (p + 2*buff_size + 1)*k))
+                                    buff_send(r) = q_beta%vf(i)%sf(j, k + pack_offset, l)
+                                    ! if (proc_rank == 2 .and. j==65 .and. l==35 .and. i==1) then
+                                    !     print*, 'packed data >>', j, k + pack_offset, l, buff_send(r), r
+                                    ! end if
+                                end do
+                            end do
+                        end do
+                    end do
+
+                #:else
+                    !$acc parallel loop collapse(4) gang vector default(present) private(r)
+                    do i = 1, nVars
+                        do l = 0, 2*mapCells
+                            do k = -buff_size, n + buff_size
+                                do j = -buff_size, m + buff_size
+                                    r = (i - 1) + nVars* &
+                                        ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                         ((k + buff_size) + (n + 2*buff_size + 1)*l))
+                                    buff_send(r) = q_beta%vf(i)%sf(j, k, l + pack_offset)
+                                end do
+                            end do
+                        end do
+                    end do
+                #:endif
+            end if
+        #:endfor
+
+        ! if (proc_rank == 0) then
+        !     do j=0,6
+        !         print*, 'proc:0, send buffer >>', 65, 35-mapCells+j, 35, q_beta%vf(1)%sf(65, 35-mapCells+j, 35)
+        !     end do
+        ! end if
+
+        p_send => buff_send(0)
+        p_recv => buff_recv(0)
+
+        ! Send/Recv
+#ifdef MFC_SIMULATION
+        #:for rdma_mpi in [False, True]
+            if (rdma_mpi .eqv. ${'.true.' if rdma_mpi else '.false.'}$) then
+                #:if rdma_mpi
+                    !$acc data attach(p_send, p_recv)
+                    !$acc host_data use_device(p_send, p_recv)
+                    call nvtxStartRange("RHS-COMM-SENDRECV-RDMA")
+                #:else
+                    call nvtxStartRange("RHS-COMM-DEV2HOST")
+                    !$acc update host(buff_send)
+                    call nvtxEndRange
+                    call nvtxStartRange("RHS-COMM-SENDRECV-NO-RMDA")
+                #:endif
+
+                !print*, proc_rank, dst_proc, send_tag, src_proc, recv_tag, mpi_dir, pbc_loc
+
+                call MPI_SENDRECV( &
+                    p_send, buffer_count, mpi_p, dst_proc, send_tag, &
+                    p_recv, buffer_count, mpi_p, src_proc, recv_tag, &
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
+
+                call nvtxEndRange ! RHS-MPI-SENDRECV-(NO)-RDMA
+
+                #:if rdma_mpi
+                    !$acc end host_data
+                    !$acc end data
+                    !$acc wait
+                #:else
+                    call nvtxStartRange("RHS-COMM-HOST2DEV")
+                    !$acc update device(buff_recv)
+                    call nvtxEndRange
+                #:endif
+            end if
+        #:endfor
+#else
+        call MPI_SENDRECV( &
+            p_send, buffer_count, mpi_p, dst_proc, send_tag, &
+            p_recv, buffer_count, mpi_p, src_proc, recv_tag, &
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierr)
+#endif
+
+        ! Unpack Received Buffer
+        #:for mpi_dir in [1, 2, 3]
+            if (mpi_dir == ${mpi_dir}$) then
+                #:if mpi_dir == 1
+                    !$acc parallel loop collapse(4) gang vector default(present) private(r)
+                    do l = -buff_size, p + buff_size
+                        do k = -buff_size, n + buff_size
+                            do j = -2*mapCells, 0
+                                do i = 1, nVars
+                                    r = (i - 1) + nVars* &
+                                        ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                         ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                          (j + buff_size)))
+                                    if (hifu_EL_flag) then
+                                        if (i == nVars-2 .or. i == nVars) then 
+                                            q_beta%vf(i)%sf(j + unpack_offset, k, l) = &
+                                            q_beta%vf(i)%sf(j + unpack_offset, k, l) + &
+                                                                            buff_recv(r)
+                                        end if
+                                    else
+                                        q_beta%vf(i)%sf(j + unpack_offset, k, l) = &
+                                        q_beta%vf(i)%sf(j + unpack_offset, k, l) + &
+                                                                        buff_recv(r)
+                                    end if                                    
+#if defined(__INTEL_COMPILER)
+                                    if (ieee_is_nan(q_beta%vf(i)%sf(j, k, l))) then
+                                        print *, "Error", j, k, l, i
+                                        error stop "NaN(s) in recv"
+                                    end if
+#endif
+                                end do
+                            end do
+                        end do
+                    end do
+
+                #:elif mpi_dir == 2
+                    !$acc parallel loop collapse(4) gang vector default(present) private(r)
+                    do i = 1, nVars
+                        do l = -buff_size, p + buff_size
+                            do k = -2*mapCells, 0
+                                do j = -buff_size, m + buff_size
+                                    r = (i - 1) + nVars* &
+                                        ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                         ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                          (k + buff_size)))
+                                    if (hifu_EL_flag) then
+                                        if (i == nVars-2 .or. i == nVars) then
+                                            q_beta%vf(i)%sf(j, k + unpack_offset, l) = &
+                                            q_beta%vf(i)%sf(j, k + unpack_offset, l) + &
+                                                                            buff_recv(r)
+                                        end if
+                                    else
+                                        q_beta%vf(i)%sf(j, k + unpack_offset, l) = &
+                                        q_beta%vf(i)%sf(j, k + unpack_offset, l) + &
+                                                                        buff_recv(r)
+                                    end if
+                                    
+                                    ! if (proc_rank == 0 .and. j==65 .and. l==35 .and. i==1) then
+                                    !     print*, 'recv data >>', j, k + unpack_offset, l, buff_recv(r), r
+                                    ! end if
+#if defined(__INTEL_COMPILER)
+                                    if (ieee_is_nan(q_beta%vf(i)%sf(j, k, l))) then
+                                        print *, "Error", j, k, l, i
+                                        error stop "NaN(s) in recv"
+                                    end if
+#endif
+                                end do
+                            end do
+                        end do
+                    end do
+
+                #:else
+                    ! Unpacking buffer from bc_z%beg
+                    !$acc parallel loop collapse(4) gang vector default(present) private(r)
+                    do i = 1, nVars
+                        do l = -2*mapCells, 0
+                            do k = -buff_size, n + buff_size
+                                do j = -buff_size, m + buff_size
+                                    r = (i - 1) + nVars* &
+                                        ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                         ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                          (l + buff_size)))
+                                    if (hifu_EL_flag) then
+                                        if (i == nVars-2 .or. i == nVars) then
+                                            q_beta%vf(i)%sf(j, k, l + unpack_offset) = &
+                                            q_beta%vf(i)%sf(j, k, l + unpack_offset) + &
+                                                                            buff_recv(r)
+                                        end if
+                                    else
+                                        q_beta%vf(i)%sf(j, k, l + unpack_offset) = &
+                                        q_beta%vf(i)%sf(j, k, l + unpack_offset) + &
+                                                                        buff_recv(r)
+                                    end if
+#if defined(__INTEL_COMPILER)
+                                    if (ieee_is_nan(q_beta%vf(i)%sf(j, k, l))) then
+                                        print *, "Error", j, k, l, i
+                                        error stop "NaN(s) in recv"
+                                    end if
+#endif
+                                end do
+                            end do
+                        end do
+                    end do
+
+                #:endif
+            end if
+        #:endfor
+
+#endif
+        ! if (proc_rank == 2) then
+        !     do j=0,8
+        !         print*, 'proc:2, send buffer >>', 65, -1-mapCells+j, 35, q_beta%vf(1)%sf(65, -1-mapCells+j, 35)
+        !     end do
+        ! end if
+
+    end subroutine s_mpi_sendrecv_variables_EL_buffers
+
     subroutine s_mpi_sendrecv_capilary_variables_buffers(c_divs_vf, mpi_dir, pbc_loc)
 
         type(scalar_field), dimension(num_dims + 1), intent(inout) :: c_divs_vf

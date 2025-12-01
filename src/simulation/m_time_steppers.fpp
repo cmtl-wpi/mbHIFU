@@ -1080,11 +1080,11 @@ contains
 
             call s_populate_variables_buffers(q_prim_vf, pb_ts(1)%sf, mv_ts(1)%sf, bc_type)
             if (lag_params%initial_corrector .and. stage == 1) then
-                call s_initial_pressure_correction(q_prim_vf)
+                call s_initial_pressure_correction(q_prim_vf, bc_type)
             end if
             call s_compute_bubble_EL_dynamics(q_cons_ts(1)%vf, q_prim_vf, t_step, rhs_vf, stage)
             call s_transfer_data_to_tmp(transferShell)
-            call s_smear_voidfraction()
+            call s_smear_voidfraction(bc_type)
             if (stage == 3) then
                 if (hifu_params%sampling) call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
                 if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()

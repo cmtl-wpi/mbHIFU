@@ -159,7 +159,7 @@ contains
             if (cfl_dt) then
                 print '(" [", I3, "%]  Saving ", I8, " of ", I0, "")', &
                     int(ceiling(100._wp*(real(t_step - n_start)/(n_save)))), &
-                    t_step, n_save
+                    t_step + 1, n_save
             else
                 print '(" [", I3, "%]  Saving ", I8, " of ", I0, " @ t_step = ", I0, "")', &
                     int(ceiling(100._wp*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &

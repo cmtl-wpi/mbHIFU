@@ -31,6 +31,7 @@ module m_boundary_common
     private; public :: s_initialize_boundary_common_module, &
  s_populate_variables_buffers, &
  s_create_mpi_types, &
+ s_populate_EL_buffers, &
  s_populate_capillary_buffers, &
  s_finalize_boundary_common_module
 
@@ -1645,6 +1646,385 @@ contains
         end if
 
     end subroutine s_qbmm_extrapolation
+
+    subroutine s_populate_EL_buffers(q_beta, bc_type, q_beta_size, hifu_EL_flag)
+
+        type(vector_field), intent(inout) :: q_beta
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
+        integer, intent(in) :: q_beta_size
+        logical, intent(in) :: hifu_EL_flag
+
+        integer :: k, l
+
+        !< x-direction
+        if (bcxb >= 0) then
+            call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 1, -1)
+        else
+            ! !$acc parallel loop collapse(2) gang vector default(present)
+            ! do l = 0, p
+            !     do k = 0, n
+            !         select case (bc_type(1, -1)%sf(0, k, l))
+            !         case (BC_PERIODIC)
+            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 1, -1, k, l)
+            !         case (BC_REFLECTIVE)
+            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 1, -1, k, l)
+            !         case default
+            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 1, -1, k, l)
+            !         end select
+            !     end do
+            ! end do
+        end if
+
+        if (bcxe >= 0) then
+            call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 1, 1)
+        else
+            ! !$acc parallel loop collapse(2) gang vector default(present)
+            ! do l = 0, p
+            !     do k = 0, n
+            !         select case (bc_type(1, 1)%sf(0, k, l))
+            !         case (BC_PERIODIC)
+            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 1, 1, k, l)
+            !         case (BC_REFLECTIVE)
+            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 1, 1, k, l)
+            !         case default
+            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 1, 1, k, l)
+            !         end select
+            !     end do
+            ! end do
+        end if
+
+        if (n == 0) return
+
+        !< y-direction
+        if (bcyb >= 0) then
+            call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 2, -1)
+        else
+            ! !$acc parallel loop collapse(2) gang vector default(present)
+            ! do l = 0, p
+            !     do k = -buff_size, m + buff_size
+            !         select case (bc_type(2, -1)%sf(k, 0, l))
+            !         case (BC_PERIODIC)
+            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 2, -1, k, l)
+            !         case (BC_REFLECTIVE)
+            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 2, -1, k, l)
+            !         case default
+            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 2, -1, k, l)
+            !         end select
+            !     end do
+            ! end do
+        end if
+
+        if (bcye >= 0) then
+            call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 2, 1)
+        else
+            ! !$acc parallel loop collapse(2) gang vector default(present)
+            ! do l = 0, p
+            !     do k = -buff_size, m + buff_size
+            !         select case (bc_type(2, 1)%sf(k, 0, l))
+            !         case (BC_PERIODIC)
+            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 2, 1, k, l)
+            !         case (BC_REFLECTIVE)
+            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 2, 1, k, l)
+            !         case default
+            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 2, 1, k, l)
+            !         end select
+            !     end do
+            ! end do
+        end if
+
+        if (p == 0) return
+
+        !< z-direction
+        if (bczb >= 0) then
+            call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 3, -1)
+        else
+            ! !$acc parallel loop collapse(2) gang vector default(present)
+            ! do l = -buff_size, n + buff_size
+            !     do k = -buff_size, m + buff_size
+            !         select case (bc_type(3, -1)%sf(k, l, 0))
+            !         case (BC_PERIODIC)
+            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 3, -1, k, l)
+            !         case (BC_REFLECTIVE)
+            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 3, -1, k, l)
+            !         case default
+            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 3, -1, k, l)
+            !         end select
+            !     end do
+            ! end do
+        end if
+
+        if (bcze >= 0) then
+            call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 3, 1)
+        else
+            ! !$acc parallel loop collapse(2) gang vector default(present)
+            ! do l = -buff_size, n + buff_size
+            !     do k = -buff_size, m + buff_size
+            !         select case (bc_type(3, 1)%sf(k, l, 0))
+            !         case (BC_PERIODIC)
+            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 3, 1, k, l)
+            !         case (BC_REFLECTIVE)
+            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 3, 1, k, l)
+            !         case default
+            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 3, 1, k, l)
+            !         end select
+            !     end do
+            ! end do
+        end if
+
+    end subroutine s_populate_EL_buffers
+
+!     subroutine s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, bc_dir, bc_loc, k, l)
+! #ifdef _CRAYFTN
+!         !DIR$ INLINEALWAYS s_EL_periodic
+! #else
+!         !$acc routine seq
+! #endif
+!         type(vector_field), intent(inout) :: q_beta
+!         logical, intent(in) :: hifu_EL_flag
+!         integer, intent(in) :: bc_dir, bc_loc
+!         integer, intent(in) :: k, l
+!         integer, intent(in) :: q_beta_size
+
+!         integer :: j, i, q
+
+!         if (bc_dir == 1) then !< x-direction
+!             if (bc_loc == -1) then !bc_x%beg
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (hifu_EL_flag) then
+!                             if (i == q_beta_size-2 .or. i == q_beta_size) then 
+!                                 q_beta%vf(i)%sf(-j, k, l) = q_beta%vf(i)%sf(m - (j - 1), k, l)
+!                             end if
+!                         else
+!                             q_beta%vf(i)%sf(-j, k, l) = q_beta%vf(i)%sf(m + ( - (j - 1)), k, l)
+!                         end if
+!                     end do
+!                 end do
+!             else !< bc_x%end
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (hifu_EL_flag) then
+!                             if (i == q_beta_size-2 .or. i == q_beta_size) then 
+!                                 q_beta%vf(i)%sf(m + j, k, l) = q_beta%vf(i)%sf(j - 1, k, l)
+!                             end if
+!                         else
+!                             q_beta%vf(i)%sf(m + j, k, l) = q_beta%vf(i)%sf(j - 1, k, l)
+!                         end if
+!                     end do
+!                 end do
+!             end if
+!         elseif (bc_dir == 2) then !< y-direction
+!             if (bc_loc == -1) then !< bc_y%beg
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (hifu_EL_flag) then
+!                             if (i == q_beta_size-2 .or. i == q_beta_size) then 
+!                                 q_beta%vf(i)%sf(k, -j, l) = q_beta%vf(i)%sf(k, n - (j - 1), l)
+!                             end if
+!                         else
+!                             q_beta%vf(i)%sf(k, -j, l) = q_beta%vf(i)%sf(k, n - (j - 1), l)
+!                         end if 
+!                     end do
+!                 end do
+!             else !< bc_y%end
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (hifu_EL_flag) then
+!                             if (i == q_beta_size-2 .or. i == q_beta_size) then 
+!                                 q_beta%vf(i)%sf(k, n + j, l) = q_beta%vf(i)%sf(k, j - 1, l)
+!                             end if
+!                         else
+!                             q_beta%vf(i)%sf(k, n + j, l) = q_beta%vf(i)%sf(k, j - 1, l)
+!                         end if
+!                     end do
+!                 end do
+!             end if
+!         elseif (bc_dir == 3) then !< z-direction
+!             if (bc_loc == -1) then !< bc_z%beg
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (hifu_EL_flag) then
+!                             if (i == q_beta_size-2 .or. i == q_beta_size) then 
+!                                 q_beta%vf(i)%sf(k, l, -j) = q_beta%vf(i)%sf(k, l, p - (j - 1))
+!                             end if
+!                         else
+!                             q_beta%vf(i)%sf(k, l, -j) = q_beta%vf(i)%sf(k, l, p - (j - 1))
+!                         end if
+!                     end do
+!                 end do
+!             else !< bc_z%end
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (hifu_EL_flag) then
+!                             if (i == q_beta_size-2 .or. i == q_beta_size) then 
+!                                 q_beta%vf(i)%sf(k, l, p + j) = q_beta%vf(i)%sf(k, l, j - 1)
+!                             end if
+!                         else
+!                             q_beta%vf(i)%sf(k, l, p + j) = q_beta%vf(i)%sf(k, l, j - 1)
+!                         end if
+!                     end do
+!                 end do
+!             end if
+!         end if
+
+!     end subroutine s_EL_periodic
+
+!     subroutine s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, bc_dir, bc_loc, k, l)
+! #ifdef _CRAYFTN
+!         !DIR$ INLINEALWAYS s_EL_reflective
+! #else
+!         !$acc routine seq
+! #endif
+!         type(vector_field), intent(inout) :: q_beta
+!         logical, intent(in) :: hifu_EL_flag
+!         integer, intent(in) :: bc_dir, bc_loc
+!         integer, intent(in) :: k, l
+!         integer, intent(in) :: q_beta_size
+
+!         integer :: j, i, q
+
+!         if (bc_dir == 1) then !< x-direction
+!             if (bc_loc == -1) then !bc_x%beg
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (i == bc_dir) then
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(-j, k, l) = -q_beta%vf(i)%sf(j - 1, k, l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(-j, k, l) = -q_beta%vf(i)%sf(j - 1, k, l)
+!                             end if
+!                         else
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(-j, k, l) = q_beta%vf(i)%sf(j - 1, k, l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(-j, k, l) = q_beta%vf(i)%sf(j - 1, k, l)
+!                             end if
+!                         end if
+!                     end do
+!                 end do
+!             else !< bc_x%end
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (i == bc_dir) then
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(m + j, k, l) = -q_beta%vf(i)%sf(m - (j - 1), k, l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(m + j, k, l) = -q_beta%vf(i)%sf(m - (j - 1), k, l)
+!                             end if
+!                         else
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(m + j, k, l) = q_beta%vf(i)%sf(m - (j - 1), k, l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(m + j, k, l) = q_beta%vf(i)%sf(m - (j - 1), k, l)
+!                             end if
+!                         end if
+!                     end do
+!                 end do
+!             end if
+!         elseif (bc_dir == 2) then !< y-direction
+!             if (bc_loc == -1) then !< bc_y%beg
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (i == bc_dir) then
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, -j, l) = -q_beta%vf(i)%sf(k, j - 1, l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, -j, l) = -q_beta%vf(i)%sf(k, j - 1, l)
+!                             end if
+!                         else
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, -j, l) = q_beta%vf(i)%sf(k, j - 1, l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, -j, l) = q_beta%vf(i)%sf(k, j - 1, l)
+!                             end if
+!                         end if
+!                     end do
+!                 end do
+!             else !< bc_y%end
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (i == bc_dir) then
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, n + j, l) = -q_beta%vf(i)%sf(k, n - (j - 1), l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, n + j, l) = -q_beta%vf(i)%sf(k, n - (j - 1), l)
+!                             end if
+!                         else
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, n + j, l) = q_beta%vf(i)%sf(k, n - (j - 1), l)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, n + j, l) = q_beta%vf(i)%sf(k, n - (j - 1), l)
+!                             end if
+!                         end if
+!                     end do
+!                 end do
+!             end if
+!         elseif (bc_dir == 3) then !< z-direction
+!             if (bc_loc == -1) then !< bc_z%beg
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (i == bc_dir) then
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, l, -j) = -q_beta%vf(i)%sf(k, l, j - 1)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, l, -j) = -q_beta%vf(i)%sf(k, l, j - 1)
+!                             end if
+!                         else
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, l, -j) = q_beta%vf(i)%sf(k, l, j - 1)
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, l, -j) = q_beta%vf(i)%sf(k, l, j - 1)
+!                             end if
+!                         end if
+!                     end do
+!                 end do
+!             else !< bc_z%end
+!                 do i = 1, q_beta_size
+!                     do j = 1, buff_size
+!                         if (i == bc_dir) then
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, l, p + j) = -q_beta%vf(i)%sf(k, l, p - (j - 1))
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, l, p + j) = -q_beta%vf(i)%sf(k, l, p - (j - 1))
+!                             end if
+!                         else
+!                             if (hifu_EL_flag) then
+!                                 if (i == q_beta_size-2 .or. i == q_beta_size) then
+!                                     q_beta%vf(i)%sf(k, l, p + j) = q_beta%vf(i)%sf(k, l, p - (j - 1))
+!                                 end if
+!                             else
+!                                 q_beta%vf(i)%sf(k, l, p + j) = q_beta%vf(i)%sf(k, l, p - (j - 1))
+!                             end if
+!                         end if
+!                     end do
+!                 end do
+!             end if
+!         end if
+
+!     end subroutine s_EL_reflective
+
 
     subroutine s_populate_capillary_buffers(c_divs, bc_type)
 

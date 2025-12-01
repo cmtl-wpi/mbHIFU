@@ -228,6 +228,8 @@ contains
                         cellaux(3) = cell(3) + k - mapCells
                         if (p == 0) cellaux(3) = 0
 
+                        ! if (i==0 .and. j==0 .and. k==0) print*, cell(1), cell(2), cell(3), l, proc_rank, m, n, p
+
                         !Check if the cells intended to smear the bubbles in are in the computational domain
                         !and redefine the cells for symmetric boundary
                         call s_check_celloutside(center, cellaux, nodecoord, celloutside)

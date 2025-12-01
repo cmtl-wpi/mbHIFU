@@ -907,14 +907,16 @@ contains
             if (lag_params%initial_corrector .and. .not. adap_dt .and. &
                 stage == 1) then
                 call s_initial_pressure_correction( &
-                    q_prim_qp%vf(1:sys_size))
+                    q_prim_qp%vf(1:sys_size), &
+                    bc_type)
             end if
             ! RHS additions for sub-grid bubbles_lagrange
             call nvtxStartRange("RHS-EL-BUBBLES-SRC")
             call s_compute_bubbles_EL_source( &
                 q_cons_qp%vf(1:sys_size), &
                 q_prim_qp%vf(1:sys_size), &
-                rhs_vf)
+                rhs_vf, &
+                bc_type)
             call nvtxEndRange
             ! Compute bubble dynamics
             if (.not. adap_dt) then

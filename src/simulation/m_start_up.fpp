@@ -1311,10 +1311,16 @@ contains
         end if
 
         if (cfl_dt) then
-            if ((mytime + dt) >= t_stop) then
-                dt = t_stop - mytime
+            if (mod(mytime + dt, t_save) < dt .and. &
+            .not. f_approx_equal(mod(mytime + dt, t_save), 0._wp) .and. &
+            .not. f_approx_equal(mod(mytime + dt, t_save), dt)) then
+                dt = dt - mod(mytime + dt, t_save)
                 !$acc update device(dt)
             end if
+            ! if ((mytime + dt) >= t_stop) then
+            !     dt = t_stop - mytime
+            !     !$acc update device(dt)
+            ! end if
         else
             if ((mytime + dt) >= finaltime) then
                 dt = finaltime - mytime
@@ -1345,11 +1351,11 @@ contains
             if (hifu_params%stg3_3d) then
                 ! Transforming from 2d axisymmetric to 3d cylindrical coords
                 call s_finalize_derived_variables_module()
-                call s_initialize_from_2d_to_3d()
+                call s_initialize_from_2d_to_3d(bc_type)
                 call s_initialize_derived_variables_module()
                 call s_initialize_derived_variables()
             elseif (p>0 .and. .not. cyl_coord) then
-                call s_initialize_pure_3D()
+                call s_initialize_pure_3D(bc_type)
             end if
 
         end if
@@ -1690,7 +1696,7 @@ contains
 
         call s_initialize_cbc_module()
         call s_initialize_derived_variables()
-        if (bubbles_lagrange) call s_initialize_bubbles_EL_module(q_cons_ts(1)%vf)
+        if (bubbles_lagrange) call s_initialize_bubbles_EL_module(q_cons_ts(1)%vf, bc_type)
 
         if (hypoelasticity) call s_initialize_hypoelastic_module()
         if (hyperelasticity) call s_initialize_hyperelastic_module()

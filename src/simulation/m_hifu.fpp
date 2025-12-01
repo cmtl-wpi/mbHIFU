@@ -936,7 +936,9 @@ contains
     end subroutine s_write_Pmax
 
     !Initilazile 3d domain to solve heat equation.
-    subroutine s_initialize_from_2d_to_3d()
+    subroutine s_initialize_from_2d_to_3d(bc_type)
+
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
         integer :: i, j, k, l
         real(wp) :: dz_val, z_max, t_sampled
@@ -1027,6 +1029,8 @@ contains
                 call s_mean_radius_hifu(t_sampled)
                 call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                                 mtn_s, mtn_posPrev, q_hifu_3d, bub_qvis, bub_qth)
+                ! Add effect of bubbles across processors
+                if (num_procs > 0) call s_populate_EL_buffers(q_hifu_3d, bc_type, hifu_params%qth_idx, .true.)
             end if
 
             !> Unify into a general domain
@@ -1182,6 +1186,8 @@ contains
                 call s_mean_radius_hifu(t_sampled)
                 call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                                         mtn_s, mtn_pos, q_hifu_3d, bub_qvis, bub_qth)
+                ! Add effect of bubbles across processors
+                if (num_procs > 0) call s_populate_EL_buffers(q_hifu_3d, bc_type, hifu_params%qth_idx, .true.)
             end if
 
             ! Add 3rd component of probe points (if any)
@@ -1781,8 +1787,9 @@ contains
 
     end subroutine s_restore_initial_setup
 
-    subroutine s_initialize_pure_3D()
+    subroutine s_initialize_pure_3D(bc_type)
 
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
         real(wp) :: t_sampled
 
         call s_print_hifu_source_stats(hifu_params%qus_idx)
@@ -1793,6 +1800,8 @@ contains
             call s_mean_radius_hifu(t_sampled)
             call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                     mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
+            ! Add effect of bubbles across processors
+            if (num_procs > 0) call s_populate_EL_buffers(q_hifu, bc_type, hifu_params%qth_idx, .true.)
             call s_print_hifu_source_stats(hifu_params%qvis_idx)
             call s_print_hifu_source_stats(hifu_params%qth_idx)
         end if

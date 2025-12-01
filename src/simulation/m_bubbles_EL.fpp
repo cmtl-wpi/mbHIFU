@@ -92,9 +92,10 @@ contains
 
     !> Initializes the lagrangian subgrid bubble solver
         !! @param q_cons_vf Initial conservative variables
-    subroutine s_initialize_bubbles_EL_module(q_cons_vf)
+    subroutine s_initialize_bubbles_EL_module(q_cons_vf, bc_type)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
         integer :: nBubs_glb, i
 
@@ -179,7 +180,7 @@ contains
 
         ! Starting bubbles
         call s_start_lagrange_inputs()
-        call s_read_input_bubbles(q_cons_vf)
+        call s_read_input_bubbles(q_cons_vf, bc_type)
 
     end subroutine s_initialize_bubbles_EL_module
 
@@ -235,9 +236,10 @@ contains
 
     !> The purpose of this procedure is to obtain the initial bubbles' information
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_input_bubbles(q_cons_vf)
+    subroutine s_read_input_bubbles(q_cons_vf, bc_type)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
         real(wp), dimension(8) :: inputBubble
         real(wp) :: qtime
@@ -280,7 +282,7 @@ contains
                 do while (ios == 0)
                     read (94, *, iostat=ios) (inputBubble(i), i=1, 8)
                     if (ios /= 0) cycle
-                    indomain = particle_in_domain(inputBubble(1:3), .false.)
+                    indomain = particle_in_domain_physical(inputBubble(1:3))
                     id = id + 1
                     if (indomain) then
                         bub_id = bub_id + 1
@@ -343,7 +345,7 @@ contains
         transferShell = .true.
         call s_transfer_data_to_tmp(transferShell)
         call s_start_bubble_interaction
-        call s_smear_voidfraction()
+        call s_smear_voidfraction(bc_type)
 
         if (read_flag) then
             ! Create ./D directory
@@ -501,9 +503,10 @@ contains
 
     end subroutine s_add_bubbles
 
-    subroutine s_initial_pressure_correction(q_prim_vf)
+    subroutine s_initial_pressure_correction(q_prim_vf, bc_type)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
         real(wp) :: pinf, aux1, aux2, massflag, volparticle
         real(wp) :: concvap, totalmass, kparticle, cpparticle
@@ -517,6 +520,8 @@ contains
         complex(wp) :: imag, trans, c1, c2, c3
         real(wp) :: qtime
         integer :: save_count
+
+        lag_params%initial_corrector = .false.
 
         if (lag_params%cluster_type /= 1) then
 
@@ -600,7 +605,7 @@ contains
 
             transferShell = .true.
             call s_transfer_data_to_tmp(transferShell)
-            call s_smear_voidfraction()
+            call s_smear_voidfraction(bc_type)
 
             !Replace files
             if (cfl_dt) then
@@ -618,8 +623,6 @@ contains
             !call s_mpi_barrier()
 
         end if
-
-        lag_params%initial_corrector = .false.
 
     end subroutine s_initial_pressure_correction
 
@@ -646,6 +649,8 @@ contains
         integer :: i
         integer :: varsExtra = 7
 
+        real(wp):: savedTime, saved_dt
+
         write (file_loc, '(a,i0,a)') 'lag_bubbles_mpi_io_', save_count, '.dat'
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
         inquire (file=trim(file_loc), exist=file_exist)
@@ -653,9 +658,8 @@ contains
         if (file_exist) then
             if (proc_rank == 0) then
                 open (9, file=trim(file_loc), form='unformatted', status='unknown')
-                read (9) tot_data, mytime, dt
+                read (9) tot_data, mytime, saved_dt
                 close (9)
-                print *, 'Reading lag_bubbles_mpi_io: ', tot_data, mytime, dt
             end if
         else
             print '(a)', trim(file_loc)//' is missing. exiting.'
@@ -663,8 +667,6 @@ contains
         end if
 
         call MPI_BCAST(tot_data, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-        call MPI_BCAST(mytime, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
-        call MPI_BCAST(dt, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
 
         gsizes(1) = tot_data
         gsizes(2) = 21 + varsExtra
@@ -694,7 +696,7 @@ contains
             do i = 1, tot_data
                 id = int(MPI_IO_DATA_lag_bubbles(i, 1))
                 inputvals(1:(20 + varsExtra)) = MPI_IO_DATA_lag_bubbles(i, 2:(21 + varsExtra))
-                indomain = particle_in_domain(inputvals(1:3), .true.)
+                indomain = particle_in_domain_physical(inputvals(1:3))
                 if (indomain .and. (id > 0)) then
                     bub_id = bub_id + 1
                     nBubs = bub_id                  ! local number of bubbles
@@ -1091,7 +1093,7 @@ contains
                     bub_qvis(k) = bub_qvis(k) + myQvis  !> Viscous damping of the bubble (Watts)
                     bub_qth(k) = bub_qth(k) + myQth     !> Thermal damping of the bubble (Watts)
                     bub_hifu_rad(k) = bub_hifu_rad(k) + myRmean !> Mean radius (m*sec)
-                    if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage, bub_qvis(k), bub_qth(k)
+                    ! if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage, bub_qvis(k), bub_qth(k)
                 end if
 
             else
@@ -1130,15 +1132,16 @@ contains
         !! @param q_cons_vf Conservative variables
         !! @param q_prim_vf Conservative variables
         !! @param rhs_vf Time derivative of the conservative variables
-    subroutine s_compute_bubbles_EL_source(q_cons_vf, q_prim_vf, rhs_vf)
+    subroutine s_compute_bubbles_EL_source(q_cons_vf, q_prim_vf, rhs_vf, bc_type)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
         integer :: i, j, k, l
 
-        if (.not. adap_dt) call s_smear_voidfraction()
+        if (.not. adap_dt) call s_smear_voidfraction(bc_type)
 
         if (lag_params%solver_approach == 2) then
 
@@ -1259,7 +1262,9 @@ contains
     end subroutine s_compute_cson_from_pinf
 
     !>  The purpose of this subroutine is to smear the effect of the bubbles in the Eulerian framework
-    subroutine s_smear_voidfraction()
+    subroutine s_smear_voidfraction(bc_type)
+
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
         integer :: i, j, k, l
 
@@ -1283,6 +1288,9 @@ contains
             call s_smoothfunction(nBubs, intfc_rad, intfc_vel, &
                                   mtn_s, mtn_pos, q_beta)
         end if
+
+        ! Add effect of bubbles across processors
+        if (num_procs > 0) call s_populate_EL_buffers(q_beta, bc_type, q_beta_idx, .false.)
 
         !Store 1-beta
         !$acc parallel loop collapse(3) gang vector default(present)
@@ -2567,8 +2575,6 @@ contains
                     MPI_IO_DATA_lag_bubbles(i, 26) = bub_qth(k)
                     MPI_IO_DATA_lag_bubbles(i, 27) = intfc_ac(k, 1)
                     MPI_IO_DATA_lag_bubbles(i, 28) = bub_hifu_rad(k)
-
-                    !print*, k, proc_rank, MPI_IO_DATA_lag_bubbles(i, 1:26)
 
                     i = i + 1
 

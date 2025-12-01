@@ -258,15 +258,15 @@ print(json.dumps({
      'lag_params%solver_approach'       : 2,    # Two-way coupled
      'lag_params%cluster_type'          : 2,    # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
      'lag_params%pressure_corrector'    : 'T',
-     'lag_params%interaction_model'     : 2, # Interaction model: 1 -> kazuki & 2 -> Aditya's model
-     'lag_params%influence'             : 3, # Number of surrounding cells to define influence volume
+     'lag_params%interaction_model'     : 1, # Interaction model: 1 -> kazuki & 2 -> Aditya's model
+    #  'lag_params%influence'             : 3, # Number of surrounding cells to define influence volume
      'lag_params%smooth_type'           : 1,
      'lag_params%coatedBub_model'       : 'T',  # Marmmotant model
      'lag_params%heatTransfer_model'    : 'T',
      'lag_params%massTransfer_model'    : 'F',
      'lag_params%epsilonb'              : 1.0,
      'lag_params%valmaxvoid'            : 0.9,
-     'lag_params%write_bubbles'         : 'F',
+     'lag_params%write_bubbles'         : 'T',
      'lag_params%write_bubbles_stats'   : 'F',
      'lag_params%c0'                    : c0,
      'lag_params%rho0'                  : rho0,
