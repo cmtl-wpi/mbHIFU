@@ -1199,6 +1199,9 @@ contains
                                         ((l + buff_size) + (p + 2*buff_size + 1)* &
                                          ((k + buff_size) + (n + 2*buff_size + 1)*j))
                                     buff_send(r) = q_beta%vf(i)%sf(j + pack_offset, k, l)
+                                    ! if (proc_rank == 0 .and. k==35 .and. l==35 .and. i==1) then
+                                    !     print*, 'packed data >>', j + pack_offset, k, l, buff_send(r), r
+                                    ! end if
                                 end do
                             end do
                         end do
@@ -1214,9 +1217,7 @@ contains
                                         ((j + buff_size) + (m + 2*buff_size + 1)* &
                                          ((l + buff_size) + (p + 2*buff_size + 1)*k))
                                     buff_send(r) = q_beta%vf(i)%sf(j, k + pack_offset, l)
-                                    ! if (proc_rank == 2 .and. j==65 .and. l==35 .and. i==1) then
-                                    !     print*, 'packed data >>', j, k + pack_offset, l, buff_send(r), r
-                                    ! end if
+                                    
                                 end do
                             end do
                         end do
@@ -1303,7 +1304,7 @@ contains
                                     r = (i - 1) + nVars* &
                                         ((k + buff_size) + (n + 2*buff_size + 1)* &
                                          ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                          (j + buff_size)))
+                                          (j + 2*mapCells)))
                                     if (hifu_EL_flag) then
                                         if (i == nVars-2 .or. i == nVars) then 
                                             q_beta%vf(i)%sf(j + unpack_offset, k, l) = &
@@ -1314,7 +1315,10 @@ contains
                                         q_beta%vf(i)%sf(j + unpack_offset, k, l) = &
                                         q_beta%vf(i)%sf(j + unpack_offset, k, l) + &
                                                                         buff_recv(r)
-                                    end if                                    
+                                    end if               
+                                    ! if (proc_rank == 1 .and. k==35 .and. l==35 .and. i==1) then
+                                    !     print*, 'recv data >>', j + unpack_offset, k, l, buff_recv(r), r
+                                    ! end if                     
 #if defined(__INTEL_COMPILER)
                                     if (ieee_is_nan(q_beta%vf(i)%sf(j, k, l))) then
                                         print *, "Error", j, k, l, i
@@ -1335,7 +1339,7 @@ contains
                                     r = (i - 1) + nVars* &
                                         ((j + buff_size) + (m + 2*buff_size + 1)* &
                                          ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                          (k + buff_size)))
+                                          (k + 2*mapCells)))
                                     if (hifu_EL_flag) then
                                         if (i == nVars-2 .or. i == nVars) then
                                             q_beta%vf(i)%sf(j, k + unpack_offset, l) = &
@@ -1348,9 +1352,6 @@ contains
                                                                         buff_recv(r)
                                     end if
                                     
-                                    ! if (proc_rank == 0 .and. j==65 .and. l==35 .and. i==1) then
-                                    !     print*, 'recv data >>', j, k + unpack_offset, l, buff_recv(r), r
-                                    ! end if
 #if defined(__INTEL_COMPILER)
                                     if (ieee_is_nan(q_beta%vf(i)%sf(j, k, l))) then
                                         print *, "Error", j, k, l, i
@@ -1372,7 +1373,7 @@ contains
                                     r = (i - 1) + nVars* &
                                         ((j + buff_size) + (m + 2*buff_size + 1)* &
                                          ((k + buff_size) + (n + 2*buff_size + 1)* &
-                                          (l + buff_size)))
+                                          (l + 2*mapCells)))
                                     if (hifu_EL_flag) then
                                         if (i == nVars-2 .or. i == nVars) then
                                             q_beta%vf(i)%sf(j, k, l + unpack_offset) = &
