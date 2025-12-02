@@ -792,27 +792,27 @@ contains
 
         ! x-dir
         if (bcxb == BC_REFLECTIVE .and. (cell(1) <= mapCells - 1)) then
-            cellaux(1) = abs(cellaux(1)) - 1
+            cellaux(1) = abs(cellaux(1))
         end if
         if (bcxe == BC_REFLECTIVE .and. (cell(1) >= m + 1 - mapCells)) then
-            cellaux(1) = cellaux(1) - (2*(cellaux(1) - m) - 1)
+            cellaux(1) = cellaux(1) - (2*(cellaux(1) - m))
         end if
 
         !y-dir
         if (bcyb == BC_REFLECTIVE .and. (cell(2) <= mapCells - 1)) then
-            cellaux(2) = abs(cellaux(2)) - 1
+            cellaux(2) = abs(cellaux(2))
         end if
         if (bcye == BC_REFLECTIVE .and. (cell(2) >= n + 1 - mapCells)) then
-            cellaux(2) = cellaux(2) - (2*(cellaux(2) - n) - 1)
+            cellaux(2) = cellaux(2) - (2*(cellaux(2) - n))
         end if
 
         if (p > 0) then
             !z-dir
             if (bczb == BC_REFLECTIVE .and. (cell(3) <= mapCells - 1)) then
-                cellaux(3) = abs(cellaux(3)) - 1
+                cellaux(3) = abs(cellaux(3))
             end if
             if (bcze == BC_REFLECTIVE .and. (cell(3) >= p + 1 - mapCells)) then
-                cellaux(3) = cellaux(3) - (2*(cellaux(3) - p) - 1)
+                cellaux(3) = cellaux(3) - (2*(cellaux(3) - p))
             end if
         end if
 
@@ -827,8 +827,8 @@ contains
         ! x-dir
         if (bcxb == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) gang vector default(present)
-            do l = 0, p
-                do k = 0, n
+            do l = -buff_size, p + buff_size
+                do k = -buff_size, n + buff_size
                     do j = 1, buff_size
                         updatedvar%vf(1)%sf(-j, k, l) = updatedvar%vf(1)%sf(j - 1, k, l)
                         updatedvar%vf(2)%sf(-j, k, l) = updatedvar%vf(2)%sf(j - 1, k, l)
@@ -841,8 +841,8 @@ contains
         end if
         if (bcxe == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) default(present)
-            do l = 0, p
-                do k = 0, n
+            do l = -buff_size, p + buff_size
+                do k = -buff_size, n + buff_size
                     do j = 1, buff_size
                         updatedvar%vf(1)%sf(m + j, k, l) = updatedvar%vf(1)%sf(m - (j - 1), k, l)
                         updatedvar%vf(2)%sf(m + j, k, l) = updatedvar%vf(2)%sf(m - (j - 1), k, l)
@@ -857,7 +857,7 @@ contains
         !y-dir
         if (bcyb == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) gang vector default(present)
-            do k = 0, p
+            do k = -buff_size, p + buff_size
                 do j = 1, buff_size
                     do l = -buff_size, m + buff_size
                         updatedvar%vf(1)%sf(l, -j, k) = updatedvar%vf(1)%sf(l, j - 1, k)
@@ -871,7 +871,7 @@ contains
         end if
         if (bcye == BC_REFLECTIVE) then
             !$acc parallel loop collapse(3) gang vector default(present)
-            do k = 0, p
+            do k = -buff_size, p + buff_size
                 do j = 1, buff_size
                     do l = -buff_size, m + buff_size
                         updatedvar%vf(1)%sf(l, n + j, k) = updatedvar%vf(1)%sf(l, n - (j - 1), k)
