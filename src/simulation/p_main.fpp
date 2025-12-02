@@ -94,7 +94,7 @@ program p_main
                                  proc_time, io_proc_time, file_exists, start, finish, nt)
 
         if (cfl_dt) then
-            if (mod(mytime, t_save) < sgm_eps .or. mytime >= t_stop) then
+            if (mod(mytime, t_save) < verysmall .or. mytime >= t_stop) then
                 call s_save_data(t_step, start, finish, io_time_avg, nt)
             end if
         else
