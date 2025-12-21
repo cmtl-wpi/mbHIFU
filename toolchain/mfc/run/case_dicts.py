@@ -60,6 +60,12 @@ COMMON = {
     'Bx0': ParamType.REAL,
     'relativity': ParamType.LOG,
     'cont_damage': ParamType.LOG,
+    'num_bc_patches': ParamType.INT,
+    'igr': ParamType.LOG,
+    'igr_order': ParamType.INT,
+    'down_sample': ParamType.LOG,
+    'recon_type': ParamType.INT,
+    'muscl_order': ParamType.INT,
 }
 
 PRE_PROCESS = COMMON.copy()
@@ -72,6 +78,8 @@ PRE_PROCESS.update({
     'mixlayer_vel_coef': ParamType.REAL,
     'mixlayer_domain': ParamType.REAL,
     'mixlayer_perturb': ParamType.LOG,
+    'mixlayer_perturb_nk': ParamType.INT,
+    'mixlayer_perturb_k0': ParamType.REAL,
     'perturb_flow': ParamType.LOG,
     'perturb_flow_fluid': ParamType.INT,
     'perturb_flow_mag': ParamType.REAL,
@@ -81,7 +89,6 @@ PRE_PROCESS.update({
     'num_patches': ParamType.INT,
     'qbmm': ParamType.LOG,
     'dist_type': ParamType.INT,
-    'R0_type': ParamType.INT,
     'sigR': ParamType.REAL,
     'sigV': ParamType.REAL,
     'rhoRV': ParamType.REAL,
@@ -97,7 +104,6 @@ PRE_PROCESS.update({
     'surface_tension': ParamType.LOG,
     'elliptic_smoothing': ParamType.LOG,
     'elliptic_smoothing_iters': ParamType.INT,
-    'num_bc_patches': ParamType.INT,
     'viscous': ParamType.LOG,
     'bubbles_lagrange': ParamType.LOG,
 })
@@ -106,8 +112,14 @@ for ib_id in range(1, 10+1):
     for real_attr, ty in [("geometry", ParamType.INT), ("radius", ParamType.REAL),
                           ("theta", ParamType.REAL), ("slip", ParamType.LOG),
                           ("c", ParamType.REAL), ("p", ParamType.REAL),
-                          ("t", ParamType.REAL), ("m", ParamType.REAL)]:
+                          ("t", ParamType.REAL), ("m", ParamType.REAL),
+                          ("moving_ibm", ParamType.INT)]:
         PRE_PROCESS[f"patch_ib({ib_id})%{real_attr}"] = ty
+
+    for dir_id in range(1, 4):
+        PRE_PROCESS[f"patch_ib({ib_id})%vel({dir_id})"] = ParamType.REAL
+        PRE_PROCESS[f"patch_ib({ib_id})%angles({dir_id})"] = ParamType.REAL
+        PRE_PROCESS[f"patch_ib({ib_id})%angular_vel({dir_id})"] = ParamType.REAL
 
     for cmp_id, cmp in enumerate(["x", "y", "z"]):
         cmp_id += 1
@@ -273,7 +285,6 @@ SIMULATION.update({
     'acoustic_source': ParamType.LOG,
     'num_source': ParamType.INT,
     'qbmm': ParamType.LOG,
-    'R0_type': ParamType.INT,
     'integral_wrt': ParamType.LOG,
     'num_integrals': ParamType.INT,
     'rdma_mpi': ParamType.LOG,
@@ -282,6 +293,7 @@ SIMULATION.update({
     'pi_fac': ParamType.REAL,
     'adap_dt': ParamType.LOG,
     'adap_dt_tol': ParamType.REAL,
+    'adap_dt_max_iters': ParamType.INT,
     'ib': ParamType.LOG,
     'num_ibs': ParamType.INT,
     'n_start': ParamType.INT,
@@ -298,6 +310,20 @@ SIMULATION.update({
     'tau_star': ParamType.REAL,
     'cont_damage_s': ParamType.REAL,
     'alpha_bar': ParamType.REAL,
+    'num_igr_iters': ParamType.INT,
+    'num_igr_warm_start_iters': ParamType.INT,
+    'alf_factor': ParamType.REAL,
+    'igr_iter_solver': ParamType.INT,
+    'igr_pres_lim': ParamType.LOG,
+    'recon_type': ParamType.INT,
+    'muscl_order': ParamType.INT,
+    'muscl_lim': ParamType.INT,
+    'int_comp': ParamType.LOG,
+    'ic_eps': ParamType.REAL,
+    'ic_beta': ParamType.REAL,
+    'nv_uvm_out_of_core': ParamType.LOG,
+    'nv_uvm_igr_temps_on_gpu': ParamType.INT,
+    'nv_uvm_pref_gpu': ParamType.LOG,
 })
 
 for var in [ 'heatTransfer_model', 'massTransfer_model', 'pressure_corrector',
@@ -341,8 +367,14 @@ for ib_id in range(1, 10+1):
     for real_attr, ty in [("geometry", ParamType.INT), ("radius", ParamType.REAL),
                           ("theta", ParamType.REAL), ("slip", ParamType.LOG),
                           ("c", ParamType.REAL), ("p", ParamType.REAL),
-                          ("t", ParamType.REAL), ("m", ParamType.REAL)]:
+                          ("t", ParamType.REAL), ("m", ParamType.REAL),
+                          ("moving_ibm", ParamType.INT)]:
         SIMULATION[f"patch_ib({ib_id})%{real_attr}"] = ty
+
+    for dir_id in range(1, 4):
+        SIMULATION[f"patch_ib({ib_id})%vel({dir_id})"] = ParamType.REAL
+        SIMULATION[f"patch_ib({ib_id})%angles({dir_id})"] = ParamType.REAL
+        SIMULATION[f"patch_ib({ib_id})%angular_vel({dir_id})"] = ParamType.REAL
 
     for cmp_id, cmp in enumerate(["x", "y", "z"]):
         cmp_id += 1
@@ -447,6 +479,7 @@ POST_PROCESS.update({
     'omega_wrt': ParamType.LOG,
     'qbmm': ParamType.LOG,
     'qm_wrt': ParamType.LOG,
+    'liutex_wrt': ParamType.LOG,
     'cf_wrt': ParamType.LOG,
     'sim_data': ParamType.LOG,
     'ib': ParamType.LOG,
@@ -506,7 +539,9 @@ ALL.update(PRE_PROCESS)
 ALL.update(SIMULATION)
 ALL.update(POST_PROCESS)
 
-CASE_OPTIMIZATION = [ "mapped_weno", "wenoz", "teno", "wenoz_q", "nb", "weno_order", "num_fluids", "mhd", "relativity" ]
+CASE_OPTIMIZATION = [ "mapped_weno", "wenoz", "teno", "wenoz_q", "nb", "weno_order",
+                     "num_fluids", "mhd", "relativity", "igr_order", "viscous",
+                     "igr_iter_solver", "igr", "igr_pres_lim", "recon_type", "muscl_order", "muscl_lim" ]
 
 _properties = { k: v.value for k, v in ALL.items() }
 

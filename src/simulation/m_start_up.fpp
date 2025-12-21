@@ -3,6 +3,7 @@
 !! @brief Contains module m_start_up
 
 #:include 'case.fpp'
+#:include 'macros.fpp'
 
 !> @brief The purpose of the module is primarily to read in the files that
 !!              contain the inputs, the initial condition data and the grid data
@@ -30,6 +31,9 @@ module m_start_up
 
     use m_weno                 !< Weighted and essentially non-oscillatory (WENO)
                                !! schemes for spatial reconstruction of variables
+
+    use m_muscl                !< Monotonic Upstream-centered (MUSCL)
+                               !! schemes for convservation laws
 
     use m_riemann_solvers      !< Exact and approximate Riemann problem solvers
 
@@ -89,6 +93,8 @@ module m_start_up
 
     use m_mhd
 
+    use m_igr
+
     implicit none
 
     private; public :: s_read_input_file, &
@@ -96,15 +102,14 @@ module m_start_up
  s_read_data_files, &
  s_read_serial_data_files, &
  s_read_parallel_data_files, &
- s_populate_grid_variables_buffers, &
  s_initialize_internal_energy_equations, &
  s_initialize_modules, s_initialize_gpu_vars, &
  s_initialize_mpi_domain, s_finalize_modules, &
  s_perform_time_step, s_save_data, &
  s_save_performance_metrics
 
-
-    type(scalar_field), allocatable, dimension(:) :: grad_x_vf, grad_y_vf, grad_z_vf, norm_vf
+    type(scalar_field), allocatable, dimension(:) :: q_cons_temp
+    $:GPU_DECLARE(create='[q_cons_temp]')
 
     real(wp) :: dt_init
 
@@ -112,7 +117,7 @@ contains
 
    !> Read data files. Dispatch subroutine that replaces procedure pointer.
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_data_files(q_cons_vf, q_hifu_vf)
+    impure subroutine s_read_data_files(q_cons_vf, q_hifu_vf)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -133,7 +138,7 @@ contains
     !>  The purpose of this procedure is to first verify that an
         !!      input file has been made available by the user. Provided
         !!      that this is so, the input file is then read in.
-    subroutine s_read_input_file
+    impure subroutine s_read_input_file
 
         ! Relative path to the input file provided by the user
         character(LEN=name_len), parameter :: file_path = './simulation.inp'
@@ -149,9 +154,8 @@ contains
         ! Namelist of the global parameters which may be specified by user
         namelist /user_inputs/ case_dir, run_time_info, m, n, p, dt, &
             t_step_start, t_step_stop, t_step_save, t_step_print, &
-            model_eqns, mpp_lim, time_stepper, weno_eps, weno_flat, &
-            riemann_flat, rdma_mpi, cu_tensor, &
-            teno_CT, mp_weno, weno_avg, &
+            model_eqns, mpp_lim, time_stepper, weno_eps, &
+            rdma_mpi, teno_CT, mp_weno, weno_avg, &
             riemann_solver, low_Mach, wave_speeds, avg_state, &
             bc_x, bc_y, bc_z, &
             x_a, y_a, z_a, x_b, y_b, z_b, &
@@ -165,7 +169,10 @@ contains
             rhoref, pref, bubbles_euler, bubble_model, &
             R0ref, chem_params, &
 #:if not MFC_CASE_OPTIMIZATION
-            nb, mapped_weno, wenoz, teno, wenoz_q, weno_order, num_fluids, mhd, relativity, &
+            nb, mapped_weno, wenoz, teno, wenoz_q, weno_order, &
+            num_fluids, mhd, relativity, igr_order, viscous, &
+            igr_iter_solver, igr, igr_pres_lim, &
+            recon_type, muscl_order, muscl_lim, &
 #:endif
             Ca, Web, Re_inv, &
             acoustic_source, acoustic, num_source, &
@@ -174,16 +181,18 @@ contains
             polydisperse, poly_sigma, qbmm, &
             relax, relax_model, &
             palpha_eps, ptgalpha_eps, &
-            R0_type, file_per_process, sigma, &
-            pi_fac, adv_n, adap_dt, adap_dt_tol, &
+            file_per_process, sigma, &
+            pi_fac, adv_n, adap_dt, adap_dt_tol, adap_dt_max_iters, &
             bf_x, bf_y, bf_z, &
             k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, &
             g_x, g_y, g_z, n_start, t_save, t_stop, &
             cfl_adap_dt, cfl_const_dt, cfl_target, &
-            viscous, surface_tension, &
-            bubbles_lagrange, lag_params, &
+            surface_tension, bubbles_lagrange, lag_params, &
             hyperelasticity, R0ref, num_bc_patches, Bx0, powell, &
             cont_damage, tau_star, cont_damage_s, alpha_bar, &
+            alf_factor, num_igr_iters, num_igr_warm_start_iters, &
+            int_comp, ic_eps, ic_beta, nv_uvm_out_of_core, &
+            nv_uvm_igr_temps_on_gpu, nv_uvm_pref_gpu, down_sample, &
             hifu, hifu_params, acoustic_bc_params
 
         ! Checking that an input file has been provided by the user. If it
@@ -216,6 +225,8 @@ contains
             n_glb = n
             p_glb = p
 
+            call s_update_cell_bounds(cells_bounds, m, n, p)
+
             if (cfl_adap_dt .or. cfl_const_dt) cfl_dt = .true.
 
             if (any((/bc_x%beg, bc_x%end, bc_y%beg, bc_y%end, bc_z%beg, bc_z%end/) == -17) .or. &
@@ -234,7 +245,7 @@ contains
     !> The goal of this procedure is to verify that each of the
     !!      user provided inputs is valid and that their combination
     !!      constitutes a meaningful configuration for the simulation.
-    subroutine s_check_input_file
+    impure subroutine s_check_input_file
 
         ! Relative path to the current directory file in the case directory
         character(LEN=path_len) :: file_path
@@ -261,12 +272,13 @@ contains
         !!              up the latter. This procedure also calculates the cell-
         !!              width distributions from the cell-boundary locations.
         !! @param q_cons_vf Cell-averaged conservative variables
-    subroutine s_read_serial_data_files(q_cons_vf, q_hifu_vf)
+    impure subroutine s_read_serial_data_files(q_cons_vf, q_hifu_vf)
 
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
 
         ! HIFU vars (ONLY IMPLEMENTED IN PARALLEL)
         type(scalar_field), dimension(sys_size_hifu), intent(INOUT), optional :: q_hifu_vf
+
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the starting time-step directory
@@ -508,7 +520,7 @@ contains
     end subroutine s_read_serial_data_files
 
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_parallel_data_files(q_cons_vf, q_hifu_vf)
+    impure subroutine s_read_parallel_data_files(q_cons_vf, q_hifu_vf)
 
         type(scalar_field), &
             dimension(sys_size), &
@@ -538,6 +550,11 @@ contains
 
         integer :: i, j
 
+        ! Downsampled data variables
+        integer :: m_ds, n_ds, p_ds
+        integer :: m_glb_ds, n_glb_ds, p_glb_ds
+        integer :: m_glb_read, n_glb_read, p_glb_read ! data size of read
+
         allocate (x_cb_glb(-1:m_glb))
         allocate (y_cb_glb(-1:n_glb))
         allocate (z_cb_glb(-1:p_glb))
@@ -545,6 +562,16 @@ contains
         ! Read in cell boundary locations in x-direction
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'x_cb.dat'
         inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+        if(down_sample) then
+            m_ds = INT((m+1)/3) - 1
+            n_ds = INT((n+1)/3) - 1
+            p_ds = INT((p+1)/3) - 1
+
+            m_glb_ds = INT((m_glb+1)/3) - 1
+            n_glb_ds = INT((n_glb+1)/3) - 1
+            p_glb_ds = INT((p_glb+1)/3) - 1
+        end if
 
         if (file_exist) then
             data_size = m_glb + 2
@@ -567,7 +594,6 @@ contains
                 if (patch_ib(i)%c > 0) then
                     Np = int((patch_ib(i)%p*patch_ib(i)%c/dx(0))*20) + int(((patch_ib(i)%c - patch_ib(i)%p*patch_ib(i)%c)/dx(0))*20) + 1
                     allocate (MPI_IO_airfoil_IB_DATA%var(1:2*Np))
-                    print *, "HERE Np", Np
                 end if
             end do
         end if
@@ -633,21 +659,35 @@ contains
                 call MPI_FILE_OPEN(MPI_COMM_SELF, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
 
                 ! Initialize MPI data I/O
-
-                if (ib) then
-                    call s_initialize_mpi_data(q_cons_vf, ib_markers, &
-                        levelset, levelset_norm)
+                if(down_sample) then
+                    call s_initialize_mpi_data_ds(q_cons_vf)
                 else
-                    call s_initialize_mpi_data(q_cons_vf)
+                    if (ib) then
+                        call s_initialize_mpi_data(q_cons_vf, ib_markers, &
+                            levelset, levelset_norm)
+                    else
+                        call s_initialize_mpi_data(q_cons_vf)
+                    end if
                 end if
 
-                ! Size of local arrays
-                data_size = (m + 1)*(n + 1)*(p + 1)
+                if(down_sample) then
+                    ! Size of local arrays
+                    data_size = (m_ds + 3)*(n_ds + 3)*(p_ds + 3)
+                    m_glb_read = m_glb_ds + 1
+                    n_glb_read = n_glb_ds + 1
+                    p_glb_read = p_glb_ds + 1
+                else
+                    ! Size of local arrays
+                    data_size = (m + 1)*(n + 1)*(p + 1)
+                    m_glb_read = m_glb + 1
+                    n_glb_read = n_glb + 1
+                    p_glb_read = p_glb + 1
+                end if
 
                 ! Resize some integers so MPI can read even the biggest file
-                m_MOK = int(m_glb + 1, MPI_OFFSET_KIND)
-                n_MOK = int(n_glb + 1, MPI_OFFSET_KIND)
-                p_MOK = int(p_glb + 1, MPI_OFFSET_KIND)
+                m_MOK = int(m_glb_read + 1, MPI_OFFSET_KIND)
+                n_MOK = int(m_glb_read + 1, MPI_OFFSET_KIND)
+                p_MOK = int(m_glb_read + 1, MPI_OFFSET_KIND)
                 WP_MOK = int(8._wp, MPI_OFFSET_KIND)
                 MOK = int(1._wp, MPI_OFFSET_KIND)
                 str_MOK = int(name_len, MPI_OFFSET_KIND)
@@ -672,14 +712,22 @@ contains
                         end do
                     end if
                 else
-                    do i = 1, adv_idx%end
-                        var_MOK = int(i, MPI_OFFSET_KIND)
+                    if(down_sample) then
+                        do i = 1, sys_size
+                            var_MOK = int(i, MPI_OFFSET_KIND)
 
-                        call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                           mpi_p, status, ierr)
-                    end do
+                            call MPI_FILE_READ(ifile, q_cons_temp(i)%sf, data_size, &
+                                               mpi_p, status, ierr)
+                        end do
+                    else
+                        do i = 1, sys_size
+                            var_MOK = int(i, MPI_OFFSET_KIND)
+
+                            call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
+                                               mpi_p, status, ierr)
+                        end do
+                    end if
                 end if
-
 
                 call s_mpi_barrier()
 
@@ -930,8 +978,6 @@ contains
             do j = 1, num_ibs
                 if (patch_ib(j)%c > 0) then
 
-                    print *, "HERE Np", Np
-
                     allocate (airfoil_grid_u(1:Np))
                     allocate (airfoil_grid_l(1:Np))
 
@@ -994,228 +1040,7 @@ contains
 
     end subroutine s_read_parallel_data_files
 
-    !> The purpose of this subroutine is to populate the buffers
-        !!          of the grid variables, which are constituted of the cell-
-        !!          boundary locations and cell-width distributions, based on
-        !!          the boundary conditions.
-    subroutine s_populate_grid_variables_buffers
-
-        integer :: i !< Generic loop iterator
-
-        ! Population of Buffers in x-direction
-
-        ! Populating cell-width distribution buffer, at the beginning of the
-        ! coordinate direction, based on the selected boundary condition. In
-        ! order, these are the ghost-cell extrapolation, symmetry, periodic,
-        ! and processor boundary conditions.
-        if (bc_x%beg <= BC_GHOST_EXTRAP .and. bc_x%beg /= BC_ROT_PERIODIC) then
-            do i = 1, buff_size
-                dx(-i) = dx(0)
-            end do
-        elseif (bc_x%beg == BC_REFLECTIVE) then
-            do i = 1, buff_size
-                dx(-i) = dx(i - 1)
-            end do
-        elseif (bc_x%beg == BC_PERIODIC) then
-            do i = 1, buff_size
-                dx(-i) = dx(m - (i - 1))
-            end do
-        elseif (bc_x%beg == BC_ROT_PERIODIC) then
-            do i = 1, buff_size
-                dx(-i) = dy(n - (i - 1))
-            end do
-        else
-            call s_mpi_sendrecv_grid_variables_buffers(1, -1)
-        end if
-
-        ! Computing the cell-boundary locations buffer, at the beginning of
-        ! the coordinate direction, from the cell-width distribution buffer
-        do i = 1, buff_size
-            x_cb(-1 - i) = x_cb(-i) - dx(-i)
-        end do
-
-        ! Computing the cell-center locations buffer, at the beginning of
-        ! the coordinate direction, from the cell-width distribution buffer
-        do i = 1, buff_size
-            x_cc(-i) = x_cc(1 - i) - (dx(1 - i) + dx(-i))/2._wp
-        end do
-
-        ! Populating the cell-width distribution buffer, at the end of the
-        ! coordinate direction, based on desired boundary condition. These
-        ! include, in order, ghost-cell extrapolation, symmetry, periodic,
-        ! and processor boundary conditions.
-        if (bc_x%end <= BC_GHOST_EXTRAP) then
-            do i = 1, buff_size
-                dx(m + i) = dx(m)
-            end do
-        elseif (bc_x%end == BC_REFLECTIVE) then
-            do i = 1, buff_size
-                dx(m + i) = dx(m - (i - 1))
-            end do
-        elseif (bc_x%end == BC_PERIODIC) then
-            do i = 1, buff_size
-                dx(m + i) = dx(i - 1)
-            end do
-        else
-            call s_mpi_sendrecv_grid_variables_buffers(1, 1)
-        end if
-
-        ! Populating the cell-boundary locations buffer, at the end of the
-        ! coordinate direction, from buffer of the cell-width distribution
-        do i = 1, buff_size
-            x_cb(m + i) = x_cb(m + (i - 1)) + dx(m + i)
-        end do
-        ! Populating the cell-center locations buffer, at the end of the
-        ! coordinate direction, from buffer of the cell-width distribution
-        do i = 1, buff_size
-            x_cc(m + i) = x_cc(m + (i - 1)) + (dx(m + (i - 1)) + dx(m + i))/2._wp
-        end do
-
-        ! END: Population of Buffers in x-direction
-
-        ! Population of Buffers in y-direction
-
-        ! Populating cell-width distribution buffer, at the beginning of the
-        ! coordinate direction, based on the selected boundary condition. In
-        ! order, these are the ghost-cell extrapolation, symmetry, periodic,
-        ! and processor boundary conditions.
-        if (n == 0) then
-            return
-        elseif (bc_y%beg <= BC_GHOST_EXTRAP .and. bc_y%beg /= BC_AXIS .and. bc_y%beg /= BC_ROT_PERIODIC) then
-            do i = 1, buff_size
-                dy(-i) = dy(0)
-            end do
-        elseif (bc_y%beg == BC_REFLECTIVE .or. bc_y%beg == BC_AXIS) then
-            do i = 1, buff_size
-                dy(-i) = dy(i - 1)
-            end do
-        elseif (bc_y%beg == BC_PERIODIC) then
-            do i = 1, buff_size
-                dy(-i) = dy(n - (i - 1))
-            end do
-        elseif (bc_y%beg == BC_ROT_PERIODIC) then
-            do i = 1, buff_size
-                dy(-i) = dx(m - (i - 1))
-            end do
-        else
-            call s_mpi_sendrecv_grid_variables_buffers(2, -1)
-        end if
-
-        ! Computing the cell-boundary locations buffer, at the beginning of
-        ! the coordinate direction, from the cell-width distribution buffer
-        do i = 1, buff_size
-            y_cb(-1 - i) = y_cb(-i) - dy(-i)
-        end do
-        ! Computing the cell-center locations buffer, at the beginning of
-        ! the coordinate direction, from the cell-width distribution buffer
-        do i = 1, buff_size
-            y_cc(-i) = y_cc(1 - i) - (dy(1 - i) + dy(-i))/2._wp
-        end do
-
-        ! Populating the cell-width distribution buffer, at the end of the
-        ! coordinate direction, based on desired boundary condition. These
-        ! include, in order, ghost-cell extrapolation, symmetry, periodic,
-        ! and processor boundary conditions.
-        if (bc_y%end <= BC_GHOST_EXTRAP) then
-            do i = 1, buff_size
-                dy(n + i) = dy(n)
-            end do
-        elseif (bc_y%end == BC_REFLECTIVE) then
-            do i = 1, buff_size
-                dy(n + i) = dy(n - (i - 1))
-            end do
-        elseif (bc_y%end == BC_PERIODIC) then
-            do i = 1, buff_size
-                dy(n + i) = dy(i - 1)
-            end do
-        else
-            call s_mpi_sendrecv_grid_variables_buffers(2, 1)
-        end if
-
-        ! Populating the cell-boundary locations buffer, at the end of the
-        ! coordinate direction, from buffer of the cell-width distribution
-        do i = 1, buff_size
-            y_cb(n + i) = y_cb(n + (i - 1)) + dy(n + i)
-        end do
-        ! Populating the cell-center locations buffer, at the end of the
-        ! coordinate direction, from buffer of the cell-width distribution
-        do i = 1, buff_size
-            y_cc(n + i) = y_cc(n + (i - 1)) + (dy(n + (i - 1)) + dy(n + i))/2._wp
-        end do
-
-        ! END: Population of Buffers in y-direction
-
-        ! Population of Buffers in z-direction
-
-        ! Populating cell-width distribution buffer, at the beginning of the
-        ! coordinate direction, based on the selected boundary condition. In
-        ! order, these are the ghost-cell extrapolation, symmetry, periodic,
-        ! and processor boundary conditions.
-        if (p == 0) then
-            return
-        elseif (bc_z%beg <= BC_GHOST_EXTRAP) then
-            do i = 1, buff_size
-                dz(-i) = dz(0)
-            end do
-        elseif (bc_z%beg == BC_REFLECTIVE) then
-            do i = 1, buff_size
-                dz(-i) = dz(i - 1)
-            end do
-        elseif (bc_z%beg == BC_PERIODIC) then
-            do i = 1, buff_size
-                dz(-i) = dz(p - (i - 1))
-            end do
-        else
-            call s_mpi_sendrecv_grid_variables_buffers(3, -1)
-        end if
-
-        ! Computing the cell-boundary locations buffer, at the beginning of
-        ! the coordinate direction, from the cell-width distribution buffer
-        do i = 1, buff_size
-            z_cb(-1 - i) = z_cb(-i) - dz(-i)
-        end do
-        ! Computing the cell-center locations buffer, at the beginning of
-        ! the coordinate direction, from the cell-width distribution buffer
-        do i = 1, buff_size
-            z_cc(-i) = z_cc(1 - i) - (dz(1 - i) + dz(-i))/2._wp
-        end do
-
-        ! Populating the cell-width distribution buffer, at the end of the
-        ! coordinate direction, based on desired boundary condition. These
-        ! include, in order, ghost-cell extrapolation, symmetry, periodic,
-        ! and processor boundary conditions.
-        if (bc_z%end <= BC_GHOST_EXTRAP) then
-            do i = 1, buff_size
-                dz(p + i) = dz(p)
-            end do
-        elseif (bc_z%end == BC_REFLECTIVE) then
-            do i = 1, buff_size
-                dz(p + i) = dz(p - (i - 1))
-            end do
-        elseif (bc_z%end == BC_PERIODIC) then
-            do i = 1, buff_size
-                dz(p + i) = dz(i - 1)
-            end do
-        else
-            call s_mpi_sendrecv_grid_variables_buffers(3, 1)
-        end if
-
-        ! Populating the cell-boundary locations buffer, at the end of the
-        ! coordinate direction, from buffer of the cell-width distribution
-        do i = 1, buff_size
-            z_cb(p + i) = z_cb(p + (i - 1)) + dz(p + i)
-        end do
-        ! Populating the cell-center locations buffer, at the end of the
-        ! coordinate direction, from buffer of the cell-width distribution
-        do i = 1, buff_size
-            z_cc(p + i) = z_cc(p + (i - 1)) + (dz(p + (i - 1)) + dz(p + i))/2._wp
-        end do
-
-        ! END: Population of Buffers in z-direction
-
-    end subroutine s_populate_grid_variables_buffers
-
-    !> The purpose of this procedure is to initialize the
+        !> The purpose of this procedure is to initialize the
         !!      values of the internal-energy equations of each phase
         !!      from the mass of each phase, the mixture momentum and
         !!      mixture-total-energy equations.
@@ -1250,7 +1075,7 @@ contains
 
                     dyn_pres = 0._wp
                     do i = mom_idx%beg, mom_idx%end
-                        dyn_pres = dyn_pres + 5e-1_wp*v_vf(i)%sf(j, k, l)*v_vf(i)%sf(j, k, l) &
+                        dyn_pres = dyn_pres + 5.e-1_wp*v_vf(i)%sf(j, k, l)*v_vf(i)%sf(j, k, l) &
                                    /max(rho, sgm_eps)
                     end do
 
@@ -1283,15 +1108,9 @@ contains
 
     end subroutine s_initialize_internal_energy_equations
 
-    subroutine s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt)
+    impure subroutine s_perform_time_step(t_step, time_avg)
         integer, intent(inout) :: t_step
-        real(wp), intent(inout) :: time_avg, time_final
-        real(wp), intent(inout) :: io_time_avg, io_time_final
-        real(wp), dimension(:), intent(inout) :: proc_time
-        real(wp), dimension(:), intent(inout) :: io_proc_time
-        logical, intent(inout) :: file_exists
-        real(wp), intent(inout) :: start, finish
-        integer, intent(inout) :: nt
+        real(wp), intent(inout) :: time_avg
 
 
         integer :: i
@@ -1304,50 +1123,55 @@ contains
 
             if (t_step == 0) dt_init = dt
 
-            if (dt < 1e-3_wp*dt_init .and. cfl_adap_dt .and. proc_rank == 0) then
+            if (dt < 1.e-3_wp*dt_init .and. cfl_adap_dt .and. proc_rank == 0) then
                 print*, "Delta t = ", dt
                 call s_mpi_abort("Delta t has become too small")
             end if
         end if
 
         if (cfl_dt) then
-            if (mod(mytime + dt, t_save) < dt .and. &
-            .not. f_approx_equal(mod(mytime + dt, t_save), 0._wp) .and. &
-            .not. f_approx_equal(mod(mytime + dt, t_save), dt)) then
-                dt = dt - mod(mytime + dt, t_save)
-                !$acc update device(dt)
-            end if
-            ! if ((mytime + dt) >= t_stop) then
-            !     dt = t_stop - mytime
-            !     !$acc update device(dt)
+            ! print *, 'Current dt = ', dt
+            ! if (mod(mytime + dt, t_save) < dt .and. &
+            !   .not. f_approx_equal(mod(mytime + dt, t_save), 0._wp) .and. &
+            !   .not. f_approx_equal(mod(mytime + dt, t_save), dt)) then
+            !     dt = dt - mod(mytime + dt, t_save)
+            !     $:GPU_UPDATE(device='[dt]')
+            !     print *, 'Adjusted dt to save data at t = ', mytime + dt
             ! end if
+            if ((mytime + dt) >= t_stop) then
+                dt = t_stop - mytime
+                $:GPU_UPDATE(device='[dt]')
+            end if
         else
             if ((mytime + dt) >= finaltime) then
                 dt = finaltime - mytime
-                !$acc update device(dt)
+                $:GPU_UPDATE(device='[dt]')
             end if
         end if
 
         if (cfl_dt) then
             if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
-                print '(" [", I3, "%] Time ", ES16.6, " dt = ", ES16.6, " @ Time Step = ", I8, "")', &
+                print '(" [", I3, "%] Time ", ES16.6, " dt = ", ES16.6, " @ Time Step = ", I8,  " Time Avg = ", ES16.6,  " Time/step = ", ES12.6, "")', &
                     int(ceiling(100._wp*(mytime/t_stop))), &
                     mytime, &
                     dt, &
-                    t_step
+                    t_step, &
+                    wall_time_avg, &
+                    wall_time
             end if
         else
             if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
-                print '(" [", I3, "%]  Time step ", I8, " of ", I0, " @ t_step = ", I0, "")', &
+                print '(" [", I3, "%]  Time step ", I8, " of ", I0, " @ t_step = ", I8,  " Time Avg = ", ES12.6,  " Time/step= ", ES12.6, "")', &
                    int(ceiling(100._wp*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
                     t_step - t_step_start + 1, &
                     t_step_stop - t_step_start + 1, &
-                t_step
+                    t_step, &
+                    wall_time_avg, &
+                    wall_time
             end if
         end if
 
         if (t_step == t_step_start .and. hifu_params%heatSolver) then
-
             if (hifu_params%stg3_3d) then
                 ! Transforming from 2d axisymmetric to 3d cylindrical coords
                 call s_finalize_derived_variables_module()
@@ -1357,7 +1181,6 @@ contains
             elseif (p>0 .and. .not. cyl_coord) then
                 call s_initialize_pure_3D(bc_type)
             end if
-
         end if
 
         probe_wrt_dv = .true.
@@ -1367,20 +1190,18 @@ contains
             if (hifu_params%heatSolver) then
                 if (hifu_params%stg3_3d) then
                     if (mod(t_step - t_step_start, 1) == 0) then !Get temperature probe every 100 t_steps
-                        !$acc update host(q_hifu_3d%vf(hifu_params%T_idx)%sf)
+                        $:GPU_UPDATE(host='[q_hifu_3d%vf(hifu_params%T_idx)%sf]')
                     else
                         probe_wrt_dv = .false.
                     end if
                 else
-                !$acc update host(q_hifu%vf(hifu_params%T_idx)%sf)
+                $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%T_idx)%sf]')
                 end if
             else
                 do i = 1, sys_size
-                    !$acc update host(q_cons_ts(1)%vf(i)%sf)
+                    $:GPU_UPDATE(host='[q_cons_ts(1)%vf(i)%sf]')
                 end do
             end if
-
-            !print*, probe_wrt_dv
 
         end if
 
@@ -1395,14 +1216,8 @@ contains
         if (hifu_params%heatSolver) then ! Solve heat eqn HIFU solver
             call s_time_stepper_heatEqn(t_step)
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-        elseif (time_stepper == 1) then
-            call s_1st_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 2) then
-            call s_2nd_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 3 .and. (.not. adap_dt)) then
-            call s_3rd_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 3 .and. adap_dt) then
-            call s_strang_splitting(t_step, time_avg)
+        elseif (any(time_stepper == (/1, 2, 3/))) then
+            call s_tvd_rk(t_step, time_avg, time_stepper)
         end if
 
         if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
@@ -1413,16 +1228,14 @@ contains
 
     end subroutine s_perform_time_step
 
-    subroutine s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, exitFlag)
+    impure subroutine s_save_performance_metrics(time_avg, time_final, io_time_avg, io_time_final, proc_time, io_proc_time, file_exists, t_step, exitFlag)
 
-        integer, intent(inout) :: t_step
         real(wp), intent(inout) :: time_avg, time_final
         real(wp), intent(inout) :: io_time_avg, io_time_final
         real(wp), dimension(:), intent(inout) :: proc_time
         real(wp), dimension(:), intent(inout) :: io_proc_time
         logical, intent(inout) :: file_exists
-        real(wp), intent(inout) :: start, finish
-        integer, intent(inout) :: nt
+        integer, intent(inout) :: t_step
         logical, intent(out) :: exitFlag !used for hifu
 
         real(wp) :: grind_time
@@ -1435,7 +1248,7 @@ contains
             call s_HIFU_stages(t_step, hifu_write_output, exitFlag) 
             if (hifu_write_output) then
                 do i = 1, sys_size_hifu
-                    !$acc update host(q_hifu%vf(i)%sf)
+                    $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
                 end do
 
                 if (cfl_dt) then
@@ -1444,8 +1257,8 @@ contains
                     save_count = t_step
                 end if
 
-                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, &
-                                                        save_count, q_hifu_vf=q_hifu%vf)
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
+                                                            bc_type, q_hifu_vf=q_hifu%vf)
             end if
 
             if (.not. exitFlag) return
@@ -1471,7 +1284,9 @@ contains
                 io_time_final = maxval(io_proc_time)
             end if
 
-            grind_time = time_final*1.0e9_wp/(sys_size*maxval((/1,m_glb/))*maxval((/1,n_glb/))*maxval((/1,p_glb/)))
+            grind_time = time_final * 1.0e9_wp / &
+                (real(sys_size, wp) * real(maxval((/1, m_glb/)), wp) * &
+                 real(maxval((/1, n_glb/)), wp) * real(maxval((/1, p_glb/)), wp))
 
             print *, "Performance:", grind_time, "ns/gp/eq/rhs"
             inquire (FILE='time_data.dat', EXIST=file_exists)
@@ -1501,7 +1316,7 @@ contains
 
     end subroutine s_save_performance_metrics
 
-    subroutine s_save_data(t_step, start, finish, io_time_avg, nt)
+    impure subroutine s_save_data(t_step, start, finish, io_time_avg, nt)
         integer, intent(inout) :: t_step
         real(wp), intent(inout) :: start, finish, io_time_avg
         integer, intent(inout) :: nt
@@ -1510,10 +1325,12 @@ contains
         integer :: save_count
         logical :: hifu_write_output
 
+        print*, "Saving data at time step ", t_step
+
         call cpu_time(start)
         call nvtxStartRange("SAVE-DATA")
         do i = 1, sys_size
-            !$acc update host(q_cons_ts(1)%vf(i)%sf)
+            $:GPU_UPDATE(host='[q_cons_ts(1)%vf(i)%sf]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -1533,8 +1350,8 @@ contains
         end do
 
         if (qbmm .and. .not. polytropic) then
-            !$acc update host(pb_ts(1)%sf)
-            !$acc update host(mv_ts(1)%sf)
+            $:GPU_UPDATE(host='[pb_ts(1)%sf]')
+            $:GPU_UPDATE(host='[mv_ts(1)%sf]')
         end if
 
         if (cfl_dt) then
@@ -1547,43 +1364,49 @@ contains
         if (hifu_params%heatSolver) then
             if (hifu_params%stg3_3d) then
                 do i = 1, sys_size_hifu
-                    !$acc update host(q_hifu_3d%vf(i)%sf)
+                    $:GPU_UPDATE(host='[q_hifu_3d%vf(i)%sf]')
                 end do
                 if (hifu_params%cartesian) then
-                    if (proc_rank == 0) call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu_3d%vf)
+                    if (proc_rank == 0) call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
+                                                                                  bc_type, q_hifu_vf=q_hifu_3d%vf)
                 else
-                    call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu_3d%vf)
+                    call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
+                                                              bc_type, q_hifu_vf=q_hifu_3d%vf)
                 end if
             else
                 do i = 1, sys_size_hifu
-                    !$acc update host(q_hifu%vf(i)%sf)
+                    $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
                 end do
-                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu%vf)
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
+                                                              bc_type, q_hifu_vf=q_hifu%vf)
             end if
         elseif (hifu_params%sampling) then
             do i = 1, sys_size_hifu
-                !$acc update host(q_hifu%vf(i)%sf)
+                $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
             end do
             call s_write_Pmax(save_count)
-            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_hifu_vf=q_hifu%vf)
+            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
+                                                        bc_type, q_hifu_vf=q_hifu%vf)
         end if
 
         if (.not. hifu_params%heatSolver) then
             if (bubbles_lagrange) then
-                !$acc update host(intfc_rad)
+                $:GPU_UPDATE(host='[intfc_rad]')
                 do i = 1, nBubs
                     if (ieee_is_nan(intfc_rad(i, 1)) .or. intfc_rad(i, 1) <= 0._wp) then
                         call s_mpi_abort("Bubble radius is negative or NaN, please reduce dt.")
                     end if
                 end do
 
-                !$acc update host(q_beta%vf(1)%sf)
-                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, q_beta%vf(1))
-                !$acc update host(Rmax_stats, Rmin_stats, gas_p, gas_mv, intfc_vel)
+                $:GPU_UPDATE(host='[q_beta%vf(1)%sf]')
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
+                                                                    bc_type, q_beta%vf(1))
+                $:GPU_UPDATE(host='[Rmax_stats,Rmin_stats,gas_p,gas_mv,intfc_vel]')
                 call s_write_restart_lag_bubbles(save_count) !parallel
                 if (lag_params%write_bubbles_stats) call s_write_lag_bubble_stats()
             else
-                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count)
+                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
+                                                                                  bc_type)
             end if
         end if
 
@@ -1603,12 +1426,16 @@ contains
 
     end subroutine s_save_data
 
-    subroutine s_initialize_modules
+    impure subroutine s_initialize_modules
+
+        integer :: m_ds, n_ds, p_ds
+        integer :: i, j, k, l, x_id, y_id, z_id, ix, iy, iz
+        real(wp) :: temp1, temp2, temp3, temp4
 
         call s_initialize_global_parameters_module()
         !Quadrature weights and nodes for polydisperse simulations
-        if (bubbles_euler .and. nb > 1 .and. R0_type == 1) then
-            call s_simpson
+        if (bubbles_euler .and. nb > 1) then
+            call s_simpson(weight, R0)
         end if
         !Initialize variables for non-polytropic (Preston) model
         if (bubbles_euler .and. .not. polytropic) then
@@ -1616,34 +1443,25 @@ contains
         end if
         !Initialize pb based on surface tension for qbmm (polytropic)
         if (qbmm .and. polytropic .and. (.not. f_is_default(Web))) then
-            pb0 = pref + 2._wp*fluid_pp(1)%ss/(R0*R0ref)
+            pb0(:) = pref + 2._wp*fluid_pp(1)%ss/(R0(:)*R0ref)
             pb0 = pb0/pref
             pref = 1._wp
         end if
 
-#if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
-        call acc_present_dump()
-#endif
-
-
         call s_initialize_mpi_common_module()
+        call s_initialize_mpi_proxy_module()
         call s_initialize_variables_conversion_module()
         if (grid_geometry == 3) call s_initialize_fftw_module()
-        call s_initialize_riemann_solvers_module()
 
         if(bubbles_euler) call s_initialize_bubbles_EE_module()
         if (ib) call s_initialize_ibm_module()
         if (qbmm) call s_initialize_qbmm_module()
 
-#if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
-        call acc_present_dump()
-#endif
-
         if (acoustic_source) then
             call s_initialize_acoustic_src()
         end if
 
-        if (viscous) then
+        if (viscous .and. (.not. igr)) then
             call s_initialize_viscous_module()
         end if
 
@@ -1651,23 +1469,38 @@ contains
 
         if (surface_tension) call s_initialize_surface_tension_module()
 
-#if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
-        call acc_present_dump()
-#endif
-
         if (relax) call s_initialize_phasechange_module()
 
         call s_initialize_data_output_module()
         call s_initialize_derived_variables_module()
         call s_initialize_time_steppers_module()
-        if (hifu) call s_initialize_HIFU_module()
-#if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
-        call acc_present_dump()
-#endif
         call s_initialize_boundary_common_module()
+        if (hifu) call s_initialize_HIFU_module()
+
+        if(down_sample) then
+            m_ds = INT((m+1)/3) - 1
+            n_ds = INT((n+1)/3) - 1
+            p_ds = INT((p+1)/3) - 1
+
+            allocate(q_cons_temp(1:sys_size))
+            do i = 1, sys_size
+                allocate(q_cons_temp(i)%sf(-1:m_ds+1,-1:n_ds+1,-1:p_ds+1))
+            end do
+        end if
 
         ! Reading in the user provided initial condition and grid data
-        call s_read_data_files(q_cons_ts(1)%vf)
+        if(down_sample) then
+            call s_read_data_files(q_cons_temp)
+            call s_upsample_data(q_cons_ts(1)%vf, q_cons_temp)
+            do i = 1, sys_size
+                $:GPU_UPDATE(device='[q_cons_ts(1)%vf(i)%sf]')
+            end do
+        else
+            call s_read_data_files(q_cons_ts(1)%vf)
+        end if
+
+        ! Populating the buffers of the grid variables using the boundary conditions
+        call s_populate_grid_variables_buffers()
 
         if (hifu_params%sampling .or. hifu_params%heatSolver) then
             call s_read_data_files(q_cons_ts(1)%vf, q_hifu_vf=q_hifu%vf)
@@ -1678,23 +1511,24 @@ contains
         if (bodyForces) call s_initialize_body_forces_module()
         if (acoustic_source) call s_precalculate_acoustic_spatial_sources()
 
-        ! Populating the buffers of the grid variables using the boundary conditions
-        call s_populate_grid_variables_buffers()
-
         ! Initialize the Temperature cache.
         if (chemistry) call s_compute_q_T_sf(q_T_sf, q_cons_ts(1)%vf, idwint)
 
         ! Computation of parameters, allocation of memory, association of pointers,
         ! and/or execution of any other tasks that are needed to properly configure
         ! the modules. The preparations below DO DEPEND on the grid being complete.
-        call s_initialize_weno_module()
+        if (igr) then
+            call s_initialize_igr_module()
+        else
+            if (recon_type == WENO_TYPE) then
+                call s_initialize_weno_module()
+            elseif (recon_type == MUSCL_TYPE) then
+                call s_initialize_muscl_module()
+            end if
+            call s_initialize_cbc_module()
+            call s_initialize_riemann_solvers_module()
+        end if
 
-#if defined(MFC_OpenACC) && defined(MFC_MEMORY_DUMP)
-        print *, "[MEM-INST] After: s_initialize_weno_module"
-        call acc_present_dump()
-#endif
-
-        call s_initialize_cbc_module()
         call s_initialize_derived_variables()
         if (bubbles_lagrange) call s_initialize_bubbles_EL_module(q_cons_ts(1)%vf, bc_type)
 
@@ -1705,7 +1539,7 @@ contains
 
     end subroutine s_initialize_modules
 
-    subroutine s_initialize_mpi_domain
+    impure subroutine s_initialize_mpi_domain
         integer :: ierr
 #ifdef MFC_OpenACC
         real(wp) :: starttime, endtime
@@ -1783,53 +1617,66 @@ contains
     subroutine s_initialize_gpu_vars
         integer :: i
         !Update GPU DATA
-        do i = 1, sys_size
-            !$acc update device(q_cons_ts(1)%vf(i)%sf)
-        end do
+        if (.not. down_sample) then
+            do i = 1, sys_size
+                $:GPU_UPDATE(device='[q_cons_ts(1)%vf(i)%sf]')
+            end do
+        end if
 
         if (hifu_params%sampling .or. hifu_params%heatSolver) then
             do i = 1, sys_size_hifu
-                !$acc update device(q_hifu%vf(i)%sf)
+                $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
             end do
         end if
 
         if (qbmm .and. .not. polytropic) then
-            !$acc update device(pb_ts(1)%sf, mv_ts(1)%sf)
+            $:GPU_UPDATE(device='[pb_ts(1)%sf,mv_ts(1)%sf]')
         end if
         if (chemistry) then
-            !$acc update device(q_T_sf%sf)
+            $:GPU_UPDATE(device='[q_T_sf%sf]')
         end if
-        !$acc update device(nb, R0ref, Ca, Web, Re_inv, weight, R0, V0, bubbles_euler, polytropic, polydisperse, qbmm, R0_type, ptil, bubble_model, thermal, poly_sigma, adv_n, adap_dt, adap_dt_tol, n_idx, pi_fac, low_Mach)
-        !$acc update device(R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, pv, M_n, M_v, k_n, k_v, pb0, mass_n0, mass_v0, Pe_T, Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN , mul0, ss, gamma_v, mu_v, gamma_m, gamma_n, mu_n, gam)
-        !$acc update device(k_vl, k_nl, cp_v, cp_n)
 
-        !$acc update device(acoustic_source, num_source)
-        !$acc update device(sigma, surface_tension)
+        $:GPU_UPDATE(device='[chem_params]')
         
-        !$acc update device(acoustic_bc_params)
-        !$acc update device(hifu, hifu_params, sys_size_hifu)
+        $:GPU_UPDATE(device='[nb,R0ref,Ca,Web,Re_inv,weight,R0, &
+            & bubbles_euler,polytropic,polydisperse,qbmm, &
+            & ptil,bubble_model,thermal,poly_sigma,adv_n,adap_dt, &
+            & adap_dt_tol,adap_dt_max_iters,n_idx,pi_fac,low_Mach]')
+        $:GPU_UPDATE(device='[R_n,R_v,phi_vn,phi_nv,Pe_c,Tw,pv,M_n, &
+            & M_v,k_n,k_v,pb0,mass_n0,mass_v0,Pe_T,Re_trans_T, &
+            & Re_trans_c,Im_trans_T,Im_trans_c,omegaN,mul0,ss, &
+            & gamma_v,mu_v,gamma_m,gamma_n,mu_n,gam]')
 
-        !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
+        $:GPU_UPDATE(device='[acoustic_source, num_source]')
+        $:GPU_UPDATE(device='[sigma, surface_tension]')
 
-        !$acc update device(bc_x%vb1, bc_x%vb2, bc_x%vb3, bc_x%ve1, bc_x%ve2, bc_x%ve3)
-        !$acc update device(bc_y%vb1, bc_y%vb2, bc_y%vb3, bc_y%ve1, bc_y%ve2, bc_y%ve3)
-        !$acc update device(bc_z%vb1, bc_z%vb2, bc_z%vb3, bc_z%ve1, bc_z%ve2, bc_z%ve3)
+        $:GPU_UPDATE(device='[acoustic_bc_params]')
+        $:GPU_UPDATE(device='[hifu, hifu_params, sys_size_hifu]')
 
-        !$acc update device(bc_x%grcbc_in, bc_x%grcbc_out, bc_x%grcbc_vel_out)
-        !$acc update device(bc_y%grcbc_in, bc_y%grcbc_out, bc_y%grcbc_vel_out)
-        !$acc update device(bc_z%grcbc_in, bc_z%grcbc_out, bc_z%grcbc_vel_out)
+        $:GPU_UPDATE(device='[dx,dy,dz,x_cb,x_cc,y_cb,y_cc,z_cb,z_cc]')
 
-        !$acc update device(relax, relax_model)
+        $:GPU_UPDATE(device='[bc_x%vb1,bc_x%vb2,bc_x%vb3,bc_x%ve1,bc_x%ve2,bc_x%ve3]')
+        $:GPU_UPDATE(device='[bc_y%vb1,bc_y%vb2,bc_y%vb3,bc_y%ve1,bc_y%ve2,bc_y%ve3]')
+        $:GPU_UPDATE(device='[bc_z%vb1,bc_z%vb2,bc_z%vb3,bc_z%ve1,bc_z%ve2,bc_z%ve3]')
+
+        $:GPU_UPDATE(device='[bc_x%grcbc_in,bc_x%grcbc_out,bc_x%grcbc_vel_out]')
+        $:GPU_UPDATE(device='[bc_y%grcbc_in,bc_y%grcbc_out,bc_y%grcbc_vel_out]')
+        $:GPU_UPDATE(device='[bc_z%grcbc_in,bc_z%grcbc_out,bc_z%grcbc_vel_out]')
+
+        $:GPU_UPDATE(device='[relax, relax_model]')
         if (relax) then
-            !$acc update device(palpha_eps, ptgalpha_eps)
+            $:GPU_UPDATE(device='[palpha_eps, ptgalpha_eps]')
         end if
 
         if (ib) then
-            !$acc update device(ib_markers%sf)
+            $:GPU_UPDATE(device='[ib_markers%sf]')
         end if
+
+        $:GPU_UPDATE(device='[igr, igr_order]')
+
     end subroutine s_initialize_gpu_vars
 
-    subroutine s_finalize_modules
+    impure subroutine s_finalize_modules
 
         if (hifu_params%heatSolver) call s_restore_initial_setup()
         call s_finalize_time_steppers_module()
@@ -1838,20 +1685,29 @@ contains
         call s_finalize_derived_variables_module()
         call s_finalize_data_output_module()
         call s_finalize_rhs_module()
-        call s_finalize_cbc_module()
-        call s_finalize_riemann_solvers_module()
-        call s_finalize_weno_module()
+        if (igr) then
+            call s_finalize_igr_module()
+        else
+            call s_finalize_cbc_module()
+            call s_finalize_riemann_solvers_module()
+            if (recon_type == WENO_TYPE) then
+                call s_finalize_weno_module()
+            elseif (recon_type == MUSCL_TYPE) then
+                call s_finalize_muscl_module()
+            end if
+        end if
         call s_finalize_variables_conversion_module()
         if (grid_geometry == 3) call s_finalize_fftw_module
         call s_finalize_mpi_common_module()
         call s_finalize_global_parameters_module()
         call s_finalize_boundary_common_module()
         if (relax) call s_finalize_relaxation_solver_module()
-        if (bubbles_lagrange) call s_finalize_lagrangian_solver() 
+        if (bubbles_lagrange) call s_finalize_lagrangian_solver()
         if (hifu) call s_finalize_HIFU_module()
-        if (viscous) then
+        if (viscous .and. (.not. igr)) then
             call s_finalize_viscous_module()
         end if
+        call s_finalize_mpi_proxy_module()
 
         if (surface_tension)  call s_finalize_surface_tension_module()
         if (bodyForces) call s_finalize_body_forces_module()

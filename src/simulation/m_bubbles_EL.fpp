@@ -21,6 +21,8 @@ module m_bubbles_EL
 
     use m_boundary_common
 
+    use m_helper_basic         !< Functions to compare floating point numbers
+
     use m_sim_helpers
 
     use m_helper
@@ -32,21 +34,29 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:) :: bub_R0            !< Initial bubble radius
     real(wp), allocatable, dimension(:) :: Rmax_stats        !< Maximum radius
     real(wp), allocatable, dimension(:) :: Rmin_stats        !< Minimum radius
+    $:GPU_DECLARE(create='[lag_id, bub_R0, Rmax_stats, Rmin_stats]')
+
     real(wp), allocatable, dimension(:) :: gas_mg            !< Bubble's gas mass
     real(wp), allocatable, dimension(:) :: gas_betaT         !< heatflux model (Preston et al., 2007)
     real(wp), allocatable, dimension(:) :: gas_betaC         !< massflux model (Preston et al., 2007)
     real(wp), allocatable, dimension(:) :: bub_dphidt        !< subgrid velocity potential (Maeda & Colonius, 2018)
+    $:GPU_DECLARE(create='[gas_mg, gas_betaT, gas_betaC, bub_dphidt]')
+
     !(nBub, 1 -> actual val or 2 -> temp val)
     real(wp), allocatable, dimension(:, :) :: gas_p          !< Pressure in the bubble
     real(wp), allocatable, dimension(:, :) :: gas_mv         !< Vapor mass in the bubble
     real(wp), allocatable, dimension(:, :) :: intfc_rad      !< Bubble radius
     real(wp), allocatable, dimension(:, :) :: intfc_vel      !< Velocity of the bubble interface
     real(wp), allocatable, dimension(:, :) :: intfc_ac       !< Acceleration of the bubble interface
+    $:GPU_DECLARE(create='[gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac]')
+
     !(nBub, 1-> x or 2->y or 3 ->z, 1 -> actual or 2 -> temporal val)
     real(wp), allocatable, dimension(:, :, :) :: mtn_pos     !< Bubble's position
     real(wp), allocatable, dimension(:, :, :) :: mtn_posPrev !< Bubble's previous position
     real(wp), allocatable, dimension(:, :, :) :: mtn_vel     !< Bubble's velocity
     real(wp), allocatable, dimension(:, :, :) :: mtn_s       !< Bubble's computational cell position in real format
+    $:GPU_DECLARE(create='[mtn_pos, mtn_posPrev, mtn_vel, mtn_s]')
+
     !(nBub, 1-> x or 2->y or 3 ->z, time-stage)
     real(wp), allocatable, dimension(:, :) :: intfc_draddt   !< Time derivative of bubble's radius
     real(wp), allocatable, dimension(:, :) :: intfc_dveldt   !< Time derivative of bubble's interface velocity
@@ -54,30 +64,20 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:, :) :: gas_dmvdt      !< Time derivative of the vapor mass in the bubble
     ! real(wp), allocatable, dimension(:, :, :) :: mtn_dposdt  !< Time derivative of the bubble's position
     ! real(wp), allocatable, dimension(:, :, :) :: mtn_dveldt  !< Time derivative of the bubble's velocity
+    $:GPU_DECLARE(create='[intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt]')
 
     real(wp), allocatable, dimension(:) :: bub_interact        !< Scattered pressure from each bubble
     real(wp), allocatable, dimension(:, :) :: bub_int_ids     !< Ids of the neighboring bubbles for pout interaction
     !real(wp), allocatable, dimension(:) :: bub_lambda_c      !< Mean inter-bubble distance (p' white noise)
     !real(wp), allocatable, dimension(:, :) :: bub_rnd_phase  !< Random phases (1:num_noise) per bubble (p' white noise)
+    $:GPU_DECLARE(create='[bub_interact, bub_int_ids]')
 
-    !$acc declare create(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC, bub_dphidt, &
-    !$acc gas_p, gas_mv, intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel, intfc_ac, mtn_s, intfc_draddt, &
-    !$acc intfc_dveldt, gas_dpdt, gas_dmvdt)
-
-    !!$acc declare create(mtn_dposdt, mtn_dveldt)
-
-    !$acc declare create(bub_interact, bub_int_ids)
-
-    integer, private :: lag_num_ts                          !<  Number of time stages in the time-stepping scheme
-
-    !$acc declare create(lag_num_ts)
-
-    integer :: nBubs                            !< Number of bubbles in the local domain
-    real(wp) :: Rmax_glb, Rmin_glb              !< Maximum and minimum bubbe size in the local domain
-    type(vector_field) :: q_beta                !< Projection of the lagrangian particles in the Eulerian framework
-    integer :: q_beta_idx                       !< Size of the q_beta vector field
-
-    !$acc declare create(nBubs, Rmax_glb, Rmin_glb, q_beta, q_beta_idx)
+    integer, private :: lag_num_ts      !<  Number of time stages in the time-stepping scheme
+    integer :: nBubs                    !< Number of bubbles in the local domain
+    real(wp) :: Rmax_glb, Rmin_glb      !< Maximum and minimum bubbe size in the local domain
+    type(vector_field) :: q_beta        !< Projection of the lagrangian particles in the Eulerian framework
+    integer :: q_beta_idx               !< Size of the q_beta vector field
+    $:GPU_DECLARE(create='[nBubs,lag_num_ts,Rmax_glb,Rmin_glb,q_beta,q_beta_idx]')
 
     real(wp), allocatable, dimension(:, :) :: mrmtnt_shell  !< Lipid shell indicator (Marmotant model)
     real(wp), allocatable, dimension(:) :: mrmtnt_Rbuck     !< Buckling radius (Marmotant model)
@@ -85,19 +85,18 @@ module m_bubbles_EL
     real(wp), allocatable, dimension(:) :: bub_qvis         !< Time-averaged viscous intensity (HIFU)
     real(wp), allocatable, dimension(:) :: bub_qth          !< Time-averaged thermal intensity (HIFU)
     real(wp), allocatable, dimension(:) :: bub_hifu_rad     !< Time-averaged radius
-
-    !$acc declare create(mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad)
+    $:GPU_DECLARE(create='[mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
 
 contains
 
     !> Initializes the lagrangian subgrid bubble solver
         !! @param q_cons_vf Initial conservative variables
-    subroutine s_initialize_bubbles_EL_module(q_cons_vf, bc_type)
+    impure subroutine s_initialize_bubbles_EL_module(q_cons_vf, bc_type)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
-        integer :: nBubs_glb, i
+        integer :: nBubs_glb, i, int_var
 
         ! Setting number of time-stages for selected time-stepping scheme
         lag_num_ts = time_stepper
@@ -117,7 +116,7 @@ contains
             call s_mpi_abort('Please check the lag_params%solver_approach input')
         end if
 
-        !$acc update device(lag_num_ts, q_beta_idx)
+        $:GPU_UPDATE(device='[lag_num_ts, q_beta_idx]')
 
         @:ALLOCATE(q_beta%vf(1:q_beta_idx))
 
@@ -169,7 +168,8 @@ contains
         @:ALLOCATE(bub_interact(1:nBubs_glb))
         ! 1: number of interacting bubbles (self-inclusive), 2:nBubs_glb+1: IDs in the volume of influence (self-inclusive)
         if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) then
-            @:ALLOCATE(bub_int_ids(1:nBubs_glb, 1:min(max_bub_int, nBubs_glb+1)))
+            int_var = min(max_bub_int, nBubs_glb+1)
+            @:ALLOCATE(bub_int_ids(1:nBubs_glb, 1:int_var))
         end if
         !@:ALLOCATE(bub_lambda_c(1:nBubs_glb))
         !@:ALLOCATE(bub_rnd_phase(1:nBubs_glb, 1:num_noise))
@@ -185,7 +185,7 @@ contains
     end subroutine s_initialize_bubbles_EL_module
 
     !> The purpose of this procedure is to start lagrange bubble parameters applying nondimensionalization if needed
-    subroutine s_start_lagrange_inputs()
+    impure subroutine s_start_lagrange_inputs()
 
         integer :: id_bubbles, id_host
         real(wp) :: rho0, c0, T0, x0, p0
@@ -236,7 +236,7 @@ contains
 
     !> The purpose of this procedure is to obtain the initial bubbles' information
         !! @param q_cons_vf Conservative variables
-    subroutine s_read_input_bubbles(q_cons_vf, bc_type)
+    impure subroutine s_read_input_bubbles(q_cons_vf, bc_type)
 
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
@@ -245,7 +245,7 @@ contains
         real(wp) :: qtime
         integer :: id, bub_id, save_count
         integer :: i, ios
-        logical :: file_exist, read_flag, indomain, transferShell
+        logical :: file_exist, read_flag, indomain
         real(wp) :: safeStop, tmp_val
         character(LEN=path_len + 2*name_len) :: path_D_dir, file_loc !<
 
@@ -327,24 +327,26 @@ contains
             call s_mpi_abort('Current number of bubbles is larger than nBubs_glb.')
         end if
 
-        !$acc update device(bubbles_lagrange, lag_params)
+        $:GPU_UPDATE(device='[bubbles_lagrange, lag_params]')
 
-        !$acc update device(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
-        !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
-        !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt,       &
-        !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, nBubs)
+        $:GPU_UPDATE(device='[lag_id,bub_R0,Rmax_stats,Rmin_stats,gas_mg, &
+            & gas_betaT,gas_betaC,bub_dphidt,gas_p,gas_mv, &
+            & intfc_rad,intfc_vel,mtn_pos,mtn_posPrev,mtn_vel, &
+            & mtn_s,intfc_draddt,intfc_dveldt,gas_dpdt,gas_dmvdt, nBubs]')
+            ! & mtn_dposdt,mtn_dveldt]')
+        
+        $:GPU_UPDATE(device='[intfc_ac, mrmtnt_shell, mrmtnt_Rbuck, &
+            & mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
 
-        !!!!!$acc update device(mtn_dposdt, mtn_dveldt)
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
-        !$acc update device(Rmax_glb, Rmin_glb)
+        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb]')
 
-        !$acc update device(dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc)
+        $:GPU_UPDATE(device='[dx,dy,dz,x_cb,x_cc,y_cb,y_cc,z_cb,z_cc]')
 
         !Populate temporal variables
-        transferShell = .true.
-        call s_transfer_data_to_tmp(transferShell)
+        call s_transfer_data_to_tmp
         call s_start_bubble_interaction
         call s_smear_voidfraction(bc_type)
 
@@ -357,8 +359,8 @@ contains
         end if
 
         if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
-        if (lag_params%write_bubbles) call s_write_lag_particles(qtime, .false.)
-        call s_write_void_evol(qtime, .false.)
+        if (lag_params%write_bubbles) call s_write_lag_particles(qtime, replace=.false.)
+        call s_write_void_evol(qtime, replace=.false.)
 
     end subroutine s_read_input_bubbles
 
@@ -366,7 +368,7 @@ contains
         !! @param inputBubble Bubble information
         !! @param q_cons_vf Conservative variables
         !! @param bub_id Local id of the bubble
-    subroutine s_add_bubbles(inputBubble, q_cons_vf, bub_id)
+    impure subroutine s_add_bubbles(inputBubble, q_cons_vf, bub_id)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         real(wp), dimension(8), intent(in) :: inputBubble
@@ -374,7 +376,7 @@ contains
         integer :: i
 
         real(wp) :: pliq, volparticle, concvap, totalmass, kparticle, cpparticle
-        real(wp) :: omegaN, PeG, PeT, rhol, pcrit, qv, gamma, pi_inf, dynP
+        real(wp) :: omegaN_local, PeG, PeT, rhol, pcrit, qv, gamma, pi_inf, dynP
         integer, dimension(3) :: cell
         real(wp), dimension(2) :: Re
         real(wp) :: massflag, heatflag, Re_trans, Im_trans, Web_mod
@@ -459,6 +461,9 @@ contains
             gas_p(bub_id, 1) = pliq + 2._wp*(lag_params%ss0_ctdBub)/bub_R0(bub_id)
             !print *, 'Rbuck and Rrupt', mrmtnt_Rbuck(bub_id), mrmtnt_Rrupt(bub_id), bub_id
         end if
+        if (pv*(massflag) > gas_p(bub_id, 1)) then
+            call s_mpi_abort("Lagrange bubble initially located in a region with pressure below the vapor pressure.")
+        end if
 
         ! Initial particle mass
         volparticle = 4._wp/3._wp*pi*bub_R0(bub_id)**3._wp ! volume
@@ -471,25 +476,21 @@ contains
 
         ! Bubble natural frequency
         concvap = gas_mv(bub_id, 1)/(gas_mv(bub_id, 1) + gas_mg(bub_id))
-        omegaN = (3._wp*(gas_p(bub_id, 1) - pv*(massflag)) + 4._wp*(1._wp/Web)/bub_R0(bub_id))/rhol
+        omegaN_local = (3._wp*(gas_p(bub_id, 1) - pv*(massflag)) + 4._wp*(1._wp/Web)/bub_R0(bub_id))/rhol
         if (lag_params%coatedBub_model) then
-            omegaN = (3._wp*(gas_p(bub_id, 1) - pv*(massflag)) + 4._wp*(lag_params%ss0_ctdBub)/bub_R0(bub_id))/rhol
+            omegaN_local = (3._wp*(gas_p(bub_id, 1) - pv*(massflag)) + 4._wp*(lag_params%ss0_ctdBub)/bub_R0(bub_id))/rhol
         end if
-
-        if (pv*(massflag) > gas_p(bub_id, 1)) then
-            call s_mpi_abort("Lagrange bubble initially located in a region with pressure below the vapor pressure.")
-        end if
-        omegaN = sqrt(omegaN/bub_R0(bub_id)**2._wp)
+        omegaN_local = sqrt(omegaN_local/bub_R0(bub_id)**2._wp)
 
         cpparticle = concvap*cp_v + (1._wp - concvap)*cp_n
         kparticle = concvap*k_vl + (1._wp - concvap)*k_nl
 
         ! Mass and heat transfer coefficients (based on Preston 2007)
-        PeT = totalmass/volparticle*cpparticle*bub_R0(bub_id)**2._wp*omegaN/kparticle
+        PeT = totalmass/volparticle*cpparticle*bub_R0(bub_id)**2._wp*omegaN_local/kparticle
         call s_transcoeff(1._wp, PeT, Re_trans, Im_trans)
         gas_betaT(bub_id) = Re_trans*kparticle
 
-        PeG = bub_R0(bub_id)**2._wp*omegaN/lag_params%diffcoefvap
+        PeG = bub_R0(bub_id)**2._wp*omegaN_local/lag_params%diffcoefvap
         call s_transcoeff(1._wp, PeG, Re_trans, Im_trans)
         gas_betaC(bub_id) = Re_trans*lag_params%diffcoefvap
 
@@ -517,7 +518,6 @@ contains
         real(wp), dimension(2) :: Re
         integer, dimension(3) :: cell
         integer :: i, k
-        logical :: transferShell
         complex(wp) :: imag, trans, c1, c2, c3
         real(wp) :: qtime
         integer :: save_count
@@ -528,20 +528,20 @@ contains
 
             if (proc_rank == 0) print *, 'Performing s_initial_pressure_correction '
 
-            !$acc parallel loop gang vector default(present) private(k, myalpha_rho, myalpha, Re, cell)
+            $:GPU_PARALLEL_LOOP(private='[k, myalpha_rho, myalpha, Re, cell]')
             do k = 1, nBubs
                 ! Obtaining driving pressure
                 call s_get_pinf(k, q_prim_vf, 1, pinf, cell, aux1, aux2, myRcell)
 
                 ! Obtain liquid density and computing speed of sound from pinf
-                !$acc loop seq
+                $:GPU_LOOP(parallelism='[seq]')
                 do i = 1, num_fluids
                     myalpha_rho(i) = q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
                     myalpha(i) = q_prim_vf(E_idx + i)%sf(cell(1), cell(2), cell(3))
                 end do
                 call s_convert_species_to_mixture_variables_acc(rhol, gamma, pi_inf, qv, myalpha, &
-                                                                myalpha_rho, Re, cell(1), cell(2), cell(3))
-                call s_compute_cson_from_pinf(k, q_prim_vf, pinf, cell, rhol, gamma, pi_inf, cson)
+                                                                myalpha_rho, Re)
+                call s_compute_cson_from_pinf(q_prim_vf, pinf, cell, rhol, gamma, pi_inf, cson)
 
                 ! Activate or deactivate the mass model
                 massflag = 0._wp
@@ -599,13 +599,16 @@ contains
 
             end do
 
-            !$acc update host(lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC,   &
-            !$acc bub_dphidt, gas_p, gas_mv, intfc_rad, intfc_vel, intfc_ac, mtn_pos, mtn_posPrev, mtn_vel, &
-            !$acc mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, gas_dmvdt,       &
-            !$acc mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, nBubs)
+            $:GPU_UPDATE(device='[lag_id,bub_R0,Rmax_stats,Rmin_stats,gas_mg, &
+                & gas_betaT,gas_betaC,bub_dphidt,gas_p,gas_mv, &
+                & intfc_rad,intfc_vel,mtn_pos,mtn_posPrev,mtn_vel, &
+                & mtn_s,intfc_draddt,intfc_dveldt,gas_dpdt,gas_dmvdt, nBubs]')
+                ! & mtn_dposdt,mtn_dveldt]')
+            
+            $:GPU_UPDATE(device='[intfc_ac, mrmtnt_shell, mrmtnt_Rbuck, &
+                & mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
 
-            transferShell = .true.
-            call s_transfer_data_to_tmp(transferShell)
+            call s_transfer_data_to_tmp
             call s_smear_voidfraction(bc_type)
 
             !Replace files
@@ -617,9 +620,9 @@ contains
                 qtime = t_step_start*dt
             end if
 
-            if (lag_params%write_bubbles) call s_write_lag_particles(qtime, .true.)
+            if (lag_params%write_bubbles) call s_write_lag_particles(qtime, replace=.true.)
             call s_write_restart_lag_bubbles(save_count) ! Needed for post_processing
-            call s_write_void_evol(qtime, .true.)
+            call s_write_void_evol(qtime, replace=.true.)
 
             !call s_mpi_barrier()
 
@@ -630,7 +633,7 @@ contains
     !> The purpose of this procedure is to obtain the information of the bubbles from a restart point.
         !! @param bub_id Local ID of the particle
         !! @param save_count File identifier
-    subroutine s_restart_bubbles(bub_id, save_count)
+    impure subroutine s_restart_bubbles(bub_id, save_count)
 
         integer, intent(inout) :: bub_id, save_count
 
@@ -767,7 +770,8 @@ contains
         ! st_dev_rn = 1._wp
 
         safeStop = 0._wp
-        !$acc parallel loop gang vector default(present) private(j, cell, scoord) reduction(MAX: safeStop) copy(safeStop)
+        $:GPU_PARALLEL_LOOP(collapse=2, private='[j, cell, scoord]', &
+        & reduction='[[safeStop]]',reductionOp='[MAX]',copy='[safeStop]')
         do j = 1, nBubs
 
             ! Is the bubble in the physical domain?
@@ -776,7 +780,7 @@ contains
             ! Find the cell location
             scoord = mtn_s(j, 1:3, 1)
             cell(:) = int(scoord(:))
-            !$acc loop seq
+            $:GPU_LOOP(parallelism='[seq]')
             do i = 1, num_dims
                 if (scoord(i) < 0._wp) cell(i) = cell(i) - 1
             end do
@@ -849,7 +853,7 @@ contains
             ! Find bubbles inside the boundaries
             nb_local = 0
             if (any(lag_params%interaction_model == (/2, 3/))) then
-                !$acc loop seq
+                $:GPU_LOOP(parallelism='[seq]')
                 do k = 1, nBubs
                     if ((mtn_posPrev(k, 1, 1) < xe_smear) .and. (mtn_posPrev(k, 1, 1) >= xb_smear) .and. &
                         (mtn_posPrev(k, 2, 1) < ye_smear) .and. (mtn_posPrev(k, 2, 1) >= yb_smear) .and. &
@@ -866,7 +870,7 @@ contains
                     end if
                 end do
             else
-                !$acc loop seq
+                $:GPU_LOOP(parallelism='[seq]')
                 do k = 1, nBubs
                     if ((mtn_pos(k, 1, 1) < xe_smear) .and. (mtn_pos(k, 1, 1) >= xb_smear) .and. &
                         (mtn_pos(k, 2, 1) < ye_smear) .and. (mtn_pos(k, 2, 1) >= yb_smear)) then
@@ -933,7 +937,7 @@ contains
         end if
 
         if (any(lag_params%interaction_model == (/2, 3/))) then
-            !$acc update host(bub_int_ids)
+            $:GPU_UPDATE(host='[bub_int_ids]')
             if (lag_params%nBubs_glb < 100) then
                 do j = 1, nBubs
                     if (bub_int_ids(j, 1) /= 0) then
@@ -955,12 +959,10 @@ contains
         !! @param rhs_vf Calculated change of conservative variables
         !! @param t_step Current time step
         !! @param stage Current stage in the time-stepper algorithm
-    subroutine s_compute_bubble_EL_dynamics(q_cons_vf, q_prim_vf, t_step, rhs_vf, stage)
+    subroutine s_compute_bubble_EL_dynamics(q_prim_vf, stage)
 
-        type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: q_prim_vf
-        type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf
-        integer, intent(in) :: t_step, stage
+        integer, intent(in) :: stage
 
         real(wp) :: myVapFlux
         real(wp) :: preterm1, term2, paux, pint, Romega, term1_fac, Rb
@@ -997,12 +999,31 @@ contains
         ! Subgrid p_inf model based on Maeda and Colonius (2018).
         if (lag_params%pressure_corrector) then
             call s_calculate_scattered_pressure(q_prim_vf)
+            ! Calculate velocity potentials (valid for one bubble per cell)
+            ! $:GPU_PARALLEL_LOOP(private='[k,cell]')
+            ! do k = 1, nBubs
+            !     call s_get_pinf(k, q_prim_vf, 2, paux, cell, preterm1, term2, Romega)
+            !     myR0 = bub_R0(k)
+            !     myR = intfc_rad(k, 2)
+            !     myV = intfc_vel(k, 2)
+            !     myPb = gas_p(k, 2)
+            !     pint = f_cpbw_KM(myR0, myR, myV, myPb)
+            !     pint = pint + 0.5_wp*myV**2._wp
+            !     if (lag_params%cluster_type == 2) then
+            !         bub_dphidt(k) = (paux - pint) + term2
+            !         ! Accounting for the potential induced by the bubble averaged over the control volume
+            !         ! Note that this is based on the incompressible flow assumption near the bubble.
+            !         term1_fac = 3._wp/2._wp*(myR*(Romega**2._wp - myR**2._wp))/(Romega**3._wp - myR**3._wp)
+            !         bub_dphidt(k) = bub_dphidt(k)/(1._wp - term1_fac)
+            !     end if
+            ! end do
         end if
 
         ! Radial motion
         adap_dt_stop_max = 0
-        !$acc parallel loop gang vector default(present) private(k, myalpha_rho, myalpha, Re, cell) &
-        !$acc reduction(MAX:adap_dt_stop_max) copy(adap_dt_stop_max) copyin(stage)
+        $:GPU_PARALLEL_LOOP(private='[k,myalpha_rho,myalpha,Re,cell]', &
+            & reduction='[[adap_dt_stop_max]]',reductionOp='[MAX]', &
+            & copy='[adap_dt_stop_max]',copyin='[stage]')
         do k = 1, nBubs
             ! Keller-Miksis model
 
@@ -1037,21 +1058,21 @@ contains
             !    print*, bub_int_ids(k, :)
             !end if
             ! Vapor and heat fluxes
-            myVapFlux = f_vflux(myR, myV, myPb, myMass_v, k, myMass_n, myBeta_c, myR_m, mygamma_m, myShell)
+            call s_vflux(myR, myV, myPb, myMass_v, k, myVapFlux, myMass_n, myBeta_c, myR_m, mygamma_m, myShell)
             myPbdot = f_bpres_dot(myVapFlux, myR, myV, myPb, myMass_v, k, myBeta_t, myR_m, mygamma_m, myShell)
             myMvdot = 4._wp*pi*myR**2._wp*myVapFlux
 
             ! Retrieving driving pressure
             call s_get_pinf(k, q_prim_vf, 1, myPinf, cell, aux1, aux2, myRcell)
 
-            ! Obtain liquid density and computing speed of sound from myPinf
-            !$acc loop seq
+            ! Obtain liquid density and computing speed of sound from pinf
+            $:GPU_LOOP(parallelism='[seq]')
             do i = 1, num_fluids
                 myalpha_rho(i) = q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
                 myalpha(i) = q_prim_vf(E_idx + i)%sf(cell(1), cell(2), cell(3))
             end do
             call s_convert_species_to_mixture_variables_acc(myRho, gamma, pi_inf, qv, myalpha, &
-                                                            myalpha_rho, Re, cell(1), cell(2), cell(3))
+                                                            myalpha_rho, Re)
             if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/1, 3/)) .and. &
                 .not. adap_dt) then
                 !Kazuki's model to adjust Pinf
@@ -1063,13 +1084,12 @@ contains
                     !     myloc = mtn_s(k, 3, 2)
                     !     !myPhase = bub_rnd_phase(k, 1:num_noise)
                     !     call s_white_noise_constants(k, myLambda_c, q_prim_vf, cell, myPinf, myNoise_constant, mydk)
-                    !     call s_compute_cson_from_pinf(k, q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
+                    !     call s_compute_cson_from_pinf(q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
                     !     myPnoise = f_pres_stochastic(myPinf, myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myCson)
                     !     myPinf = myPinf + myPnoise*lag_params%pnoise_scale
                 end if
             end if
-
-            call s_compute_cson_from_pinf(k, q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
+            call s_compute_cson_from_pinf(q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
 
             ! Adaptive time stepping
             if (adap_dt) then
@@ -1110,7 +1130,7 @@ contains
                 mrmtnt_shell(k, 2) = myShell
 
                 ! Bubble translation
-                ! !$acc loop seq
+                ! $:GPU_LOOP(parallelism='[seq]')
                 ! do l = 1, 3
                 !     mtn_dposdt(k, l, stage) = 0._wp
                 !     mtn_dveldt(k, l, stage) = 0._wp
@@ -1123,6 +1143,15 @@ contains
         end do
 
         if (adap_dt .and. adap_dt_stop_max > 0) call s_mpi_abort("Adaptive time stepping failed to converge.")
+
+        ! Bubbles remain in a fixed position
+        ! $:GPU_PARALLEL_LOOP(collapse=2, private='[k]', copyin='[stage]')
+        ! do k = 1, nBubs
+        !     do l = 1, 3
+        !         mtn_dposdt(k, l, stage) = 0._wp
+        !         mtn_dveldt(k, l, stage) = 0._wp
+        !     end do
+        ! end do
 
         call nvtxEndRange
 
@@ -1147,7 +1176,7 @@ contains
         if (lag_params%solver_approach == 2) then
 
             if (p == 0 .and. .not. lag_params%newModel_2D) then
-                !$acc parallel loop collapse(4) gang vector default(present)
+                $:GPU_PARALLEL_LOOP(collapse=4)
                 do k = 0, p
                     do j = 0, n
                         do i = 0, m
@@ -1163,7 +1192,7 @@ contains
                     end do
                 end do
             else
-                !$acc parallel loop collapse(4) gang vector default(present)
+                $:GPU_PARALLEL_LOOP(collapse=4)
                 do k = 0, p
                     do j = 0, n
                         do i = 0, m
@@ -1183,7 +1212,7 @@ contains
 
                 call s_gradient_dir(q_prim_vf(E_idx), q_beta%vf(3), l)
 
-                !$acc parallel loop collapse(3) gang vector default(present)
+                $:GPU_PARALLEL_LOOP(collapse=3)
                 do k = 0, p
                     do j = 0, n
                         do i = 0, m
@@ -1198,7 +1227,7 @@ contains
                 end do
 
                 !source in energy
-                !$acc parallel loop collapse(3) gang vector default(present)
+                $:GPU_PARALLEL_LOOP(collapse=3)
                 do k = idwbuff(3)%beg, idwbuff(3)%end
                     do j = idwbuff(2)%beg, idwbuff(2)%end
                         do i = idwbuff(1)%beg, idwbuff(1)%end
@@ -1209,7 +1238,7 @@ contains
 
                 call s_gradient_dir(q_beta%vf(3), q_beta%vf(4), l)
 
-                !$acc parallel loop collapse(3) gang vector default(present)
+                $:GPU_PARALLEL_LOOP(collapse=3)
                 do k = 0, p
                     do j = 0, n
                         do i = 0, m
@@ -1236,13 +1265,10 @@ contains
         !! @param gamma Liquid specific heat ratio
         !! @param pi_inf Liquid stiffness
         !! @param cson Calculated speed of sound
-    subroutine s_compute_cson_from_pinf(bub_id, q_prim_vf, pinf, cell, rhol, gamma, pi_inf, cson)
-#ifdef _CRAYFTN
-        !DIR$ INLINEALWAYS s_compute_cson_from_pinf
-#else
-        !$acc routine seq
-#endif
-        integer, intent(in) :: bub_id
+    pure subroutine s_compute_cson_from_pinf(q_prim_vf, pinf, cell, rhol, gamma, pi_inf, cson)
+        $:GPU_ROUTINE(function_name='s_compute_cson_from_pinf', &
+            & parallelism='[seq]', cray_inline=True)
+
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
         real(wp), intent(in) :: pinf, rhol, gamma, pi_inf
         integer, dimension(3), intent(in) :: cell
@@ -1252,7 +1278,7 @@ contains
         real(wp), dimension(num_dims) :: vel
         integer :: i
 
-        !$acc loop seq
+        $:GPU_LOOP(parallelism='[seq]')
         do i = 1, num_dims
             vel(i) = q_prim_vf(i + contxe)%sf(cell(1), cell(2), cell(3))
         end do
@@ -1271,7 +1297,7 @@ contains
 
         call nvtxStartRange("BUBBLES-LAGRANGE-KERNELS")
 
-        !$acc parallel loop collapse(4) gang vector default(present)
+        $:GPU_PARALLEL_LOOP(collapse=4)
         do i = 1, q_beta_idx
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
@@ -1294,7 +1320,7 @@ contains
         if (num_procs > 0) call s_populate_EL_buffers(q_beta, bc_type, q_beta_idx, .false.)
 
         !Store 1-beta
-        !$acc parallel loop collapse(3) gang vector default(present)
+        $:GPU_PARALLEL_LOOP(collapse=3)
         do l = idwbuff(3)%beg, idwbuff(3)%end
             do k = idwbuff(2)%beg, idwbuff(2)%end
                 do j = idwbuff(1)%beg, idwbuff(1)%end
@@ -1356,9 +1382,9 @@ contains
 !             charpres2_sqrd = 0._wp
 !             cell_count = 0._wp
 
-!             !$acc loop seq
+!             $:GPU_LOOP(parallelism='[seq]')
 !             do i = 0, smearGrid
-!                 !$acc loop seq
+!                 $:GPU_LOOP(parallelism='[seq]')
 !                 do j = 0, smearGrid
 !                     cellaux(1) = cell(1) + i - mapCells
 !                     cellaux(2) = cell(2) + j - mapCells
@@ -1415,7 +1441,7 @@ contains
 
 !                 k = 0._wp
 !                 denom = 0._wp
-!                 !$acc loop seq
+!                 $:GPU_LOOP(parallelism='[seq]')
 !                 do i = 1, num_noise
 !                     denom = denom + dk * exp(-0.5_wp*((2_wp*pi/k - l_c)/(0.5_wp*l_c))**2._wp)
 !                     k = k + dk
@@ -1468,7 +1494,7 @@ contains
 
         !         ! Obtain liquid density and computing speed of sound from myPinf
         !         myRho = 0._wp
-        !         !$acc loop seq
+        !         $:GPU_LOOP(parallelism='[seq]')
         !         do i = 1, num_fluids
         !             myRho = myRho + q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
         !         end do
@@ -1496,7 +1522,7 @@ contains
         ! end if
 
         if (any(lag_params%interaction_model == (/1, 3/)) .and. p > 0 .and. .not. adap_dt) then !Kazuki's model (DV version)
-            !$acc parallel loop gang vector default(present) private(k, cell)
+            $:GPU_PARALLEL_LOOP(private='[k, cell]')
             do k = 1, nBubs
                 ! Current bubble state
                 myR0 = bub_R0(k)
@@ -1513,7 +1539,7 @@ contains
 
                 ! Obtain liquid density and computing speed of sound from myPinf
                 myRho = 0._wp
-                !$acc loop seq
+                $:GPU_LOOP(parallelism='[seq]')
                 do i = 1, num_fluids
                     myRho = myRho + q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
                 end do
@@ -1542,7 +1568,7 @@ contains
 
         if (any(lag_params%interaction_model == (/2, 3/))) then !Aditya's model, Pout is going to be I term from eqn 3.19
 
-            !$acc parallel loop gang vector default(present) private(k, cell)
+            $:GPU_PARALLEL_LOOP(private='[k, cell]')
             do k = 1, nBubs
 
                 ! Number of the bubbles in the smearing volume (Self-inclusive)
@@ -1550,7 +1576,7 @@ contains
                 sumPout = 0._wp
 
                 if (total_ids + 1 >= 2) then
-                    !$acc loop seq
+                    $:GPU_LOOP(parallelism='[seq]')
                     do i = 2, total_ids + 1
                         bub_idx = bub_int_ids(k, i)
                         ! Current interacting bubble state
@@ -1593,12 +1619,10 @@ contains
         !! @param f_pinfl Driving pressure
         !! @param cell Bubble cell
         !! @param Romega Control volume radius
-    subroutine s_get_pinf(bub_id, q_prim_vf, ptype, f_pinfl, cell, preterm1, term2, Romega)
-#ifdef _CRAYFTN
-        !DIR$ INLINEALWAYS s_get_pinf
-#else
-        !$acc routine seq
-#endif
+    pure subroutine s_get_pinf(bub_id, q_prim_vf, ptype, f_pinfl, cell, preterm1, term2, Romega)
+        $:GPU_ROUTINE(function_name='s_get_pinf',parallelism='[seq]', &
+            & cray_inline=True)
+
         integer, intent(in) :: bub_id, ptype
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
         real(wp), intent(out) :: f_pinfl
@@ -1619,7 +1643,7 @@ contains
 
         !< Find current bubble cell
         cell(:) = int(scoord(:))
-        !$acc loop seq
+        $:GPU_LOOP(parallelism='[seq]')
         do i = 1, num_dims
             if (scoord(i) < 0._wp) cell(i) = cell(i) - 1
         end do
@@ -1711,11 +1735,11 @@ contains
             vol = 0._wp
             charbeta = 0._wp
 
-            !$acc loop seq
+            $:GPU_LOOP(parallelism='[seq]')
             do i = 1, smearGrid
-                !$acc loop seq
+                $:GPU_LOOP(parallelism='[seq]')
                 do j = 1, smearGrid
-                    !$acc loop seq
+                    $:GPU_LOOP(parallelism='[seq]')
                     do k = 1, smearGridz
                         cellaux(1) = cell(1) + i - (mapCells + 1)
                         cellaux(2) = cell(2) + j - (mapCells + 1)
@@ -1845,8 +1869,8 @@ contains
         if (proc_rank == 0) print *, 'Computing bubble heat sources', mytime, hdid
 #endif
         abortFlag_max = 0
-        !$acc parallel loop gang vector default(present) private(k) &
-        !$acc reduction(MAX: abortFlag_max) copy(abortFlag_max)
+        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max]]', &
+        & reductionOp='[MAX]',copy='[abortFlag_max]')
         do k = 1, nBubs
 
             abortFlag = 0
@@ -1904,7 +1928,7 @@ contains
         real(wp), intent(in) :: t_sampled
         integer :: k
 
-        !$acc parallel loop gang vector default(present) private(k) copyin (t_sampled)
+        $:GPU_PARALLEL_LOOP(private='[k]',copyin='[t_sampled]')
         do k = 1, nBubs
             bub_hifu_rad(k) = bub_hifu_rad(k) / t_sampled ! meters
         end do
@@ -1914,17 +1938,14 @@ contains
     !>  This subroutine updates the Lagrange variables using the tvd RK time steppers.
         !!      The time derivative of the bubble variables must be stored at every stage to avoid precision errors.
         !! @param stage Current tvd RK stage
-    subroutine s_update_lagrange_tdv_rk(stage)
+    impure subroutine s_update_lagrange_tdv_rk(stage)
 
         integer, intent(in) :: stage
 
         integer :: k
-        logical :: transferShell
-
-        transferShell = .true.
 
         if (time_stepper == 1) then ! 1st order TVD RK
-            !$acc parallel loop gang vector default(present) private(k)
+            $:GPU_PARALLEL_LOOP(private='[k]')
             do k = 1, nBubs
                 !u{1} = u{n} +  dt * RHS{n}
                 intfc_rad(k, 1) = intfc_rad(k, 1) + dt*intfc_draddt(k, 1)
@@ -1937,17 +1958,17 @@ contains
                 intfc_ac(k, 1) = intfc_dveldt(k, 1)
             end do
 
-            call s_transfer_data_to_tmp(transferShell)
+            call s_transfer_data_to_tmp
             if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
             if (lag_params%write_bubbles) then
-                !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
-                call s_write_lag_particles(mytime, .false.)
+                $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
+                call s_write_lag_particles(mytime, replace=.false.)
             end if
-            call s_write_void_evol(mytime, .false.)
+            call s_write_void_evol(mytime, replace=.false.)
 
         elseif (time_stepper == 2) then ! 2nd order TVD RK
             if (stage == 1) then
-                !$acc parallel loop gang vector default(present) private(k)
+                $:GPU_PARALLEL_LOOP(private='[k]')
                 do k = 1, nBubs
                     !u{1} = u{n} +  dt * RHS{n}
                     intfc_rad(k, 2) = intfc_rad(k, 1) + dt*intfc_draddt(k, 1)
@@ -1959,7 +1980,7 @@ contains
                 end do
 
             elseif (stage == 2) then
-                !$acc parallel loop gang vector default(present) private(k)
+                $:GPU_PARALLEL_LOOP(private='[k]')
                 do k = 1, nBubs
                     !u{1} = u{n} + (1/2) * dt * (RHS{n} + RHS{1})
                     intfc_rad(k, 1) = intfc_rad(k, 1) + dt*(intfc_draddt(k, 1) + intfc_draddt(k, 2))/2._wp
@@ -1975,19 +1996,19 @@ contains
                     intfc_ac(k, 1) = (intfc_dveldt(k, 1) + intfc_dveldt(k, 2))/2._wp
                 end do
 
-                call s_transfer_data_to_tmp(transferShell)
+                call s_transfer_data_to_tmp
                 if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
-                    !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
-                    call s_write_lag_particles(mytime, .false.)
+                    $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
+                    call s_write_lag_particles(mytime, replace=.false.)
                 end if
-                call s_write_void_evol(mytime, .false.)
+                call s_write_void_evol(mytime, replace=.false.)
 
             end if
 
         elseif (time_stepper == 3) then ! 3rd order TVD RK
             if (stage == 1) then
-                !$acc parallel loop gang vector default(present) private(k)
+                $:GPU_PARALLEL_LOOP(private='[k]')
                 do k = 1, nBubs
                     !u{1} = u{n} +  dt * RHS{n}
                     intfc_rad(k, 2) = intfc_rad(k, 1) + dt*intfc_draddt(k, 1)
@@ -1999,7 +2020,7 @@ contains
                 end do
 
             elseif (stage == 2) then
-                !$acc parallel loop gang vector default(present) private(k)
+                $:GPU_PARALLEL_LOOP(private='[k]')
                 do k = 1, nBubs
                     !u{2} = u{n} + (1/4) * dt * [RHS{n} + RHS{1}]
                     intfc_rad(k, 2) = intfc_rad(k, 1) + dt*(intfc_draddt(k, 1) + intfc_draddt(k, 2))/4._wp
@@ -2010,7 +2031,7 @@ contains
                     gas_mv(k, 2) = gas_mv(k, 1) + dt*(gas_dmvdt(k, 1) + gas_dmvdt(k, 2))/4._wp
                 end do
             elseif (stage == 3) then
-                !$acc parallel loop gang vector default(present) private(k)
+                $:GPU_PARALLEL_LOOP(private='[k]')
                 do k = 1, nBubs
                     !u{n+1} = u{n} + (2/3) * dt * [(1/4)* RHS{n} + (1/4)* RHS{1} + RHS{2}]
                     intfc_rad(k, 1) = intfc_rad(k, 1) + (2._wp/3._wp)*dt*(intfc_draddt(k, 1)/4._wp + intfc_draddt(k, 2)/4._wp + intfc_draddt(k, 3))
@@ -2026,13 +2047,13 @@ contains
                     intfc_ac(k, 1) = (2._wp/3._wp)*(intfc_dveldt(k, 1)/4._wp + intfc_dveldt(k, 2)/4._wp + intfc_dveldt(k, 3))
                 end do
 
-                call s_transfer_data_to_tmp(transferShell)
+                call s_transfer_data_to_tmp
                 if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
-                    !$acc update host(gas_p, gas_mv, intfc_rad, intfc_vel)
-                    call s_write_lag_particles(mytime, .false.)
+                    $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
+                    call s_write_lag_particles(mytime, replace=.false.)
                 end if
-                call s_write_void_evol(mytime, .false.)
+                call s_write_void_evol(mytime, replace=.false.)
 
             end if
 
@@ -2044,7 +2065,7 @@ contains
           !! @param pos Input coordinates
           !! @param cell Computational coordinate of the cell
           !! @param scoord Calculated particle coordinates
-    subroutine s_locate_cell(pos, cell, scoord)
+    pure subroutine s_locate_cell(pos, cell, scoord)
 
         real(wp), dimension(3), intent(in) :: pos
         real(wp), dimension(3), intent(out) :: scoord
@@ -2096,12 +2117,11 @@ contains
     end subroutine s_locate_cell
 
     !> This subroutine transfer data into the temporal variables.
-    subroutine s_transfer_data_to_tmp(transferShell)
+    impure subroutine s_transfer_data_to_tmp()
 
-        logical, intent(in) :: transferShell
         integer :: k
 
-        !$acc parallel loop gang vector default(present) private(k)
+        $:GPU_PARALLEL_LOOP(private='[k]')
         do k = 1, nBubs
             gas_p(k, 2) = gas_p(k, 1)
             gas_mv(k, 2) = gas_mv(k, 1)
@@ -2112,83 +2132,77 @@ contains
             mtn_posPrev(k, 1:3, 2) = mtn_posPrev(k, 1:3, 1)
             mtn_vel(k, 1:3, 2) = mtn_vel(k, 1:3, 1)
             mtn_s(k, 1:3, 2) = mtn_s(k, 1:3, 1)
+            mrmtnt_shell(k, 2) = mrmtnt_shell(k, 1)
         end do
-
-        if (transferShell) then
-            !$acc parallel loop gang vector default(present) private(k)
-            do k = 1, nBubs
-                mrmtnt_shell(k, 2) = mrmtnt_shell(k, 1)
-            end do
-        end if
 
     end subroutine s_transfer_data_to_tmp
 
     !> The purpose of this procedure is to determine if the global coordinates of the bubbles
         !!      are present in the current MPI processor (including ghost cells).
         !! @param pos_part Spatial coordinates of the bubble
-    function particle_in_domain(pos_part, restartFlag)
+    ! pure function particle_in_domain(pos_part, restartFlag)
 
-        logical :: particle_in_domain
-        real(wp), dimension(3), intent(in) :: pos_part
-        logical, intent(in) :: restartFlag
+    !     logical :: particle_in_domain
+    !     real(wp), dimension(3), intent(in) :: pos_part
+    !     logical, intent(in) :: restartFlag
 
-        real(wp) :: pos_part_radial
+    !     real(wp) :: pos_part_radial
 
-        ! 2D
-        if (p == 0 .and. cyl_coord .neqv. .true.) then
-            ! Defining a virtual z-axis that has the same dimensions as y-axis
-            ! defined in the input file
-            particle_in_domain = ((pos_part(1) < x_cb(m + buff_size)) .and. (pos_part(1) >= x_cb(-buff_size - 1)) .and. &
-                                  (pos_part(2) < y_cb(n + buff_size)) .and. (pos_part(2) >= y_cb(-buff_size - 1)) .and. &
-                                  (pos_part(3) < lag_params%charwidth/2._wp) .and. (pos_part(3) >= -lag_params%charwidth/2._wp))
-        else
-            ! cyl_coord
-            if (restartFlag) then
-                pos_part_radial = pos_part(2)
-            else
-                pos_part_radial = sqrt(pos_part(2)**2._wp + pos_part(3)**2._wp)
-            end if
+    !     ! 2D
+    !     if (p == 0 .and. cyl_coord .neqv. .true.) then
+    !         ! Defining a virtual z-axis that has the same dimensions as y-axis
+    !         ! defined in the input file
+    !         particle_in_domain = ((pos_part(1) < x_cb(m + buff_size)) .and. (pos_part(1) >= x_cb(-buff_size - 1)) .and. &
+    !                               (pos_part(2) < y_cb(n + buff_size)) .and. (pos_part(2) >= y_cb(-buff_size - 1)) .and. &
+    !                               (pos_part(3) < lag_params%charwidth/2._wp) .and. (pos_part(3) >= -lag_params%charwidth/2._wp))
+    !     else
+    !         ! cyl_coord
+    !         if (restartFlag) then
+    !             pos_part_radial = pos_part(2)
+    !         else
+    !             pos_part_radial = sqrt(pos_part(2)**2._wp + pos_part(3)**2._wp)
+    !         end if
 
-            particle_in_domain = ((pos_part(1) < x_cb(m + buff_size)) .and. (pos_part(1) >= x_cb(-buff_size - 1)) .and. &
-                                  (pos_part_radial < y_cb(n + buff_size)) .and. (pos_part_radial >= max(y_cb(-buff_size - 1), 0._wp)))
-        end if
+    !         particle_in_domain = ((pos_part(1) < x_cb(m + buff_size)) .and. (pos_part(1) >= x_cb(-buff_size - 1)) .and. &
+    !                               (pos_part_radial < y_cb(n + buff_size)) .and. (pos_part_radial >= max(y_cb(-buff_size - 1), 0._wp)))
+    !     end if
 
-        ! 3D
-        if (p > 0) then
-            particle_in_domain = ((pos_part(1) < x_cb(m + buff_size)) .and. (pos_part(1) >= x_cb(-buff_size - 1)) .and. &
-                                  (pos_part(2) < y_cb(n + buff_size)) .and. (pos_part(2) >= y_cb(-buff_size - 1)) .and. &
-                                  (pos_part(3) < z_cb(p + buff_size)) .and. (pos_part(3) >= z_cb(-buff_size - 1)))
-        end if
+    !     ! 3D
+    !     if (p > 0) then
+    !         particle_in_domain = ((pos_part(1) < x_cb(m + buff_size)) .and. (pos_part(1) >= x_cb(-buff_size - 1)) .and. &
+    !                               (pos_part(2) < y_cb(n + buff_size)) .and. (pos_part(2) >= y_cb(-buff_size - 1)) .and. &
+    !                               (pos_part(3) < z_cb(p + buff_size)) .and. (pos_part(3) >= z_cb(-buff_size - 1)))
+    !     end if
 
-        ! For symmetric boundary condition
-        if (bc_x%beg == BC_REFLECTIVE) then
-            particle_in_domain = (particle_in_domain .and. (pos_part(1) >= x_cb(-1)))
-        end if
-        if (bc_x%end == BC_REFLECTIVE) then
-            particle_in_domain = (particle_in_domain .and. (pos_part(1) < x_cb(m)))
-        end if
-        if (bc_y%beg == BC_REFLECTIVE .and. (.not. cyl_coord)) then
-            particle_in_domain = (particle_in_domain .and. (pos_part(2) >= y_cb(-1)))
-        end if
-        if (bc_y%end == BC_REFLECTIVE .and. (.not. cyl_coord)) then
-            particle_in_domain = (particle_in_domain .and. (pos_part(2) < y_cb(n)))
-        end if
+    !     ! For symmetric boundary condition
+    !     if (bc_x%beg == BC_REFLECTIVE) then
+    !         particle_in_domain = (particle_in_domain .and. (pos_part(1) >= x_cb(-1)))
+    !     end if
+    !     if (bc_x%end == BC_REFLECTIVE) then
+    !         particle_in_domain = (particle_in_domain .and. (pos_part(1) < x_cb(m)))
+    !     end if
+    !     if (bc_y%beg == BC_REFLECTIVE .and. (.not. cyl_coord)) then
+    !         particle_in_domain = (particle_in_domain .and. (pos_part(2) >= y_cb(-1)))
+    !     end if
+    !     if (bc_y%end == BC_REFLECTIVE .and. (.not. cyl_coord)) then
+    !         particle_in_domain = (particle_in_domain .and. (pos_part(2) < y_cb(n)))
+    !     end if
 
-        if (p > 0) then
-            if (bc_z%beg == BC_REFLECTIVE) then
-                particle_in_domain = (particle_in_domain .and. (pos_part(3) >= z_cb(-1)))
-            end if
-            if (bc_z%end == BC_REFLECTIVE) then
-                particle_in_domain = (particle_in_domain .and. (pos_part(3) < z_cb(p)))
-            end if
-        end if
+    !     if (p > 0) then
+    !         if (bc_z%beg == BC_REFLECTIVE) then
+    !             particle_in_domain = (particle_in_domain .and. (pos_part(3) >= z_cb(-1)))
+    !         end if
+    !         if (bc_z%end == BC_REFLECTIVE) then
+    !             particle_in_domain = (particle_in_domain .and. (pos_part(3) < z_cb(p)))
+    !         end if
+    !     end if
 
-    end function particle_in_domain
+    ! end function particle_in_domain
 
     !> The purpose of this procedure is to determine if the lagrangian bubble is located in the
         !!       physical domain. The ghost cells are not part of the physical domain.
         !! @param pos_part Spatial coordinates of the bubble
-    function particle_in_domain_physical(pos_part)
+    pure function particle_in_domain_physical(pos_part)
 
         logical :: particle_in_domain_physical
         real(wp), dimension(3), intent(in) :: pos_part
@@ -2207,7 +2221,7 @@ contains
         !! @param q Input scalar field
         !! @param dq Output gradient of q
         !! @param dir Gradient spatial direction
-    subroutine s_gradient_dir(q, dq, dir)
+    pure subroutine s_gradient_dir(q, dq, dir)
 
         type(scalar_field), intent(inout) :: q
         type(scalar_field), intent(inout) :: dq
@@ -2217,7 +2231,7 @@ contains
 
         if (dir == 1) then
             ! Gradient in x dir.
-            !$acc parallel loop collapse(3) gang vector default(present)
+            $:GPU_PARALLEL_LOOP(collapse=3)
             do k = 0, p
                 do j = 0, n
                     do i = 0, m
@@ -2237,7 +2251,7 @@ contains
         else
             if (dir == 2) then
                 ! Gradient in y dir.
-                !$acc parallel loop collapse(3) gang vector default(present)
+                $:GPU_PARALLEL_LOOP(collapse=3)
                 do k = 0, p
                     do j = 0, n
                         do i = 0, m
@@ -2256,7 +2270,7 @@ contains
                 end do
             else
                 ! Gradient in z dir.
-                !$acc parallel loop collapse(3) gang vector default(present)
+                $:GPU_PARALLEL_LOOP(collapse=3)
                 do k = 0, p
                     do j = 0, n
                         do i = 0, m
@@ -2276,13 +2290,13 @@ contains
             end if
         end if
 
-        call s_mpi_barrier()
+        ! call s_mpi_barrier()
 
     end subroutine s_gradient_dir
 
     !> Subroutine that writes on each time step the changes of the lagrangian bubbles.
         !!  @param q_time Current time
-    subroutine s_write_lag_particles(qtime, replace)
+    impure subroutine s_write_lag_particles(qtime, replace)
 
         real(wp), intent(in) :: qtime
         logical, intent(in) :: replace
@@ -2362,7 +2376,7 @@ contains
             !!       of the particles (void fraction) in the computatioational domain
             !!       on each time step.
             !!  @param q_time Current time
-    subroutine s_write_void_evol(qtime, replace)
+    impure subroutine s_write_void_evol(qtime, replace)
 
         real(wp), intent(in) :: qtime
         logical, intent(in) :: replace
@@ -2395,8 +2409,9 @@ contains
         lag_void_max = 0._wp
         lag_void_avg = 0._wp
         lag_vol = 0._wp
-        !$acc parallel loop collapse(3) gang vector default(present) reduction(+:lag_vol,lag_void_avg) &
-        !$acc reduction(MAX:lag_void_max) copy(lag_vol, lag_void_avg, lag_void_max)
+        $:GPU_PARALLEL_LOOP(collapse=3, reduction='[[lag_vol, lag_void_avg], &
+            & [lag_void_max]]', reductionOp='[+, MAX]', &
+            & copy='[lag_vol, lag_void_avg, lag_void_max]')
         do k = 0, p
             do j = 0, n
                 do i = 0, m
@@ -2410,7 +2425,7 @@ contains
             end do
         end do
 
-!$acc update host(Rmax_glb, Rmin_glb)
+$:GPU_UPDATE(host='[Rmax_glb, Rmin_glb]')
 
 #ifdef MFC_MPI
         if (num_procs > 1) then
@@ -2449,7 +2464,7 @@ contains
 
     !>  Subroutine that writes the restarting files for the particles in the lagrangian solver.
         !!  @param t_step Current time step
-    subroutine s_write_restart_lag_bubbles(t_step)
+    impure subroutine s_write_restart_lag_bubbles(t_step)
 
         ! Generic string used to store the address of a particular file
         integer, intent(in) :: t_step
@@ -2491,7 +2506,7 @@ contains
         lsizes(1) = max(1, bub_id)
         lsizes(2) = 21 + varsExtra
 
-        ! if the partcle number is zero, put 1 since MPI cannot deal with writing
+        ! if the particle number is zero, put 1 since MPI cannot deal with writing
         ! zero particle
         part_order(:) = 1
         part_order(proc_rank + 1) = max(1, bub_id)
@@ -2603,10 +2618,10 @@ contains
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
-        !$acc update device(Rmax_glb, Rmin_glb)
-
-        !$acc parallel loop gang vector default(present) reduction(MAX:Rmax_glb) &
-        !$acc reduction(MIN: Rmin_glb) copy(Rmax_glb, Rmin_glb)
+        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb]')
+        
+        $:GPU_PARALLEL_LOOP(reduction='[[Rmax_glb], [Rmin_glb]]', &
+            & reductionOp='[MAX, MIN]', copy='[Rmax_glb,Rmin_glb]')
         do k = 1, nBubs
             Rmax_glb = max(Rmax_glb, intfc_rad(k, 1)/bub_R0(k))
             Rmin_glb = min(Rmin_glb, intfc_rad(k, 1)/bub_R0(k))
@@ -2617,7 +2632,7 @@ contains
     end subroutine s_calculate_lag_bubble_stats
 
     !>  Subroutine that writes the maximum and minimum radius of each bubble.
-    subroutine s_write_lag_bubble_stats()
+    impure subroutine s_write_lag_bubble_stats()
 
         integer :: k
         character(LEN=path_len + 2*name_len) :: file_loc
@@ -2625,7 +2640,7 @@ contains
         write (file_loc, '(A,I0,A)') 'stats_lag_bubbles_', proc_rank, '.dat'
         file_loc = trim(case_dir)//'/D/'//trim(file_loc)
 
-        !$acc update host(Rmax_glb, Rmin_glb, gas_betaT)
+        $:GPU_UPDATE(host='[Rmax_glb,Rmin_glb]')
 
         open (13, FILE=trim(file_loc), FORM='formatted', position='rewind')
         write (13, *) 'proc_rank, Rmax_glb, Rmin_glb'
@@ -2654,15 +2669,13 @@ contains
 
     !> The purpose of this subroutine is to remove one specific particle if dt is too small.
           !! @param bub_id Particle id
-    subroutine s_remove_lag_bubble(bub_id)
+    impure subroutine s_remove_lag_bubble(bub_id)
 
         integer, intent(in) :: bub_id
 
         integer :: i
 
-        !$acc kernels
-
-        !$acc loop seq
+        $:GPU_LOOP(parallelism='[seq]')
         do i = bub_id, nBubs - 1
             if (i == bub_id) print *, 'In loop remove bub:', i
             lag_id(i, 1) = lag_id(i + 1, 1)
@@ -2696,13 +2709,11 @@ contains
             bub_hifu_rad(i) = bub_hifu_rad(i + 1)
         end do
 
-        !$acc end kernels
-
         nBubs = nBubs - 1
         dt = 5._wp*dt
-        !$acc update device(nBubs, dt)
+        $:GPU_UPDATE(device='[nBubs, dt]')
 
-        print *, 'Bubble removed, nBubs now', nBubs
+        print *, 'Bubble removed, nBubs now: in processor: ', nBubs, proc_rank
 
     end subroutine s_remove_lag_bubble
 
@@ -2738,7 +2749,7 @@ contains
     end subroutine s_free_memory_stg3
 
     !> The purpose of this subroutine is to deallocate variables
-    subroutine s_finalize_lagrangian_solver()
+    impure subroutine s_finalize_lagrangian_solver()
 
         integer :: i
 

@@ -26,15 +26,13 @@ module m_hifu
     implicit none
 
     type(vector_field) :: q_hifu, q_hifu_3d !< HIFU vector fields
-    !$acc declare create(q_hifu, q_hifu_3d)
+    $:GPU_DECLARE(create='[q_hifu, q_hifu_3d]')
 
     real(wp), allocatable, dimension(:) :: shear_viscous_fluids, bulk_viscous_fluids, abs_coef_fluids, rho_cp_fluids, tdiff_fluids
-    !$acc declare create(shear_viscous_fluids, bulk_viscous_fluids, abs_coef_fluids, rho_cp_fluids, tdiff_fluids)
+    $:GPU_DECLARE(create='[shear_viscous_fluids, bulk_viscous_fluids, abs_coef_fluids, rho_cp_fluids, tdiff_fluids]')
 
-    integer :: bc_pole
-    !$acc declare create(bc_pole)
-
-    integer :: sys_size_hyd
+    integer :: bc_pole, sys_size_hyd
+    $:GPU_DECLARE(create='[bc_pole, sys_size_hyd]')
 
 contains
 
@@ -80,7 +78,8 @@ contains
             rho_cp_fluids(i) = fluid_pp(i)%rho_cp
             tdiff_fluids(i) = fluid_pp(i)%tdiff
         end do
-        !$acc update device(shear_viscous_fluids, bulk_viscous_fluids, abs_coef_fluids, rho_cp_fluids, tdiff_fluids)
+        $:GPU_UPDATE(device='[sys_size_hyd, shear_viscous_fluids, bulk_viscous_fluids, &
+          & abs_coef_fluids, rho_cp_fluids, tdiff_fluids]')
 
     end subroutine s_initialize_HIFU_module
 
@@ -91,7 +90,7 @@ contains
 
         !Zeroing all the hifu variables
 
-        !$acc parallel loop collapse(4) gang vector default(present)
+        $:GPU_PARALLEL_LOOP(collapse=4)
         do l = 1, sys_size_hifu
             do k = idwbuff(3)%beg, idwbuff(3)%end
                 do j = idwbuff(2)%beg, idwbuff(2)%end
@@ -102,7 +101,7 @@ contains
             end do
         end do
 
-        !$acc parallel loop collapse(3) gang vector default(present)
+        $:GPU_PARALLEL_LOOP(collapse=3)
         do k = idwbuff(3)%beg, idwbuff(3)%end
             do j = idwbuff(2)%beg, idwbuff(2)%end
                 do i = idwbuff(1)%beg, idwbuff(1)%end
@@ -258,7 +257,7 @@ contains
                 call s_start_HIFU_vars()
                 if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 2: sampling heat sources'
                 hifu_write_output = .true.
-                !$acc update device(hifu_params, dt)
+                $:GPU_UPDATE(device='[hifu_params, dt]')
 
                 exitFlag = .false.
                 return
@@ -278,7 +277,7 @@ contains
                 call s_start_HIFU_vars()
                 if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 2: sampling heat sources'
                 hifu_write_output = .true.
-                !$acc update device(hifu_params, dt)
+                $:GPU_UPDATE(device='[hifu_params, dt]')
 
                 exitFlag = .false.
                 return
@@ -332,12 +331,12 @@ contains
                 else if (p > 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
                     if (bc_x%beg == -20) bc_x%beg = -6
-                        !$acc update device(bc_x)
+                        $:GPU_UPDATE(device='[bc_x]')
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
 
-                !$acc update device(hifu_params, dt)
+                $:GPU_UPDATE(device='[hifu_params, dt]')
 
                 exitFlag = .false.
 
@@ -389,12 +388,12 @@ contains
                 else if (p > 0) then
                     if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3: solving heat equation (3D)'
                     if (bc_x%beg == -20) bc_x%beg = -6
-                        !$acc update device(bc_x)
+                        $:GPU_UPDATE(device='[bc_x]')
                 end if
 
                 if (.not. hifu_params%cartesian .and. hifu_params%stg3_3d) call s_reduce_heat_domain()
 
-                !$acc update device(hifu_params, dt)
+                $:GPU_UPDATE(device='[hifu_params, dt]')
 
                 exitFlag = .false.
 
@@ -527,10 +526,11 @@ contains
             if (proc_rank==0) print*, 'Computing axysimetric acoustic damping', mytime, hdid
 #endif
 
-            !$acc parallel loop collapse(3) gang vector default(present) reduction(+: sumIntensity_ac) &
-            !$acc reduction(MAX: focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max) &
-            !$acc private(myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h) &
-            !$acc copy(sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max)
+            $:GPU_PARALLEL_LOOP(collapse=3, &
+              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max], [sumIntensity_ac]]', &
+              & reductionOp='[MAX,+]', &
+              & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h]', &
+              & copy='[sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -541,7 +541,7 @@ contains
                         bulkVisc = 0._wp
                         absCoef = 0._wp
 
-                        !$acc loop seq
+                        $:GPU_LOOP(parallelism='[seq]')
                         do i = 1, num_fluids
                             shearVisc = shearVisc + q_prim_vf(E_idx + i)%sf(j, k, l) * shear_viscous_fluids(i)
                             bulkVisc = bulkVisc + q_prim_vf(E_idx + i)%sf(j, k, l) * bulk_viscous_fluids(i)
@@ -568,16 +568,16 @@ contains
                         durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
 
                         !>> Get pressure, density and speed of sound
-                        !$acc loop seq
+                        $:GPU_LOOP(parallelism='[seq]')
                         do i = 1, contxe
                             myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
                             myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
                         end do
 
                         call s_convert_species_to_mixture_variables_acc(rho_h, gamma_h, pi_inf_h, qv_h, myalpha, &
-                                                                myalpha_rho, Re_h, j, k, l)
+                                                                myalpha_rho, Re_h)
 
-                        !$acc loop seq
+                        $:GPU_LOOP(parallelism='[seq]')
                         do s = 1, num_dims
                             vel_h(s) = q_cons_vf(s + contxe)%sf(j, k, l)/rho_h
                         end do
@@ -674,7 +674,7 @@ contains
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
             end if
 
-            !$acc update host(q_hifu%vf(hifu_params%tsamp_idx)%sf)
+            $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
             if (proc_rank == 0) write (99, '(6x,5E24.8)') &
                                         mytime, &
@@ -688,10 +688,12 @@ contains
 #ifdef MFC_DEBUG
             if (proc_rank==0) print*, 'Computing cartesian 3D acoustic damping', mytime, hdid
 #endif
-            !$acc parallel loop collapse(3) gang vector default(present) reduction(+: sumIntensity_ac) &
-            !$acc reduction(MAX: focalIntensity_ac, focalIntensity_ac_prms) &
-            !$acc private(myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn) &
-            !$acc copy(sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms)
+
+            $:GPU_PARALLEL_LOOP(collapse=3, &
+              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms], [sumIntensity_ac]]', &
+              & reductionOp='[MAX,+]', &
+              & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn]', &
+              & copy='[sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -702,7 +704,7 @@ contains
                         bulkVisc = 0._wp
                         absCoef = 0._wp
 
-                        !$acc loop seq
+                        $:GPU_LOOP(parallelism='[seq]')
                         do i = 1, num_fluids
                             shearVisc = shearVisc + q_prim_vf(E_idx + i)%sf(j, k, l) * shear_viscous_fluids(i)
                             bulkVisc = bulkVisc + q_prim_vf(E_idx + i)%sf(j, k, l) * bulk_viscous_fluids(i)
@@ -726,16 +728,16 @@ contains
                         call s_space_derivative(q_prim_vf(contxe + 3), j, k, l, duzdn, mtd_idx)
 
                         !>> Get pressure, density and speed of sound
-                        !$acc loop seq
+                        $:GPU_LOOP(parallelism='[seq]')
                         do i = 1, contxe
                             myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
                             myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
                         end do
 
                         call s_convert_species_to_mixture_variables_acc(rho_h, gamma_h, pi_inf_h, qv_h, myalpha, &
-                                                                myalpha_rho, Re_h, j, k, l)
+                                                                myalpha_rho, Re_h)
 
-                        !$acc loop seq
+                        $:GPU_LOOP(parallelism='[seq]')
                         do s = 1, num_dims
                             vel_h(s) = q_cons_vf(s + contxe)%sf(j, k, l)/rho_h
                         end do
@@ -837,7 +839,7 @@ contains
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
             end if
 
-            !$acc update host(q_hifu%vf(hifu_params%tsamp_idx)%sf)
+            $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
             if (proc_rank == 0) write (99, '(6x,5E24.8)') &
                                         mytime, &
@@ -854,8 +856,7 @@ contains
 
 
     subroutine s_space_derivative(q_var, i, j, k, dumdn, mtd_idx)
-        !$acc routine seq
-
+        $:GPU_ROUTINE(parallelism='[seq]')
         type(scalar_field), intent(in) :: q_var
         integer, intent(in) :: i, j, k, mtd_idx
         real(wp), dimension(3), intent(out) :: dumdn
@@ -963,7 +964,7 @@ contains
             grid_geometry = 1
             cyl_coord = .false.
             sys_size_HIFU = hifu_params%qth_idx
-            !$acc update device(m_hf, n_hf, p_hf, num_dims, grid_geometry, cyl_coord, sys_size_HIFU)
+            $:GPU_UPDATE(device='[m_hf, n_hf, p_hf, num_dims, grid_geometry, cyl_coord, sys_size_HIFU]')
 
             !Deallocate variables to free memory
             if (bubbles_lagrange) call s_free_memory_stg3()
@@ -973,7 +974,7 @@ contains
                 bc_x%beg = -6; bc_x%end = -6
                 bc_y%beg = -6; bc_y%end = -6
                 bc_z%beg = -6; bc_z%end = -6
-                !$acc update device(bc_x, bc_y, bc_z)
+                $:GPU_UPDATE(device='[bc_x, bc_y, bc_z]')
             end if
 
             call s_initialize_bubbles_EL_kernels
@@ -1059,7 +1060,7 @@ contains
 
             idwbuff(3)%beg = -buff_size
             idwbuff(3)%end = p - idwbuff(3)%beg
-            !$acc update device(p, num_dims, bc_x, bc_y, bc_z, grid_geometry, idwbuff, bc_pole)
+            $:GPU_UPDATE(device='[p, num_dims, bc_x, bc_y, bc_z, grid_geometry, idwbuff, bc_pole]')
 
             !> Allocate variables
             !Theta axis
@@ -1164,10 +1165,10 @@ contains
             end do
 
             ! END: Population of Buffers in z-direction ========================
-            !$acc update device(dz, z_cb, z_cc)
+            $:GPU_UPDATE(device='[dz, z_cb, z_cc]')
 
             ! 3d q_hifu
-            !$acc parallel loop collapse(4) gang vector default(present)
+            $:GPU_PARALLEL_LOOP(collapse=4)
             do i = 1, sys_size_hifu
                 do l = 0, p
                     do k = 0, n
@@ -1355,7 +1356,7 @@ contains
         end do
         if (proc_rank==0) print*, 'New mesh: z-dir:', dmin, dmax, z_cb_hf(-1), z_cb_hf(p_hf), p_hf
 
-        !$acc update device(x_cb_hf, y_cb_hf, z_cb_hf, x_cc_hf, y_cc_hf, z_cc_hf, dx_hf, dy_hf, dz_hf)
+        $:GPU_UPDATE(device='[x_cb_hf, y_cb_hf, z_cb_hf, x_cc_hf, y_cc_hf, z_cc_hf, dx_hf, dy_hf, dz_hf]')
 
         deallocate (x_cb_glb, y_cb_glb, z_cb_glb)
 
@@ -1412,7 +1413,7 @@ contains
         integer :: cellx, celly, cellz
 
         ! 3d q_hifu: Temperature
-        !$acc parallel loop collapse(3) gang vector default(present)
+        $:GPU_PARALLEL_LOOP(collapse=3)
         do l = -buff_size, p_hf + buff_size
             do k = -buff_size, n_hf + buff_size
                 do j = -buff_size, m_hf + buff_size
@@ -1426,7 +1427,7 @@ contains
         end do
 
         ! 3d q_hifu: Acoustic intensity
-        !$acc parallel loop collapse(3) gang vector default(present)
+        $:GPU_PARALLEL_LOOP(collapse=3)
         do l = 0, p_hf 
             do k = 0, n_hf
                 do j = 0, m_hf
@@ -1442,11 +1443,7 @@ contains
     end subroutine s_populate_cartesian_3D
 
     function f_interpolate_qus(j, k, l)
-#ifdef _CRAYFTN
-    !DIR$ INLINEALWAYS f_interpolate_qus
-#else
-    !$acc routine seq
-#endif
+        $:GPU_ROUTINE(parallelism='[seq]')
         integer, intent(in) :: j, k, l
         real(wp) :: f_interpolate_qus, r_cc, minDist, minDist_old
         real(wp) :: nSamples, valCloseCell, valAvg
@@ -1501,9 +1498,9 @@ contains
 
         nSamples = 0._wp
         valAvg = 0._wp
-        !$acc loop seq
+        $:GPU_LOOP(parallelism='[seq]')
         do i = cell2D_xb, cell2D_xe
-            !$acc loop seq
+            $:GPU_LOOP(parallelism='[seq]')
             do q = cell2D_rb, cell2D_re
                 valAvg = valAvg + q_hifu%vf(hifu_params%qus_idx)%sf(i, q, 0)
                 nSamples = nSamples + 1._wp
@@ -1549,7 +1546,7 @@ contains
         if (num_procs == 1) return
 
         do i = 1, sys_size_hifu
-            !$acc update host(q_hifu_3d%vf(i)%sf)
+            $:GPU_UPDATE(host='[q_hifu_3d%vf(i)%sf]')
         end do
 
         ! Done by the CPUs only
@@ -1577,7 +1574,7 @@ contains
         end do
 
         do i = 1, sys_size_hifu
-            !$acc update device(q_hifu_3d%vf(i)%sf)
+            $:GPU_UPDATE(host='[q_hifu_3d%vf(i)%sf]')
         end do
 
          if (proc_rank==0) print*, 'Sources got unified'
@@ -1592,7 +1589,7 @@ contains
         
         if (num_procs == 1) return
 
-        !$acc update host(q_hifu_3d%vf(hifu_params%T_idx)%sf)
+        $:GPU_UPDATE(host='[q_hifu_3d%vf(hifu_params%T_idx)%sf]')
 
         ! Done by the CPUs only
 
@@ -1609,7 +1606,7 @@ contains
             end do
         end do
 
-         !$acc update device(q_hifu_3d%vf(hifu_params%T_idx)%sf)
+         $:GPU_UPDATE(host='[q_hifu_3d%vf(hifu_params%T_idx)%sf]')
 
          if (proc_rank==0) print*, 'Temperature field got unified'
 
@@ -1629,7 +1626,8 @@ contains
         max_old = -abs(dflt_real)
         min_old = abs(dflt_real)
 
-        !$acc parallel loop collapse(2) gang vector default(present) reduction(MAX: max_old) reduction(MIN: min_old) copy(max_old, min_old)
+        $:GPU_PARALLEL_LOOP(collapse=2,reduction='[[max_old],[min_old]]', &
+        & reductionOp='[MAX, MIN]', copy='[max_old, min_old]')
         do k = 0, n
             do j = 0, m
                 max_old = max(max_old, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, 0)/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, 0))
@@ -1655,8 +1653,8 @@ contains
             sampledTime = 0._wp
             max_qvis_smooth = -abs(dflt_real)
 
-            !$acc parallel loop collapse(3) gang vector default(present) reduction(MAX: max_new, sampledTime, max_qvis_smooth) &
-            !$acc reduction(MIN: min_new) copy(max_new, min_new, sampledTime, max_qvis_smooth)
+            $:GPU_PARALLEL_LOOP(collapse=3,reduction='[[max_new, sampledTime, max_qvis_smooth],[min_new]]', &
+            & reductionOp='[MAX, MIN]', copy='[max_new, min_new, sampledTime, max_qvis_smooth]')
             do l = 0, p_hf
                 do k = 0, n_hf
                     do j = 0, m_hf
@@ -1679,7 +1677,7 @@ contains
         ! Printing viscous and thermal intensities in W for all bubbles in a separate filE
         max_qvis = -abs(dflt_real)
 
-        !$acc parallel loop gang vector default(present) reduction(MAX: max_qvis) copy(max_qvis)
+        $:GPU_PARALLEL_LOOP(reduction='[[max_qvis]]', reductionOp='[MAX]', copy='[max_qvis]')
         do i = 1, nBubs
             max_qvis = max(max_qvis, bub_qvis(i)/q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(0,0,0))
         end do
@@ -1749,12 +1747,12 @@ contains
                 ! Restore 2D params
                 num_dims = 2
                 grid_geometry = 2
-                !$acc update device(num_dims, grid_geometry)
+                $:GPU_UPDATE(device='[num_dims, grid_geometry]')
                 if (proc_rank==0) then
                     bc_x%beg = -20; bc_x%end = 10
                     bc_y%beg = -2; bc_y%end = 10
                     bc_z%beg = dflt_int; bc_z%end = dflt_int
-                    !$acc update device(bc_x, bc_y, bc_z)
+                    $:GPU_UPDATE(device='[bc_x, bc_y, bc_z]')
                 end if
 
             else
@@ -1775,8 +1773,7 @@ contains
                 bc_z%beg = dflt_int; bc_z%end = dflt_int                ! Assume entire cylindrical ring is taking care by one processor
                 if (bc_y%beg == -14 .or. bc_y%beg == -21) bc_y%beg = -2 ! from -2: reflective boundary
                 grid_geometry = 2
-
-                !$acc update device(p, num_dims, bc_x, bc_y, bc_z, grid_geometry)
+                $:GPU_UPDATE(device='[p, num_dims, bc_x, bc_y, bc_z, grid_geometry]')
             end if
 
         else !full 2D or 3D
@@ -1818,8 +1815,8 @@ contains
         max_val = -abs(dflt_real)
         min_val = abs(dflt_real)
 
-        !$acc parallel loop collapse(3) gang vector default(present) reduction(MAX: max_val) &
-        !$acc reduction(MIN: min_val) copy(max_val, min_val) copyin(idx)
+        $:GPU_PARALLEL_LOOP(collapse=3, copyin='[idx]', reduction='[[max_val], [min_val]]', &
+        & reductionOp='[MAX, MIN]', copy='[max_val, min_val]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -1884,8 +1881,9 @@ contains
                 ! Assume boundaries are far away from the heating and that do not undergo any heating up.
                 ! Buffers are equal to Tref as set in the initial condition
 
-                !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
-                !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
+                $:GPU_PARALLEL_LOOP(collapse=3,copyin='[qus_hifu_idx_ht,t_step]', &
+                & reduction='[[abortFlag_max,CFL_heat_max]]',reductionOp='[MAX]', &
+                & copy='[abortFlag_max,CFL_heat_max]')
                 do l = 0, p_hf
                     do k = 0, n_hf
                         do j = 0, m_hf
@@ -1983,10 +1981,11 @@ contains
             if (p == 0 .and. cyl_coord) then !< Axisymmetric rhs
 
                 ! call s_populate_HIFU_variables_buffers(q_hifu)
-                call s_populate_variables_buffers(q_hifu%vf, pb, mv, bc_type)
+                call s_populate_variables_buffers(bc_type, q_hifu%vf, pb, mv)
 
-                !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
-                !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
+                $:GPU_PARALLEL_LOOP(collapse=3, copyin='[qus_hifu_idx_ht, t_step]', &
+                & reduction='[[abortFlag_max, CFL_heat_max]]',reductionOp='[MAX]', &
+                & copy='[abortFlag_max, CFL_heat_max]')
                 do l = 0, p
                     do j = 0, m
                         do k = 0, n
@@ -2018,7 +2017,7 @@ contains
                             rho_cp = 0._wp
                             tdiff = 0._wp
 
-                            !$acc loop seq
+                            $:GPU_LOOP(parallelism='[seq]')
                             do i = 1, num_fluids
                                 alpha = q_cons_vf(advxb + i - 1)%sf(j, k, 0)
                                 rho_cp = rho_cp + alpha * rho_cp_fluids(i)
@@ -2080,10 +2079,11 @@ contains
 
                 if (cyl_coord) then !< from axisymmetric to 3D Cylindrical
 
-                    call s_populate_variables_buffers(q_hifu_3d%vf, pb, mv, bc_type)
+                    call s_populate_variables_buffers(bc_type, q_hifu_3d%vf, pb, mv)
 
-                    !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
-                    !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
+                    $:GPU_PARALLEL_LOOP(collapse=3, copyin='[qus_hifu_idx_ht, t_step]', &
+                    & reduction='[[abortFlag_max, CFL_heat_max]]',reductionOp='[MAX]', &
+                    & copy='[abortFlag_max, CFL_heat_max]')
                     do l = 0, p
                         do j = hifu_params%mb, hifu_params%me
                             do k = 0, hifu_params%ne
@@ -2121,7 +2121,7 @@ contains
                                 rho_cp = 0._wp
                                 tdiff = 0._wp
 
-                                !$acc loop seq
+                                $:GPU_LOOP(parallelism='[seq]')
                                 do i = 1, num_fluids
                                     alpha = q_cons_vf(advxb + i - 1)%sf(j, k, 0) !From 2D solution
                                     rho_cp = rho_cp + alpha * rho_cp_fluids(i)
@@ -2227,10 +2227,11 @@ contains
 
                 else ! 3D cartesian (all stages)
 
-                    call s_populate_variables_buffers(q_hifu%vf, pb, mv, bc_type)
+                    call s_populate_variables_buffers(bc_type, q_hifu%vf, pb, mv)
 
-                    !$acc parallel loop collapse(3) gang vector default(present) copyin(qus_hifu_idx_ht, t_step) &
-                    !$acc reduction(MAX: abortFlag_max, CFL_heat_max) copy(abortFlag_max, CFL_heat_max)
+                    $:GPU_PARALLEL_LOOP(collapse=3, copyin='[qus_hifu_idx_ht, t_step]', &
+                    & reduction='[[abortFlag_max, CFL_heat_max]]',reductionOp='[MAX]', &
+                    & copy='[abortFlag_max, CFL_heat_max]')
                     do l = 0, p
                         do k = 0, n
                             do j = 0, m
@@ -2266,7 +2267,7 @@ contains
                                 !> Get thermal properties
                                 rho_cp = 0._wp
                                 tdiff = 0._wp
-                                !$acc loop seq
+                                $:GPU_LOOP(parallelism='[seq]')
                                 do i = 1, num_fluids
                                     alpha = q_cons_vf(advxb + i - 1)%sf(j, k, l)
                                     rho_cp = rho_cp + alpha * rho_cp_fluids(i)
@@ -2389,7 +2390,7 @@ contains
 
 !             if (j==0 .and. l==0 .and. t_step==0) print*, k, nCells, proc_rank
 
-!             !$acc loop seq
+!             $:GPU_LOOP(parallelism='[seq]')
 !             do q = 0, nCells-1
 
 !                 ! Check temperature is the same in the set of cells
@@ -2414,7 +2415,7 @@ contains
             
 !             qq = sub_id - nCells
 
-!             !$acc loop seq
+!             $:GPU_LOOP(parallelism='[seq]')
 !             do q = 0, nCells-1
 
 !                 ! Calculate volume

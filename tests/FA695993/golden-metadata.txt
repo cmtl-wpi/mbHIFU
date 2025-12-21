@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 This file was created on 2025-02-10 15:41:15.960121.
 
 mfc.sh:
@@ -5,48 +6,31 @@ mfc.sh:
     Invocation: test -j 60 --a
     Lock:       mpi=Yes & gpu=No & debug=No & gcov=No & unified=No & single=No
     Git:        c3de9e581d68135f0b6abc23982d197971f69329 on dgvacarevelo (dirty)
+=======
+This file was created on 2025-08-05 17:44:55.535643.
 
-syscheck:
+mfc.sh:
 
-    CMake Configuration:
-    
-        CMake v3.25.2 on login-03
-    
-        C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
-        Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
-    
-        PRE_PROCESS   : OFF
-        SIMULATION    : OFF
-        POST_PROCESS  : OFF
-        SYSCHECK      : ON
-        DOCUMENTATION : OFF
-        ALL           : OFF
-    
-        MPI     : ON
-        OpenACC : OFF
-    
-        Fypp    : /home/dgvacarevelo/MFC/build/venv/bin/fypp
-        Doxygen : 
-    
-        Build Type : Release
-    
-    Configuration Environment:
-    
-        CC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc
-        CXX      : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/g++
-        FC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran
-        OMPI_CC  : 
-        OMPI_CXX : 
-        OMPI_FC  : 
+    Invocation: test --generate -o FA695993
+    Lock:       mpi=Yes & gpu=No & debug=No & gcov=No & unified=No & single=No
+    Git:        bf84fbe64505a5d2a1c7a36f81682015fcd3ba9b on qbmm (dirty)
+>>>>>>> mfc/savePoint
 
 pre_process:
 
     CMake Configuration:
     
+<<<<<<< HEAD
         CMake v3.25.2 on login-03
     
         C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
         Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
+=======
+        CMake v4.0.3 on M4Pro.local
+    
+        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
+        Fortran : GNU v15.1.0 (/opt/homebrew/bin/gfortran)
+>>>>>>> mfc/savePoint
     
         PRE_PROCESS   : ON
         SIMULATION    : OFF
@@ -58,49 +42,76 @@ pre_process:
         MPI     : ON
         OpenACC : OFF
     
+<<<<<<< HEAD
         Fypp    : /home/dgvacarevelo/MFC/build/venv/bin/fypp
+=======
+        Fypp    : /Users/hyeoksu/MyWork/MFC-local/MFC/qbmm/build/venv/bin/fypp
+>>>>>>> mfc/savePoint
         Doxygen : 
     
         Build Type : Release
     
     Configuration Environment:
     
+<<<<<<< HEAD
         CC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc
         CXX      : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/g++
         FC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran
+=======
+        CC       : /usr/bin/cc
+        CXX      : /usr/bin/c++
+        FC       : /opt/homebrew/bin/gfortran
+>>>>>>> mfc/savePoint
         OMPI_CC  : 
         OMPI_CXX : 
         OMPI_FC  : 
 
-simulation:
+syscheck:
 
     CMake Configuration:
     
+<<<<<<< HEAD
         CMake v3.25.2 on login-03
     
         C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
         Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
+=======
+        CMake v4.0.3 on M4Pro.local
+    
+        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
+        Fortran : GNU v15.1.0 (/opt/homebrew/bin/gfortran)
+>>>>>>> mfc/savePoint
     
         PRE_PROCESS   : OFF
-        SIMULATION    : ON
+        SIMULATION    : OFF
         POST_PROCESS  : OFF
-        SYSCHECK      : OFF
+        SYSCHECK      : ON
         DOCUMENTATION : OFF
         ALL           : OFF
     
         MPI     : ON
         OpenACC : OFF
     
+<<<<<<< HEAD
         Fypp    : /home/dgvacarevelo/MFC/build/venv/bin/fypp
+=======
+        Fypp    : /Users/hyeoksu/MyWork/MFC-local/MFC/qbmm/build/venv/bin/fypp
+>>>>>>> mfc/savePoint
         Doxygen : 
     
         Build Type : Release
     
     Configuration Environment:
     
+<<<<<<< HEAD
         CC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc
         CXX      : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/g++
         FC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran
+=======
+        CC       : /usr/bin/cc
+        CXX      : /usr/bin/c++
+        FC       : /opt/homebrew/bin/gfortran
+>>>>>>> mfc/savePoint
         OMPI_CC  : 
         OMPI_CXX : 
         OMPI_FC  : 
@@ -109,10 +120,17 @@ post_process:
 
     CMake Configuration:
     
+<<<<<<< HEAD
         CMake v3.25.2 on login-03
     
         C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
         Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
+=======
+        CMake v4.0.3 on M4Pro.local
+    
+        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
+        Fortran : GNU v15.1.0 (/opt/homebrew/bin/gfortran)
+>>>>>>> mfc/savePoint
     
         PRE_PROCESS   : OFF
         SIMULATION    : OFF
@@ -124,16 +142,76 @@ post_process:
         MPI     : ON
         OpenACC : OFF
     
+<<<<<<< HEAD
         Fypp    : /home/dgvacarevelo/MFC/build/venv/bin/fypp
+=======
+        Fypp    : /Users/hyeoksu/MyWork/MFC-local/MFC/qbmm/build/venv/bin/fypp
+>>>>>>> mfc/savePoint
         Doxygen : 
     
         Build Type : Release
     
     Configuration Environment:
     
+<<<<<<< HEAD
         CC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc
         CXX      : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/g++
         FC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran
+=======
+        CC       : /usr/bin/cc
+        CXX      : /usr/bin/c++
+        FC       : /opt/homebrew/bin/gfortran
+>>>>>>> mfc/savePoint
+        OMPI_CC  : 
+        OMPI_CXX : 
+        OMPI_FC  : 
+
+simulation:
+
+    CMake Configuration:
+    
+<<<<<<< HEAD
+        CMake v3.25.2 on login-03
+    
+        C       : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc)
+        Fortran : GNU v12.1.0 (/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran)
+=======
+        CMake v4.0.3 on M4Pro.local
+    
+        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
+        Fortran : GNU v15.1.0 (/opt/homebrew/bin/gfortran)
+>>>>>>> mfc/savePoint
+    
+        PRE_PROCESS   : OFF
+        SIMULATION    : ON
+        POST_PROCESS  : OFF
+        SYSCHECK      : OFF
+        DOCUMENTATION : OFF
+        ALL           : OFF
+    
+        MPI     : ON
+        OpenACC : OFF
+    
+<<<<<<< HEAD
+        Fypp    : /home/dgvacarevelo/MFC/build/venv/bin/fypp
+=======
+        Fypp    : /Users/hyeoksu/MyWork/MFC-local/MFC/qbmm/build/venv/bin/fypp
+>>>>>>> mfc/savePoint
+        Doxygen : 
+    
+        Build Type : Release
+    
+    Configuration Environment:
+    
+<<<<<<< HEAD
+        CC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gcc
+        CXX      : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/g++
+        FC       : /cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-9.4.0/gcc-12.1.0-i6yk33fh72z4rymfmydkenietcbpzz63/bin/gfortran
+=======
+        CC       : /usr/bin/cc
+        CXX      : /usr/bin/c++
+        FC       : /opt/homebrew/bin/gfortran
+>>>>>>> mfc/savePoint
         OMPI_CC  : 
         OMPI_CXX : 
         OMPI_FC  : 
@@ -141,6 +219,7 @@ post_process:
 CPU:
 
     CPU Info:
+<<<<<<< HEAD
     From lscpu
     Architecture:                       x86_64
     CPU op-mode(s):                     32-bit, 64-bit
@@ -179,4 +258,12 @@ CPU:
     Vulnerability Srbds:                Not affected
     Vulnerability Tsx async abort:      Not affected
     Flags:                              fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault invpcid_single pti ssbd ibrs ibpb fsgsbase bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap clflushopt clwb avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 wbnoinvd arat avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq
+=======
+    From sysctl -a 
+    machdep.cpu.cores_per_package: 14
+    machdep.cpu.core_count: 14
+    machdep.cpu.logical_per_package: 14
+    machdep.cpu.thread_count: 14
+    machdep.cpu.brand_string: Apple M4 Pro
+>>>>>>> mfc/savePoint
 

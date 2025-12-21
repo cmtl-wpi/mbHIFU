@@ -141,13 +141,13 @@ module m_derived_types
         character(LEN=pathlen_max) :: filepath !<
         !! Path the STL file relative to case_dir.
 
-        t_vec3 :: translate !<
+        real(wp), dimension(1:3) :: translate !<
         !! Translation of the STL object.
 
-        t_vec3 :: scale !<
+        real(wp), dimension(1:3) :: scale !<
         !! Scale factor for the STL object.
 
-        t_vec3 :: rotate !<
+        real(wp), dimension(1:3) :: rotate !<
         !! Angle to rotate the STL object along each cartesian coordinate axis,
         !! in radians.
 
@@ -160,17 +160,17 @@ module m_derived_types
 
     type :: t_triangle
         real(wp), dimension(1:3, 1:3) :: v ! Vertices of the triangle
-        t_vec3 :: n ! Normal vector
+        real(wp), dimension(1:3) :: n ! Normal vector
     end type t_triangle
 
     type :: t_ray
-        t_vec3 :: o ! Origin
-        t_vec3 :: d ! Direction
+        real(wp), dimension(1:3) :: o ! Origin
+        real(wp), dimension(1:3) :: d ! Direction
     end type t_ray
 
     type :: t_bbox
-        t_vec3 :: min ! Minimum coordinates
-        t_vec3 :: max ! Maximum coordinates
+        real(wp), dimension(1:3) :: min ! Minimum coordinates
+        real(wp), dimension(1:3) :: max ! Maximum coordinates
     end type t_bbox
 
     type :: t_model
@@ -265,13 +265,13 @@ module m_derived_types
         character(LEN=pathlen_max) :: model_filepath !<
         !! Path the STL file relative to case_dir.
 
-        t_vec3 :: model_translate !<
+        real(wp), dimension(1:3) :: model_translate !<
         !! Translation of the STL object.
 
-        t_vec3 :: model_scale !<
+        real(wp), dimension(1:3) :: model_scale !<
         !! Scale factor for the STL object.
 
-        t_vec3 :: model_rotate !<
+        real(wp), dimension(1:3) :: model_rotate !<
         !! Angle to rotate the STL object along each cartesian coordinate axis,
         !! in radians.
 
@@ -290,6 +290,13 @@ module m_derived_types
         real(wp) :: x_centroid, y_centroid, z_centroid !<
         !! Location of the geometric center, i.e. the centroid, of the patch. It
         !! is specified through its x-, y- and z-coordinates, respectively.
+        real(wp) :: step_x_centroid, step_y_centroid, step_z_centroid !<
+        !! Centroid locations of intermediate steps in the time_stepper module
+
+        real(wp), dimension(1:3) :: angles
+        real(wp), dimension(1:3) :: step_angles
+        real(wp), dimension(1:3, 1:3) :: rotation_matrix !< matrix that converts from IB reference frame to fluid reference frame
+        real(wp), dimension(1:3, 1:3) :: rotation_matrix_inverse !< matrix that converts from fluid reference frame to IB reference frame
 
         real(wp) :: c, p, t, m
 
@@ -303,13 +310,13 @@ module m_derived_types
         character(LEN=pathlen_max) :: model_filepath !<
         !! Path the STL file relative to case_dir.
 
-        t_vec3 :: model_translate !<
+        real(wp), dimension(1:3) :: model_translate !<
         !! Translation of the STL object.
 
-        t_vec3 :: model_scale !<
+        real(wp), dimension(1:3) :: model_scale !<
         !! Scale factor for the STL object.
 
-        t_vec3 :: model_rotate !<
+        real(wp), dimension(1:3) :: model_rotate !<
         !! Angle to rotate the STL object along each cartesian coordinate axis,
         !! in radians.
 
@@ -318,6 +325,14 @@ module m_derived_types
 
         real(wp) :: model_threshold !<
         !! Threshold to turn on smoothen STL patch.
+
+        !! Patch conditions for moving imersed boundaries
+        integer :: moving_ibm ! 0 for no moving, 1 for moving, 2 for moving on forced path
+        real(wp), dimension(1:3) :: vel
+        real(wp), dimension(1:3) :: step_vel ! velocity array used to store intermediate steps in the time_stepper module
+        real(wp), dimension(1:3) :: angular_vel
+        real(wp), dimension(1:3) :: step_angular_vel ! velocity array used to store intermediate steps in the time_stepper module
+
     end type ib_patch_parameters
 
     !> Derived type annexing the physical parameters (PP) of the fluids. These
@@ -457,6 +472,12 @@ module m_derived_types
         logical :: initial_corrector    !< Activates s_initial_pressure_correction
 
     end type bubbles_lagrange_parameters
+
+    !> Max and min number of cells in a direction of each combination of x-,y-, and z-
+    type cell_num_bounds
+        integer :: mn_max, np_max, mp_max, mnp_max
+        integer :: mn_min, np_min, mp_min, mnp_min
+    end type cell_num_bounds
 
     !> HIFU parameters
     type hifu_parameters

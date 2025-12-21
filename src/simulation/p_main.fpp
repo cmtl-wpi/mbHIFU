@@ -76,29 +76,34 @@ program p_main
 
         if (cfl_dt) then
             if (mytime >= t_stop) then
-                call s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, &
-                                                io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, &
-                                                exitFlag)
+                call s_save_performance_metrics(time_avg, time_final, io_time_avg, &
+                                                io_time_final, proc_time, io_proc_time, file_exists, &
+                                                t_step, exitFlag)
                 if (exitFlag) exit
             end if
         else
             if (t_step == t_step_stop) then
-                call s_save_performance_metrics(t_step, time_avg, time_final, io_time_avg, &
-                                                io_time_final, proc_time, io_proc_time, file_exists, start, finish, nt, &
-                                                exitFlag)
+                call s_save_performance_metrics(time_avg, time_final, io_time_avg, &
+                                                io_time_final, proc_time, io_proc_time, file_exists, &
+                                                t_step, exitFlag)
                 if (exitFlag) exit
             end if
         end if
 
-        call s_perform_time_step(t_step, time_avg, time_final, io_time_avg, io_time_final, &
-                                 proc_time, io_proc_time, file_exists, start, finish, nt)
+        call s_perform_time_step(t_step, time_avg)
 
         if (cfl_dt) then
-            if (mod(mytime, t_save) < verysmall .or. mytime >= t_stop) then
+            ! print*, 'before if that calls save data cfl_dt', mod(mytime, t_save), mytime
+            ! if (mod(mytime, t_save) < verysmall .or. mytime >= t_stop) then
+            !     print*, 'call save data cfl_dt', mytime, t_step
+            !     call s_save_data(t_step, start, finish, io_time_avg, nt)
+            ! end if
+            if (abs(mod(mytime, t_save)) < dt .or. mytime >= t_stop) then
                 call s_save_data(t_step, start, finish, io_time_avg, nt)
             end if
         else
             if (mod(t_step - t_step_start, t_step_save) == 0 .or. t_step == t_step_stop) then
+                print*, 'call save data cfl_dt', mytime, t_step
                 call s_save_data(t_step, start, finish, io_time_avg, nt)
             end if
         end if
