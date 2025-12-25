@@ -306,25 +306,25 @@ contains
             call s_restart_bubbles(bub_id, save_count)
         end if
 
-        print *, " Lagrange bubbles running, in proc", proc_rank, "number:", bub_id, "/", id
+        print '("Lagrange bubbles running, in proc ", I8, " number: ", I8, " / ", I8)', proc_rank, bub_id, id
+        ! print *, " Lagrange bubbles running, in proc", proc_rank, "number:", bub_id, "/", id
         
         call s_mpi_barrier()
         if (num_procs > 1) then
             call s_mpi_allreduce_max(safeStop, tmp_val)
             safeStop = tmp_val
         end if
-        if (proc_rank == 0) print*, 'Maximum number of bubbbles per processor is:', int(safeStop)
+        
         if (int(safeStop) > lag_params%nBubs_glb) then
+            if (proc_rank == 0) print '("Maximum number of bubbbles per processor is: ", I8)', int(safeStop)
             call s_mpi_abort('Current number of bubbles is larger than nBubs_glb.')
-        end if
-
-        call s_mpi_barrier()
-        if (num_procs > 1) then
-            call s_mpi_allreduce_max(safeStop, tmp_val)
-            safeStop = tmp_val
-        end if
-        if (int(safeStop) > lag_params%nBubs_glb) then
-            call s_mpi_abort('Current number of bubbles is larger than nBubs_glb.')
+        else
+            safeStop = nBubs
+            if (num_procs > 1) then
+                call s_mpi_allreduce_max(safeStop, tmp_val)
+                safeStop = tmp_val
+            end if
+            if (proc_rank == 0) print '("Maximum number of bubbbles per processor is: ", I8)', int(safeStop)
         end if
 
         $:GPU_UPDATE(device='[bubbles_lagrange, lag_params]')
@@ -765,12 +765,12 @@ contains
 
         if (.not. lag_params%pressure_corrector) return
 
-        if (proc_rank == 0) print *, 'Influence volume (bubble interaction) in # of surrounding cells is', lag_params%influence
+        if (proc_rank == 0) print '("Influence volume (bubble interaction) in # of surrounding cells is ", I0)', lag_params%influence
         ! mean_rn = 0.5_wp*pi
         ! st_dev_rn = 1._wp
 
         safeStop = 0._wp
-        $:GPU_PARALLEL_LOOP(collapse=2, private='[j, cell, scoord]', &
+        $:GPU_PARALLEL_LOOP(private='[j, cell, scoord]', &
         & reduction='[[safeStop]]',reductionOp='[MAX]',copy='[safeStop]')
         do j = 1, nBubs
 
@@ -930,7 +930,7 @@ contains
             safeStop = tmp_val
         end if
 
-        if (proc_rank==0) print*, 'Maximum number of interacting bubbles is:', int(safeStop)
+        if (proc_rank==0) print '("Maximum number of interacting bubbles is ", I0)', int(safeStop)
 
         if (safeStop > max_bub_int) then
             call s_mpi_abort('Failed getting interacting bubbles.')

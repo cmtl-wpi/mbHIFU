@@ -1325,8 +1325,6 @@ contains
         integer :: save_count
         logical :: hifu_write_output
 
-        print*, "Saving data at time step ", t_step
-
         call cpu_time(start)
         call nvtxStartRange("SAVE-DATA")
         do i = 1, sys_size

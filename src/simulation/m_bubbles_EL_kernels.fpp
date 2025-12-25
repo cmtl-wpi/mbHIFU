@@ -446,7 +446,7 @@ contains
 
                     !> Smearing
                     normGaussSum = 0._wp
-                    $:GPU_PARALLEL_LOOP(collapse=3,private='[cellaux, nodecoord]', reduction='[[normGaussSum]]',reductionOp='[+]')
+                    $:GPU_LOOP(collapse=3,private='[cellaux, nodecoord]', reduction='[[normGaussSum]]',reductionOp='[+]')
                     do i = 0, smearGrid
                         do j = 0, smearGrid
                             do k = 0, smearGrid
@@ -565,7 +565,7 @@ contains
 
                     !> Smearing
                     normGaussSum = 0._wp
-                    $:GPU_PARALLEL_LOOP(collapse=3,private='[cellaux, nodecoord]', reduction='[[normGaussSum]]',reductionOp='[+]')
+                    $:GPU_LOOP(collapse=3,private='[cellaux, nodecoord]', reduction='[[normGaussSum]]',reductionOp='[+]')
                     do i = 0, smearGrid
                         do j = 0, smearGrid
                             do k = 0, smearGrid

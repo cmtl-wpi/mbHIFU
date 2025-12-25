@@ -93,9 +93,7 @@ program p_main
         call s_perform_time_step(t_step, time_avg)
 
         if (cfl_dt) then
-            ! print*, 'before if that calls save data cfl_dt', mod(mytime, t_save), mytime
             ! if (mod(mytime, t_save) < verysmall .or. mytime >= t_stop) then
-            !     print*, 'call save data cfl_dt', mytime, t_step
             !     call s_save_data(t_step, start, finish, io_time_avg, nt)
             ! end if
             if (abs(mod(mytime, t_save)) < dt .or. mytime >= t_stop) then
@@ -103,7 +101,6 @@ program p_main
             end if
         else
             if (mod(t_step - t_step_start, t_step_save) == 0 .or. t_step == t_step_stop) then
-                print*, 'call save data cfl_dt', mytime, t_step
                 call s_save_data(t_step, start, finish, io_time_avg, nt)
             end if
         end if

@@ -1614,7 +1614,7 @@ contains
             end if
             if (proc_rank == 0) then
                 if (hifu_params%cartesian .and. hifu_params%heatSolver) then
-                    write (i + 30, '(6X,6E24.8)') &
+                    write (i + 30, '(6X,6e24.8)') &
                         nondim_time, &
                         rho, &
                         vel(1), &
@@ -1749,9 +1749,7 @@ contains
                             Temp_hifu
                         !print *, 'time =', nondim_time, 'focal temperature =', Temp_hifu, '3D cylindrical sim'
                     else
-                        write (i + 30, '(6X,F12.6,F24.8,F24.8,F24.8,F24.8,'// &
-                               'F24.8,F24.8,F24.8,F24.8,F24.8,'// &
-                               'F24.8)') &
+                        write (i + 30, '(6X,F12.6,10E24.8)') &
                             nondim_time, &
                             rho, &
                             vel(1), &

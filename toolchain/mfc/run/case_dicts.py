@@ -163,7 +163,7 @@ for bc_p_id in range(1, 10+1):
 
     PRE_PROCESS[f"patch_bc({bc_p_id})%radius"] = ParamType.REAL
 
-for p_id in range(1, 10+1):
+for p_id in range(1, 100+1):
     for attribute, ty in [("geometry", ParamType.INT), ("smoothen", ParamType.LOG),
                       ("smooth_patch_id", ParamType.INT), ("hcid", ParamType.INT)]:
         PRE_PROCESS[f"patch_icpp({p_id})%{attribute}"] = ty
