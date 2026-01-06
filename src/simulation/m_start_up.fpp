@@ -1385,6 +1385,8 @@ contains
             call s_write_Pmax(save_count)
             call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
                                                         bc_type, q_hifu_vf=q_hifu%vf)
+            call s_write_heat_stats(q_hifu%vf(3)%sf(0,0,0))
+            if (bubbles_lagrange) call s_write_heat_stats_bubbles(q_hifu%vf(3)%sf(0,0,0))
         end if
 
         if (.not. hifu_params%heatSolver) then

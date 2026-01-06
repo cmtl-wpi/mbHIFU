@@ -348,8 +348,11 @@ for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_s
     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-             'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3']:
+             'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
+
+for dir_id in range(1, 4):
+    SIMULATION[f"hifu_params%cloud_center({dir_id})"] = ParamType.REAL
 
 for var in [ 'iwave', 'ncycles']:
     SIMULATION[f'acoustic_bc_params%{var}'] = ParamType.INT

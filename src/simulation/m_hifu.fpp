@@ -1846,6 +1846,88 @@ contains
 
     end subroutine s_print_hifu_source_stats
 
+    ! Compute the first, second, and third moments of the heat source from the acoustic field.
+    ! Heat source calculated from the the strain rate tensor field.
+    subroutine s_write_heat_stats(sampledTime)
+
+        real(wp), intent(in) :: sampledTime
+
+        real(wp) :: total_heat, heat_moment1, heat_moment2, heat_moment3
+        real(wp) :: val_tmp, dist_radial
+        integer :: i, j, k, l
+
+        logical :: file_exist
+        character(LEN=path_len + 2*name_len) :: file_loc
+
+        total_heat = 0._wp
+        heat_moment1 = 0._wp
+        heat_moment2 = 0._wp
+        heat_moment3 = 0._wp
+
+        $:GPU_PARALLEL_LOOP(collapse=3, &
+        & reduction='[[total_heat, heat_moment1, heat_moment2, heat_moment3]]', &
+        & reductionOp='[MAX]', &
+        & copy='[total_heat, heat_moment1, heat_moment2, heat_moment3]')
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    ! Filter the cells inside the spherical bubble cloud
+                    dist_radial = sqrt((x_cc(j)-hifu_params%cloud_center(1))**2._wp + &
+                                       (y_cc(k)-hifu_params%cloud_center(2))**2._wp + &
+                                       (z_cc(l)-hifu_params%cloud_center(3))**2._wp)
+
+                    if (dist_radial <= hifu_params%R_cloud) then
+                        total_heat = total_heat + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                        heat_moment1 = heat_moment1 + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)* &
+                                        ((x_cc(j)-hifu_params%cloud_center(1))/hifu_params%R_cloud)
+                        heat_moment2 = heat_moment2 + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)* &
+                                        ((x_cc(j)-hifu_params%cloud_center(1))/hifu_params%R_cloud)**2._wp
+                        heat_moment3 = heat_moment3 + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)* &
+                                        ((x_cc(j)-hifu_params%cloud_center(1))/hifu_params%R_cloud)**3._wp
+                    end if
+
+                end do
+            end do
+        end do
+
+        if (num_procs>1) then
+            val_tmp = total_heat
+            call s_mpi_allreduce_sum(val_tmp, total_heat)
+            val_tmp = heat_moment1
+            call s_mpi_allreduce_sum(val_tmp, heat_moment1)
+            val_tmp = heat_moment2
+            call s_mpi_allreduce_sum(val_tmp, heat_moment2)
+            val_tmp = heat_moment3
+            call s_mpi_allreduce_sum(val_tmp, heat_moment3) 
+        end if
+        
+        ! Write the heat statistics to file
+
+        write (file_loc, '(A,I0,A)') 'moments_qus.dat'
+        file_loc = trim(case_dir)//'/D/'//trim(file_loc)
+        inquire (FILE=trim(file_loc), EXIST=file_exist)
+        
+        if (proc_rank == 0) then
+
+             if (.not. file_exist) then
+                open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
+                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalHeat'
+            else
+                open (11, FILE=trim(file_loc), FORM='formatted', position='append')
+            end if
+
+            write (11, '(4X,I24.8,4e24.8)') &
+                sampledTime, &
+                heat_moment1/total_heat, &
+                heat_moment2/total_heat, &
+                heat_moment3/total_heat, &
+                total_heat
+
+            close(11)
+        end if
+
+    end subroutine s_write_heat_stats
+
     !Calculate the rhs value from heat transfer eqn discretized with finite volumes.
     subroutine s_rhs_heatEqn(q_cons_vf, pb, mv, t_step, bc_type)
 

@@ -510,6 +510,9 @@ module m_derived_types
 
         integer :: T_idx, tsamp_idx, qus_idx, qus_prms_idx, qvis_idx, qth_idx, P_idx, u_idx, v_idx
 
+        real(wp) :: R_cloud      !< Radius of the bubble cloud to filter moments region
+        real(wp), dimension(1:3) :: cloud_center !< Center of the bubble cloud
+
     end type hifu_parameters
 
     !> Acoustic wave parameters (boundary condition)

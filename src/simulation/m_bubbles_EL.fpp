@@ -1935,6 +1935,154 @@ contains
 
     end subroutine
 
+    ! Compute the first, second, and third moments of the heat source from the bubbles' damping.
+    subroutine s_write_heat_stats_bubbles(sampledTime)
+
+        real(wp), intent(in) :: sampledTime
+
+        real(wp) :: total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis
+        real(wp) :: total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th
+        real(wp) :: total_vol, moment1_vol, moment2_vol, moment3_vol
+        real(wp) :: val_tmp, fR_h, fqvis, fqth, fxb_Rc, fVol
+        integer :: i, j, k, l
+
+        logical :: file_exist
+        character(LEN=path_len + 2*name_len) :: file_loc
+
+        total_heat_vis = 0._wp;   heat_moment1_vis = 0._wp
+        heat_moment2_vis = 0._wp; heat_moment3_vis = 0._wp
+
+        total_heat_th = 0._wp;    heat_moment1_th = 0._wp
+        heat_moment2_th = 0._wp;  heat_moment3_th = 0._wp
+
+        total_vol = 0._wp;    moment1_vol = 0._wp
+        moment2_vol = 0._wp;  moment3_vol = 0._wp
+
+        $:GPU_PARALLEL_LOOP(private='[k]', &
+        & reduction='[[total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]]', &
+        & reductionOp='[MAX]', &
+        & copy='[total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]')
+        do k = 1, nBubs
+
+            fR_h = intfc_rad(k, 1)
+            fqvis = bub_qvis(k)
+            fqth = bub_qth(k)
+            fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
+            fVol = (4._wp/3._wp)*pi*fR_h**3._wp
+
+            total_heat_vis = total_heat_vis + fqvis
+            heat_moment1_vis = heat_moment1_vis + fqvis*(fxb_Rc)
+            heat_moment2_vis = heat_moment2_vis + fqvis*(fxb_Rc)**2._wp
+            heat_moment3_vis = heat_moment3_vis + fqvis*(fxb_Rc)**3._wp
+
+            total_heat_th = total_heat_th + fqth
+            heat_moment1_th = heat_moment1_th + fqth*(fxb_Rc)
+            heat_moment2_th = heat_moment2_th + fqth*(fxb_Rc)**2._wp
+            heat_moment3_th = heat_moment3_th + fqth*(fxb_Rc)**3._wp
+
+            total_vol = total_vol + fVol
+            moment1_vol = moment1_vol + fVol*(fxb_Rc)
+            moment2_vol = moment2_vol + fVol*(fxb_Rc)**2._wp
+            moment3_vol = moment3_vol + fVol*(fxb_Rc)**3._wp
+
+        end do
+
+        if (num_procs>1) then
+            val_tmp = total_heat_vis
+            call s_mpi_allreduce_sum(val_tmp, total_heat_vis)
+            val_tmp = heat_moment1_vis
+            call s_mpi_allreduce_sum(val_tmp, heat_moment1_vis)
+            val_tmp = heat_moment2_vis
+            call s_mpi_allreduce_sum(val_tmp, heat_moment2_vis)
+            val_tmp = heat_moment3_vis
+            call s_mpi_allreduce_sum(val_tmp, heat_moment3_vis)
+
+            val_tmp = total_heat_th
+            call s_mpi_allreduce_sum(val_tmp, total_heat_th)
+            val_tmp = heat_moment1_th
+            call s_mpi_allreduce_sum(val_tmp, heat_moment1_th)
+            val_tmp = heat_moment2_th
+            call s_mpi_allreduce_sum(val_tmp, heat_moment2_th)
+            val_tmp = heat_moment3_th
+            call s_mpi_allreduce_sum(val_tmp, heat_moment3_th)
+
+            val_tmp = total_vol
+            call s_mpi_allreduce_sum(val_tmp, total_vol)
+            val_tmp = moment1_vol
+            call s_mpi_allreduce_sum(val_tmp, moment1_vol)
+            val_tmp = moment2_vol
+            call s_mpi_allreduce_sum(val_tmp, moment2_vol)
+            val_tmp = moment3_vol
+            call s_mpi_allreduce_sum(val_tmp, moment3_vol)
+
+        end if
+        
+        ! Write the heat statistics to file
+        if (proc_rank == 0) then
+
+            write (file_loc, '(A,I0,A)') 'moments_qvis.dat'
+            file_loc = trim(case_dir)//'/D/'//trim(file_loc)
+            inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+             if (.not. file_exist) then
+                open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
+                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalHeat_qvis'
+            else
+                open (11, FILE=trim(file_loc), FORM='formatted', position='append')
+            end if
+
+            write (11, '(4X,I24.8,4e24.8)') &
+                sampledTime, &
+                heat_moment1_vis/total_heat_vis, &
+                heat_moment2_vis/total_heat_vis, &
+                heat_moment3_vis/total_heat_vis, &
+                total_heat_vis
+
+            close(11)
+
+            write (file_loc, '(A,I0,A)') 'moments_qth.dat'
+            file_loc = trim(case_dir)//'/D/'//trim(file_loc)
+            inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+             if (.not. file_exist) then
+                open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
+                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalHeat_qth'
+            else
+                open (11, FILE=trim(file_loc), FORM='formatted', position='append')
+            end if
+
+            write (11, '(4X,I24.8,4e24.8)') &
+                sampledTime, &
+                heat_moment1_th/total_heat_th, &
+                heat_moment2_th/total_heat_th, &
+                heat_moment3_th/total_heat_th, &
+                total_heat_th
+
+            close(11)
+
+            write (file_loc, '(A,I0,A)') 'moments_vol.dat'
+            file_loc = trim(case_dir)//'/D/'//trim(file_loc)
+            inquire (FILE=trim(file_loc), EXIST=file_exist)
+
+             if (.not. file_exist) then
+                open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
+                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalVolume'
+            else
+                open (11, FILE=trim(file_loc), FORM='formatted', position='append')
+            end if
+
+            write (11, '(4X,I24.8,4e24.8)') &
+                sampledTime, &
+                moment1_vol/total_vol, &
+                moment2_vol/total_vol, &
+                moment3_vol/total_vol, &
+                total_vol
+
+            close(11)
+        end if
+
+    end subroutine s_write_heat_stats_bubbles
+
     !>  This subroutine updates the Lagrange variables using the tvd RK time steppers.
         !!      The time derivative of the bubble variables must be stored at every stage to avoid precision errors.
         !! @param stage Current tvd RK stage
