@@ -983,10 +983,17 @@ contains
 
         integer :: i, k, l
 
+        real(wp) :: total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis
+        real(wp) :: total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th
+        real(wp) :: total_vol, moment1_vol, moment2_vol, moment3_vol
+        logical :: momentsFlag
+
         integer :: total_ids, bub_idx
         call nvtxStartRange("LAGRANGE-BUBBLE-DYNAMICS")
 
         !< BUBBLE DYNAMICS
+
+        momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
 
         ! Needs MPI communication to update current bubble state in the buffer regions
         ! myPb = gas_p(k, 2)
@@ -1101,7 +1108,7 @@ contains
                                     k, myMass_v, myMass_n, myBeta_c, &
                                     myBeta_t, myCson, myInt, myShell, myRbuck, myRrupt, myRcell, &
                                     myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myAc, & !myPhase, &
-                                    myQvis, myQth, myRmean, adap_dt_stop)
+                                    myQvis, myQth, myRmean, myvis_inst, myth_inst, adap_dt_stop)
 
                 ! Update bubble state
                 intfc_rad(k, 1) = myR
@@ -1115,6 +1122,22 @@ contains
                     bub_qth(k) = bub_qth(k) + myQth     !> Thermal damping of the bubble (Watts)
                     bub_hifu_rad(k) = bub_hifu_rad(k) + myRmean !> Mean radius (m*sec)
                     ! if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage, bub_qvis(k), bub_qth(k)
+                    if (momentsFlag) then
+                        fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
+                        fVol = (4._wp/3._wp)*pi*myR**3._wp
+                        total_heat_vis = total_heat_vis + myvis_inst
+                        heat_moment1_vis = heat_moment1_vis + myvis_inst*(fxb_Rc)
+                        heat_moment2_vis = heat_moment2_vis + myvis_inst*(fxb_Rc)**2._wp
+                        heat_moment3_vis = heat_moment3_vis + myvis_inst*(fxb_Rc)**3._wp
+                        total_heat_th = total_heat_th + myth_inst
+                        heat_moment1_th = heat_moment1_th + myth_inst*(fxb_Rc)
+                        heat_moment2_th = heat_moment2_th + myth_inst*(fxb_Rc)**2._wp
+                        heat_moment3_th = heat_moment3_th + myth_inst*(fxb_Rc)**3._wp
+                        total_vol = total_vol + fVol
+                        moment1_vol = moment1_vol + fVol*(fxb_Rc)
+                        moment2_vol = moment2_vol + fVol*(fxb_Rc)**2._wp
+                        moment3_vol = moment3_vol + fVol*(fxb_Rc)**3._wp
+                    end if
                 end if
 
             else
@@ -1143,6 +1166,12 @@ contains
         end do
 
         if (adap_dt .and. adap_dt_stop_max > 0) call s_mpi_abort("Adaptive time stepping failed to converge.")
+
+        if (adap_dt .and. momentsFlag) then
+            call s_write_moments_bubbles(total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, idx=1)
+            call s_write_moments_bubbles(total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, idx=2)
+            call s_write_moments_bubbles(total_vol, moment1_vol, moment2_vol, moment3_vol, idx=3)
+        end if
 
         ! Bubbles remain in a fixed position
         ! $:GPU_PARALLEL_LOOP(collapse=2, private='[k]', copyin='[stage]')
@@ -1865,12 +1894,20 @@ contains
         integer :: k
         integer :: abortFlag, abortFlag_max
 
+        real(wp) :: total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis
+        real(wp) :: total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th
+        real(wp) :: total_vol, moment1_vol, moment2_vol, moment3_vol
+        real(wp) :: fxb_Rc, fqvis, fqth, fVol
+        logical :: momentsFlag
+
+        momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
+
 #ifdef MFC_DEBUG
         if (proc_rank == 0) print *, 'Computing bubble heat sources', mytime, hdid
 #endif
         abortFlag_max = 0
-        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max]]', &
-        & reductionOp='[MAX]',copy='[abortFlag_max]')
+        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max, total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]]', &
+        & reductionOp='[MAX]',copy='[abortFlag_max, total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]')
         do k = 1, nBubs
 
             abortFlag = 0
@@ -1882,6 +1919,7 @@ contains
             fV_h = intfc_vel(k, 1)
             fbeta_t_h = gas_betaT(k)
             fshell_h = mrmtnt_shell(k, 1)
+            if (momentsFlag) fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
 
             ! Mixture properties in the bubble
             conc_v_h = 0._wp
@@ -1892,7 +1930,8 @@ contains
             gamma_m_h = conc_v_h*gamma_v + (1._wp - conc_v_h)*gamma_n
 
             !> Viscous damping of the bubble (Watts)
-            bub_qvis(k) = bub_qvis(k) + hdid*(4._wp*pi*fR_h**2._wp)*(4._wp*mul0*(fV_h**2._wp)/(fR_h))
+            fqvis = (4._wp*pi*fR_h**2._wp)*(4._wp*mul0*(fV_h**2._wp)/(fR_h))
+            bub_qvis(k) = bub_qvis(k) + hdid*fqvis
 
             !> Thermal damping of the bubble (Watts)
             heatflux_h = 0._wp
@@ -1901,10 +1940,13 @@ contains
             if (lag_params%heatTransfer_model .and. (fshell_h == 0._wp)) then
                 heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR_h
             end if
-            bub_qth(k) = bub_qth(k) + hdid*heatFlux_h*4._wp*pi*fR_h**2._wp
+            fqth = heatFlux_h*4._wp*pi*fR_h**2._wp
+            bub_qth(k) = bub_qth(k) + hdid*fqth
 
             !Mean radius
             bub_hifu_rad(k) = bub_hifu_rad(k) + hdid * fR_h
+
+            fVol = (4._wp/3._wp)*pi*fR_h**3._wp
 
             ! Checking for NaNs and negative qvis
             if (bub_qvis(k) /= bub_qvis(k) .or. &
@@ -1917,11 +1959,65 @@ contains
             end if
 
             abortFlag_max = max(abortFlag_max, abortFlag)
+
+            if (momentsFlag) then
+                total_heat_vis = total_heat_vis + fqvis
+                heat_moment1_vis = heat_moment1_vis + fqvis*(fxb_Rc)
+                heat_moment2_vis = heat_moment2_vis + fqvis*(fxb_Rc)**2._wp
+                heat_moment3_vis = heat_moment3_vis + fqvis*(fxb_Rc)**3._wp
+
+                total_heat_th = total_heat_th + fqth
+                heat_moment1_th = heat_moment1_th + fqth*(fxb_Rc)
+                heat_moment2_th = heat_moment2_th + fqth*(fxb_Rc)**2._wp
+                heat_moment3_th = heat_moment3_th + fqth*(fxb_Rc)**3._wp
+
+                total_vol = total_vol + fVol
+                moment1_vol = moment1_vol + fVol*(fxb_Rc)
+                moment2_vol = moment2_vol + fVol*(fxb_Rc)**2._wp
+                moment3_vol = moment3_vol + fVol*(fxb_Rc)**3._wp
+            end if
+
         end do
 
         if (abortFlag_max > 0) stop "NaNs in viscous (or thermal) damping of the bubbles"
 
+        if (momentsFlag) then
+            call s_write_moments_bubbles(total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, idx=1)
+            call s_write_moments_bubbles(total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, idx=2)
+            call s_write_moments_bubbles(total_vol, moment1_vol, moment2_vol, moment3_vol, idx=3)
+        end if
+
     end subroutine s_compute_bubble_heat_sources_HIFU
+
+    subroutine s_write_moments_bubbles(total, moment1, moment2, moment3, idx)
+
+        integer, intent(in) :: idx
+        real(wp), intent(inout) :: total, moment1, moment2, moment3
+
+        real(wp) :: val_tmp
+
+        if (num_procs>1) then
+            val_tmp = total
+            call s_mpi_allreduce_sum(val_tmp, total)
+            val_tmp = moment1
+            call s_mpi_allreduce_sum(val_tmp, moment1)
+            val_tmp = moment2
+            call s_mpi_allreduce_sum(val_tmp, moment2)
+            val_tmp = moment3
+            call s_mpi_allreduce_sum(val_tmp, moment3)
+        end if
+
+        ! Write the heat statistics to file
+        if (proc_rank == 0) then
+            write (97-idx, '(4X,5e24.8)') &
+                    mytime, &
+                    moment1/total, &
+                    moment2/total, &
+                    moment3/total, &
+                    total
+        end if
+        
+    end subroutine s_write_moments_bubbles
 
     subroutine s_mean_radius_hifu(t_sampled)
 

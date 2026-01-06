@@ -511,9 +511,17 @@ contains
 
         integer :: i, j, k, l, s, mtd_idx
         integer :: abortFlag, abortFlag_max
+        
+        real(wp) :: total_heat, heat_moment1, heat_moment2, heat_moment3
+        real(wp) :: dist_radial, vol_cell, xb_Rc
+        logical :: momentsFlag
 
-        focalIntensity_ac = 0._wp
-        focalIntensity_ac_prms = 0._wp
+        momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
+
+        total_heat = 0._wp;   heat_moment1 = 0._wp
+        heat_moment2 = 0._wp; heat_moment3 = 0._wp
+
+        focalIntensity_ac = 0._wp; focalIntensity_ac_prms = 0._wp
         sumIntensity_ac = 0._wp
 
         if (bubbles_lagrange .and. .not. adap_dt) call s_compute_bubble_heat_sources_HIFU(hdid)
@@ -690,14 +698,20 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms], [sumIntensity_ac]]', &
+              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms, total_heat, heat_moment1, heat_moment2, heat_moment3], [sumIntensity_ac]]', &
               & reductionOp='[MAX,+]', &
               & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn]', &
-              & copy='[sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms]')
+              & copy='[sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms, total_heat, heat_moment1, heat_moment2, heat_moment3]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
                         abortFlag = 0
+
+                        ! Filter the cells inside the spherical bubble cloud
+                        if (momentsFlag) dist_radial = sqrt( &
+                                        (x_cc(j)-hifu_params%cloud_center(1))**2._wp + &
+                                        (y_cc(k)-hifu_params%cloud_center(2))**2._wp + &
+                                        (z_cc(l)-hifu_params%cloud_center(3))**2._wp)
 
                         !Get viscosities (and absorption coeff.) which are user inputs
                         shearVisc = 0._wp
@@ -821,6 +835,16 @@ contains
 
                         !Intensity summation through the domain
                         sumIntensity_ac = sumIntensity_ac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                        if (momentsFlag) then
+                            if (dist_radial <= hifu_params%R_cloud) then
+                                xb_Rc = (x_cc(j)-hifu_params%cloud_center(1))/hifu_params%R_cloud
+                                vol_cell = dx(j)*dy(k)*dz(k)
+                                total_heat = total_heat + intensity_ac*vol_cell
+                                heat_moment1 = heat_moment1 + intensity_ac*vol_cell*xb_Rc
+                                heat_moment2 = heat_moment2 + intensity_ac*vol_cell*xb_Rc**2._wp
+                                heat_moment3 = heat_moment3 + intensity_ac*vol_cell*xb_Rc**3._wp
+                            end if
+                        end if
 
                     end do
                 end do
@@ -831,22 +855,38 @@ contains
             if (num_procs > 1) then
                 tmp = sumIntensity_ac
                 call s_mpi_allreduce_sum(tmp, sumIntensity_ac)
-
                 tmp = focalIntensity_ac
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac)
-
                 tmp = focalIntensity_ac_prms
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
+
+                if (momentsFlag) then
+                    tmp = total_heat
+                    call s_mpi_allreduce_sum(tmp, total_heat)
+                    tmp = heat_moment1
+                    call s_mpi_allreduce_sum(tmp, heat_moment1)
+                    tmp = heat_moment2
+                    call s_mpi_allreduce_sum(tmp, heat_moment2)
+                    tmp = heat_moment3
+                    call s_mpi_allreduce_sum(tmp, heat_moment3) 
+                end if
             end if
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(6x,5E24.8)') &
+            if (proc_rank == 0) write (99, '(4x,5E24.8)') &
                                         mytime, &
                                         q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
                                         focalIntensity_ac, &
                                         focalIntensity_ac_prms, &
                                         sumIntensity_ac
+
+            if (proc_rank == 0) write (97, '(4X,5e24.8)') &
+                                        mytime, &
+                                        heat_moment1/total_heat, &
+                                        heat_moment2/total_heat, &
+                                        heat_moment3/total_heat, &
+                                        total_heat
 
         else
             call s_mpi_abort('Getting HIFU samples (stage 2) works only with axisymmetric assumption so far!')
@@ -2537,13 +2577,34 @@ contains
             write (99, *) 'mytime, numSamples, acousticFocalIntensity, acousticFocalIntensityPRMS, sumAcousticIntensity'
 
             !Open files to save viscous and thermal intensity sampling information for a single bubble
-            write (file_path, '(A,I0,A)') '/D/viscous_thermal_kernel-HIFU_', proc_rank, '.dat'
+            write (file_path, '(A,I0,A)') '/D/viscous_thermal_kernel-HIFU.dat'
             file_path = trim(case_dir)//trim(file_path)
             open (98, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
             write (98, *) 'Recommended to use only with one particle to test and compare the performance of the smootheing function'
             write (98, *) 'Requires to uncomment some command lines in s_update_RK (m_particle.fpp)'
             write (98, *) 'dt_did, totalSamplingTime, viscousIntensity_beforeKernel, viscousIntensity_afterKernel, ', &
                 'thermalIntensity_beforeKernel, thermalIntensity_afterKernel, radius, velocity'
+
+            !Open files to save heat sources and volume moments
+            write (file_path, '(A,I0,A)') '/D/moments_qus.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            open (97, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            write (97, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+
+            write (file_path, '(A,I0,A)') '/D/moments_qvis.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            open (96, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            write (96, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+
+            write (file_path, '(A,I0,A)') '/D/moments_qth.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            open (95, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            write (95, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+
+            write (file_path, '(A,I0,A)') '/D/moments_vol.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            open (94, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            write (94, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalVolume'
 
         end if
 
@@ -2554,11 +2615,16 @@ contains
         !Close files to save Pmax data at the axial and radial axes
         close (100)
 
-        !Close file to save intensity sampling information at focus
-        if (proc_rank == 0) close (99)
+        if (proc_rank == 0) then
+             !Close file to save intensity sampling information at focus
+             close (99)
 
-        !Close file to save viscous and thermal intensity sampling information for a single bubble
-        close (98)
+            !Close file to save viscous and thermal intensity sampling information for a single bubble
+            close (98)
+
+            !Close file to save heat sources and volume moments
+            close (97)
+        end if
 
     end subroutine s_close_run_time_information_samplingHIFU
 

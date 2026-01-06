@@ -616,7 +616,7 @@ contains
                                    bub_id, fmass_v, fmass_n, fbeta_c, &
                                    fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
                                    fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
-                                   fQvis, fQth, fRmean, adap_dt_stop)
+                                   fQvis, fQth, fRmean, fvis_inst, fth_inst, adap_dt_stop)
         $:GPU_ROUTINE(function_name='s_advance_step',parallelism='[seq]', &
             & cray_inline=True)
 
@@ -628,7 +628,7 @@ contains
         real(wp), intent(in) :: fmass_n, fbeta_c, fbeta_t, fCson, fInt, fRbuck, fRrupt, fRcell
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
-        real(wp), intent(out) :: fQvis, fQth, fRmean
+        real(wp), intent(out) :: fQvis, fQth, fRmean, fvis_inst, fth_inst
         integer, intent(inout) :: adap_dt_stop
 
         real(wp), dimension(5) :: err !< Error estimates for adaptive time stepping
@@ -741,7 +741,8 @@ contains
                             gamma_m_h = conc_v_h*gamma_v + (1._wp - conc_v_h)*gamma_n
 
                             !> Viscous damping of the bubble (Watts)
-                            fQvis = fQvis + h*(4._wp*pi*fR**2._wp)*(4._wp*mul0*(fV**2._wp)/(fR))
+                            fvis_inst = (4._wp*pi*fR**2._wp)*(4._wp*mul0*(fV**2._wp)/(fR))
+                            fQvis = fQvis + h*fvis_inst
 
                             !> Thermal damping of the bubble (Watts)
                             heatflux_h = 0._wp
@@ -750,7 +751,8 @@ contains
                             if (lag_params%heatTransfer_model .and. (fshell == 0._wp)) then
                                 heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR
                             end if
-                            fQth = fQth + h*heatflux_h*4._wp*pi*fR**2._wp
+                            fth_inst = heatflux_h*4._wp*pi*fR**2._wp
+                            fQth = fQth + h*fth_inst
 
                             !> Mean radius
                             fRmean = fRmean + h*fR
