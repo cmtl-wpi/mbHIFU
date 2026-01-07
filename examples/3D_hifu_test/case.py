@@ -118,9 +118,9 @@ Nz      = int(round(((ze-zb)/(waveLen/waveSol))/mltplo)*mltplo)
 
 # E-L solver
 dt_hyd = (1/freq)/(4*25)    # time-step - sec
-t_save_hyd  = 2.e-06       # save time - sec0
-t_stop_stg1 = 6.e-06       # stop time stg1 - sec 
-t_stop_stg2 = 8.e-06       # stop time stg2 - sec
+t_save_hyd  = 0.5e-06       # save time - sec0
+t_stop_stg1 = 1.0e-06       # stop time stg1 - sec 
+t_stop_stg2 = 2.0e-06       # stop time stg2 - sec
 
 # Heat solver
 cfl_heat = 0.1            # Courant number for diffusion equation cartesian (even dx, dy, dz)
@@ -168,7 +168,7 @@ print(json.dumps({
     'p'                            : Nz,
     'adap_dt'                      : 'T',       #Strang splitting
     'cfl_adap_dt'                  : 'T',
-    'cfl_target'                   : 0.7,
+    'cfl_target'                   : 0.5,
     'dt'                           : round(dt_hyd*c0/x0,6),
     't_step_start'                 : 0,     ############### also modify stg1, stg2 or stg3 flags
     't_step_save'                  : t_step_save_hyd,       # Always stg1
@@ -229,6 +229,10 @@ print(json.dumps({
     'hifu_params%dt_stg2'           : round(dt_hyd*c0/x0,6),
     'hifu_params%t_stop_stg2'       : t_stop_stg2*(c0/x0),
     'hifu_params%t_step_stop_stg2'  : t_step_stop_stg2,
+    'hifu_params%R_cloud'  : 1.0,
+    'hifu_params%cloud_center(1)'  : 0.0,
+    'hifu_params%cloud_center(2)'  : 0.0,
+    'hifu_params%cloud_center(3)'  : 0.0,
     # STG3: Solving heat equation
     'hifu_params%stg3'              : 'T',
     'hifu_params%intPrms'           : 'F', # True: Utilize qus from Prms

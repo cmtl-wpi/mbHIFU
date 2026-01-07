@@ -903,7 +903,7 @@ contains
         hifu_params%m = dflt_int
         hifu_params%n = dflt_int
         hifu_params%p = dflt_int
-        hifu_params%R_cloud = dflt_real
+        hifu_params%R_cloud = 0._wp
         hifu_params%cloud_center = [0._wp, 0._wp, 0._wp]
 
         !Acoustic wave generator (boundary condition)

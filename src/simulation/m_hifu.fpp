@@ -881,13 +881,12 @@ contains
                                         focalIntensity_ac_prms, &
                                         sumIntensity_ac
 
-            if (proc_rank == 0) write (97, '(4X,5e24.8)') &
-                                        mytime, &
-                                        heat_moment1/total_heat, &
-                                        heat_moment2/total_heat, &
-                                        heat_moment3/total_heat, &
-                                        total_heat
-
+            if (proc_rank == 0 .and. momentsFlag) write (97, '(4X,5e24.8)') &
+                                                        mytime, &
+                                                        heat_moment1/total_heat, &
+                                                        heat_moment2/total_heat, &
+                                                        heat_moment3/total_heat, &
+                                                        total_heat
         else
             call s_mpi_abort('Getting HIFU samples (stage 2) works only with axisymmetric assumption so far!')
         end if
@@ -2624,6 +2623,9 @@ contains
 
             !Close file to save heat sources and volume moments
             close (97)
+            close (96)
+            close (95)
+            close (94)
         end if
 
     end subroutine s_close_run_time_information_samplingHIFU

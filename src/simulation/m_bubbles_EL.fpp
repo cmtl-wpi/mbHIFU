@@ -1179,7 +1179,7 @@ contains
 
         if (adap_dt .and. adap_dt_stop_max > 0) call s_mpi_abort("Adaptive time stepping failed to converge.")
 
-        if (hifu_params%sampling .and. adap_dt .and. momentsFlag) then
+        if (hifu_params%sampling .and. adap_dt .and. momentsFlag .and. stage == 3) then
             call s_write_moments_bubbles(total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, idx=1)
             call s_write_moments_bubbles(total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, idx=2)
             call s_write_moments_bubbles(total_vol, moment1_vol, moment2_vol, moment3_vol, idx=3)
