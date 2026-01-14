@@ -605,12 +605,14 @@ contains
                         ! PRMS method (calculate only during the last time step in stage2 -> need developed Pmax field)
                         intensity_ac_prms = 0._wp
                         if (cfl_dt) then
-                            if (mytime >= t_stop - dt*0.5) then
+                            if (mytime + dt >= t_stop) then
                                 intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                if (proc_rank==0 .and. j==0 .and. k==0 .and. l==0) print*,'Calculated intensity_ac_prms'
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
                                 intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                if (proc_rank==0 .and. j==0 .and. k==0 .and. l==0) print*,'Calculated intensity_ac_prms'
                             end if
                         end if
 
@@ -769,12 +771,14 @@ contains
                         ! PRMS method (calculate only during the last time step in stage2 -> need developed Pmax field)
                         intensity_ac_prms = 0._wp
                         if (cfl_dt) then
-                            if (mytime >= t_stop) then
+                            if (mytime + dt >= t_stop) then
                                 intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                if (proc_rank==0 .and. j==0 .and. k==0 .and. l==0) print*,'Calculated intensity_ac_prms'
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
                                 intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
+                                if (proc_rank==0 .and. j==0 .and. k==0 .and. l==0) print*,'Calculated intensity_ac_prms'
                             end if
                         end if
 

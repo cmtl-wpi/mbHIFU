@@ -611,7 +611,7 @@ contains
         !!  @param fbeta_t Heat transfer coefficient (EL)
         !!  @param fCson Speed of sound (EL)
         !!  @param adap_dt_stop Fail-safe exit if max iteration count reached
-    pure subroutine s_advance_step(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
+    impure subroutine s_advance_step(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                                    fntait, fBtait, f_bub_adv_src, f_divu, &
                                    bub_id, fmass_v, fmass_n, fbeta_c, &
                                    fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
@@ -796,6 +796,8 @@ contains
         end do
 
         if (iter_count >= adap_dt_max_iters) adap_dt_stop = 1
+
+        if (adap_dt_stop == 1) print*, iter_count, fR, fV, fR0, err(1), err(2), err(3), err(4), err(5), h
 
     end subroutine s_advance_step
 
