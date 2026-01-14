@@ -224,10 +224,16 @@ contains
         Web = 1._wp/ss
         Re_inv = mul0
 
+        if (polytropic) then
+          Ca = (p0-pv)/(rho0*c0*c0)
+          gamma_m = gamma_n
+          if (thermal == 2) gamma_m = 1._wp ! Isothermal
+        end if
+
         ! Need improvements to accept polytropic gas compression, isothermal and adiabatic thermal models, and
         ! the Gilmore and RP bubble models.
-        polytropic = .false.    ! Forcing no polytropic model
-        thermal = 3             ! Forcing constant transfer coefficient model based on Preston et al., 2007
+        ! polytropic = .false.    ! Forcing no polytropic model
+        ! thermal = 3             ! Forcing constant transfer coefficient model based on Preston et al., 2007
         ! If Keller-Miksis model is not selected, then no radial motion
 
         !GPU vars get updated in initialize_gpu_vars
@@ -1077,9 +1083,13 @@ contains
             !    print*, bub_int_ids(k, :)
             !end if
             ! Vapor and heat fluxes
-            call s_vflux(myR, myV, myPb, myMass_v, k, myVapFlux, myMass_n, myBeta_c, myR_m, mygamma_m, myShell)
-            myPbdot = f_bpres_dot(myVapFlux, myR, myV, myPb, myMass_v, k, myBeta_t, myR_m, mygamma_m, myShell)
-            myMvdot = 4._wp*pi*myR**2._wp*myVapFlux
+            if (.not. polytropic) then
+                call s_vflux(myR, myV, myPb, myMass_v, k, myVapFlux, myMass_n, myBeta_c, myR_m, mygamma_m, myShell)
+                myPbdot = f_bpres_dot(myVapFlux, myR, myV, myPb, myMass_v, k, myBeta_t, myR_m, mygamma_m, myShell)
+                myMvdot = 4._wp*pi*myR**2._wp*myVapFlux
+            else
+                myPb = 0._wp; myVapFlux = 0._wp; myPbdot = 0._wp; myMvdot = 0._wp
+            end if
 
             ! Retrieving driving pressure
             call s_get_pinf(k, q_prim_vf, 1, myPinf, cell, aux1, aux2, myRcell)
@@ -1902,7 +1912,7 @@ contains
         real(wp), intent(in) :: hdid
 
         real(wp) :: fpb_h, fmass_n_h, fmass_v_h, fR_h, fV_h, fbeta_t_h, fshell_h
-        real(wp) :: conc_v_h, R_m_h, gamma_m_h, T_bar_h, grad_T_h, heatflux_h
+        real(wp) :: conc_v_h, R_m_h, gamma_m_h, T_bar_h, grad_T_h, heatflux_h, fR0_h
         integer :: k
         integer :: abortFlag, abortFlag_max
 
@@ -1936,6 +1946,7 @@ contains
             fpb_h = gas_p(k, 1)
             fmass_n_h = gas_mg(k)
             fmass_v_h = gas_mv(k, 1)
+            fR0_h = bub_R0(k)
             fR_h = intfc_rad(k, 1)
             fV_h = intfc_vel(k, 1)
             fbeta_t_h = gas_betaT(k)
@@ -1955,13 +1966,17 @@ contains
             bub_qvis(k) = bub_qvis(k) + hdid*fqvis
 
             !> Thermal damping of the bubble (Watts)
-            heatflux_h = 0._wp
-            T_bar_h = fpb_h*(4._wp/3._wp*pi*fR_h**3._wp)/R_m_h
-            grad_T_h = -fbeta_t_h*(T_bar_h - Tw)
-            if (lag_params%heatTransfer_model .and. (fshell_h == 0._wp)) then
-                heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR_h
+            if (.not. polytropic) then
+                T_bar_h = fpb_h*(4._wp/3._wp*pi*fR_h**3._wp)/R_m_h
+                grad_T_h = -fbeta_t_h*(T_bar_h - Tw)
+                if (lag_params%heatTransfer_model .and. (fshell_h == 0._wp)) then
+                    heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR_h
+                end if
+            else
+                T_bar_h = Tw * (fR0_h/fR_h)**(3._wp*(gamma_m-1._wp)) ! Polytropic temp
+                heatflux_h = 3._wp*(1._wp-gamma_m)*T_bar_h/fR_h
             end if
-            fqth = heatFlux_h*4._wp*pi*fR_h**2._wp
+            fqth = heatflux_h*4._wp*pi*fR_h**2._wp
             bub_qth(k) = bub_qth(k) + hdid*fqth
 
             !Mean radius

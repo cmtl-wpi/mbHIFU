@@ -727,6 +727,9 @@ contains
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
                         fpb = myPb_tmp1(4)
+                        if (polytropic) then 
+                          fpb = 1._wp - Ca + Ca*(fR0/fR)**(3._wp*gamma_m) ! Override pb for polytropic model
+                        end if
                         fmass_v = myMv_tmp1(4)
                         if (fR > fRrupt) fshell = 0._wp
 
@@ -745,11 +748,15 @@ contains
                             fQvis = fQvis + h*fvis_inst
 
                             !> Thermal damping of the bubble (Watts)
-                            heatflux_h = 0._wp
-                            T_bar_h = fpb*(4._wp/3._wp*pi*fR**3._wp)/R_m_h
-                            grad_T_h = -fbeta_t*(T_bar_h - Tw)
-                            if (lag_params%heatTransfer_model .and. (fshell == 0._wp)) then
-                                heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR
+                            if (.not. polytropic) then
+                                T_bar_h = fpb*(4._wp/3._wp*pi*fR**3._wp)/R_m_h
+                                grad_T_h = -fbeta_t*(T_bar_h - Tw)
+                                if (lag_params%heatTransfer_model .and. (fshell == 0._wp)) then
+                                    heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR
+                                end if
+                            else
+                                T_bar_h = Tw * (fR0/fR)**(3._wp*(gamma_m-1._wp)) ! Polytropic temp
+                                heatflux_h = 3._wp*(1._wp-gamma_m)*T_bar_h/fR
                             end if
                             fth_inst = heatflux_h*4._wp*pi*fR**2._wp
                             fQth = fQth + h*fth_inst
@@ -936,6 +943,7 @@ contains
         myR_tmp(1) = fR
         myV_tmp(1) = fV
         if (bubbles_lagrange) then
+            
             myPb_tmp(1) = fpb
             myMv_tmp(1) = fmass_v
             call s_advance_EL(myR_tmp(1), myV_tmp(1), myPb_tmp(1), myMv_tmp(1), bub_id, &
@@ -1026,6 +1034,10 @@ contains
         call s_vflux(fR_tmp, fV_tmp, fPb_tmp, fMv_tmp, bub_id, fVapFlux, fmass_n, fbeta_c, myR_m, mygamma_m, fshell)
         fdPbdt_tmp = f_bpres_dot(fVapFlux, fR_tmp, fV_tmp, fPb_tmp, fMv_tmp, bub_id, fbeta_t, myR_m, mygamma_m, fshell)
         advance_EL = 4._wp*pi*fR_tmp**2._wp*fVapFlux
+
+        if (polytropic) then
+            fdPbdt_tmp = 0._wp; advance_EL = 0._wp
+        end if
 
     end subroutine s_advance_EL
 
