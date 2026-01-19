@@ -142,6 +142,8 @@ print(
             # Lagrangian Bubbles
             "bubbles_lagrange": "T",
             "bubble_model": 2,  # Keller-Miksis model
+            "polytropic": "F",
+            "thermal": 3,
             "lag_params%nBubs_glb": 1,
             "lag_params%solver_approach": 2,  # Two-way coupled
             "lag_params%cluster_type": 2,

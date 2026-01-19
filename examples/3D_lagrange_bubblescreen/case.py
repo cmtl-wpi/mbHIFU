@@ -140,6 +140,8 @@ print(
             "bubbles_lagrange": "T",
             "bubble_model": 2,  # Keller-Miksis model
             "lag_params%nBubs_glb": 1194,  # Number of bubbles
+            "polytropic": "F",
+            "thermal": 3,
             "lag_params%solver_approach": 2,
             "lag_params%cluster_type": 2,
             "lag_params%pressure_corrector": "T",

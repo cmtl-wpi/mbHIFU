@@ -43,7 +43,7 @@ module m_bubbles_EL
     $:GPU_DECLARE(create='[gas_mg, gas_betaT, gas_betaC, bub_dphidt]')
 
     !(nBub, 1 -> actual val or 2 -> temp val)
-    real(wp), allocatable, dimension(:, :) :: gas_p          !< Pressure in the bubble
+    real(wp), allocatable, dimension(:, :) :: gas_p          !< Pressure in the bubble (Polytropic 1-> actual, 2-> initial)
     real(wp), allocatable, dimension(:, :) :: gas_mv         !< Vapor mass in the bubble
     real(wp), allocatable, dimension(:, :) :: intfc_rad      !< Bubble radius
     real(wp), allocatable, dimension(:, :) :: intfc_vel      !< Velocity of the bubble interface
@@ -203,14 +203,14 @@ contains
         !Update inputs
         Tw = lag_params%Thost/T0
         pv = fluid_pp(id_host)%pv/p0
-        gamma_v = fluid_pp(id_bubbles)%gamma_v
-        gamma_n = fluid_pp(id_host)%gamma_v
-        k_vl = fluid_pp(id_bubbles)%k_v*(T0/(x0*rho0*c0*c0*c0))
-        k_nl = fluid_pp(id_host)%k_v*(T0/(x0*rho0*c0*c0*c0))
-        cp_v = fluid_pp(id_bubbles)%cp_v*(T0/(c0*c0))
-        cp_n = fluid_pp(id_host)%cp_v*(T0/(c0*c0))
-        R_v = (R_uni/fluid_pp(id_bubbles)%M_v)*(T0/(c0*c0))
-        R_n = (R_uni/fluid_pp(id_host)%M_v)*(T0/(c0*c0))
+        gamma_v = fluid_pp(id_host)%gamma_v
+        gamma_n = fluid_pp(id_bubbles)%gamma_v
+        k_vl = fluid_pp(id_host)%k_v*(T0/(x0*rho0*c0*c0*c0))
+        k_nl = fluid_pp(id_bubbles)%k_v*(T0/(x0*rho0*c0*c0*c0))
+        cp_v = fluid_pp(id_host)%cp_v*(T0/(c0*c0))
+        cp_n = fluid_pp(id_bubbles)%cp_v*(T0/(c0*c0))
+        R_v = (R_uni/fluid_pp(id_host)%M_v)*(T0/(c0*c0))
+        R_n = (R_uni/fluid_pp(id_bubbles)%M_v)*(T0/(c0*c0))
         lag_params%diffcoefvap = lag_params%diffcoefvap/(x0*c0)
         ss = fluid_pp(id_host)%ss/(rho0*x0*c0*c0)
         mul0 = fluid_pp(id_host)%mul0/(rho0*x0*c0)
@@ -500,14 +500,15 @@ contains
         call s_transcoeff(1._wp, PeG, Re_trans, Im_trans)
         gas_betaC(bub_id) = Re_trans*lag_params%diffcoefvap
 
-        if (gas_mg(bub_id) <= 0._wp) then
-            call s_mpi_abort("Negative gas mass in the bubble, check if the bubble is in the domain.")
+        if (polytropic) then
+            gas_p(bub_id, 2) = gas_p(bub_id, 1)
+        else
+            if (gas_betaT(bub_id) /= gas_betaT(bub_id) .or. gas_betaC(bub_id) /= gas_betaC(bub_id)) then
+                print *, bub_id, gas_betaT(bub_id), gas_betaC(bub_id)
+                call s_mpi_abort("NaN mass and heat transfer coefficients")
+            end if
         end if
 
-        if (gas_betaT(bub_id) /= gas_betaT(bub_id) .or. gas_betaC(bub_id) /= gas_betaC(bub_id)) then
-            print *, bub_id, gas_betaT(bub_id), gas_betaC(bub_id)
-            call s_mpi_abort("NaN mass and heat transfer coefficients")
-        end if
 
     end subroutine s_add_bubbles
 
@@ -563,6 +564,7 @@ contains
                 if (lag_params%coatedBub_model) then
                     gas_p(k, 1) = pinf + 2._wp*(lag_params%ss0_ctdBub)/bub_R0(k)
                 end if
+                if (polytropic) gas_p(k, 2) = gas_p(k, 1)
 
                 ! Initial particle mass
                 volparticle = 4._wp/3._wp*pi*bub_R0(k)**3._wp ! volume
@@ -738,7 +740,10 @@ contains
                     bub_hifu_rad(bub_id) = inputvals(27)
 
                     bub_interact(bub_id) = 0._wp
-
+                    if (polytropic) then
+                        gas_p(bub_id, 2) = gas_p(bub_id, 1)
+                        gas_p(bub_id, 1) = pv + (gas_p(bub_id, 2) - pv)*(bub_R0(bub_id)/intfc_rad(bub_id, 1))**(3._wp*gamma_m)
+                    end if
                     cell = -buff_size
                     call s_locate_cell(mtn_pos(bub_id, 1:3, 1), cell, mtn_s(bub_id, 1:3, 1))
                 end if
@@ -1088,7 +1093,7 @@ contains
                 myPbdot = f_bpres_dot(myVapFlux, myR, myV, myPb, myMass_v, k, myBeta_t, myR_m, mygamma_m, myShell)
                 myMvdot = 4._wp*pi*myR**2._wp*myVapFlux
             else
-                myPb = 0._wp; myVapFlux = 0._wp; myPbdot = 0._wp; myMvdot = 0._wp
+                myVapFlux = 0._wp; myPbdot = 0._wp; myMvdot = 0._wp
             end if
 
             ! Retrieving driving pressure
@@ -2236,6 +2241,7 @@ contains
                 gas_mv(k, 1) = gas_mv(k, 1) + dt*gas_dmvdt(k, 1)
                 mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
                 intfc_ac(k, 1) = intfc_dveldt(k, 1)
+                if (polytropic) gas_p(k, 1) = pv + (gas_p(k, 2) - pv)*(bub_R0(k)/intfc_rad(k, 1))**(3._wp*gamma_m)
             end do
 
             call s_transfer_data_to_tmp
@@ -2274,6 +2280,7 @@ contains
                     end if
                     mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
                     intfc_ac(k, 1) = (intfc_dveldt(k, 1) + intfc_dveldt(k, 2))/2._wp
+                    if (polytropic) gas_p(k, 1) = pv + (gas_p(k, 2) - pv)*(bub_R0(k)/intfc_rad(k, 1))**(3._wp*gamma_m)
                 end do
 
                 call s_transfer_data_to_tmp
@@ -2325,6 +2332,7 @@ contains
                     end if
                     mrmtnt_shell(k, 1) = mrmtnt_shell(k, 2)
                     intfc_ac(k, 1) = (2._wp/3._wp)*(intfc_dveldt(k, 1)/4._wp + intfc_dveldt(k, 2)/4._wp + intfc_dveldt(k, 3))
+                    if (polytropic) gas_p(k, 1) = pv + (gas_p(k, 2) - pv)*(bub_R0(k)/intfc_rad(k, 1))**(3._wp*gamma_m)
                 end do
 
                 call s_transfer_data_to_tmp
@@ -2403,7 +2411,7 @@ contains
 
         $:GPU_PARALLEL_LOOP(private='[k]')
         do k = 1, nBubs
-            gas_p(k, 2) = gas_p(k, 1)
+            if (.not. polytropic) gas_p(k, 2) = gas_p(k, 1)
             gas_mv(k, 2) = gas_mv(k, 1)
             intfc_rad(k, 2) = intfc_rad(k, 1)
             intfc_vel(k, 2) = intfc_vel(k, 1)
@@ -2857,7 +2865,11 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb]')
                     MPI_IO_DATA_lag_bubbles(i, 14) = Rmax_stats(k)
                     MPI_IO_DATA_lag_bubbles(i, 15) = Rmin_stats(k)
                     MPI_IO_DATA_lag_bubbles(i, 16) = bub_dphidt(k)
-                    MPI_IO_DATA_lag_bubbles(i, 17) = gas_p(k, 1)
+                    if (.not. polytropic) then
+                        MPI_IO_DATA_lag_bubbles(i, 17) = gas_p(k, 1)
+                    else
+                        MPI_IO_DATA_lag_bubbles(i, 17) = gas_p(k, 2)
+                    end if
                     MPI_IO_DATA_lag_bubbles(i, 18) = gas_mv(k, 1)
                     MPI_IO_DATA_lag_bubbles(i, 19) = gas_mg(k)
                     MPI_IO_DATA_lag_bubbles(i, 20) = gas_betaT(k)

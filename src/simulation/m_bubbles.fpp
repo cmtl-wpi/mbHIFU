@@ -73,7 +73,7 @@ contains
                 end if
                 c_liquid = fCson
             end if
-            f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid, fInt, fshell, fRbuck)
+            f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid, fInt, fshell, fRbuck, fpb)
         else if (bubble_model == 3) then
             ! Rayleigh-Plesset bubbles
             fCpbw = f_cpbw_KM(fR0, fR, fV, fpb)
@@ -260,7 +260,7 @@ contains
         !!  @param fR0 Equilibrium bubble radius
         !!  @param fR Current bubble radius
         !!  @param fV Current bubble velocity
-        !!  @param fpb Internal bubble pressure
+        !!  @param fpb Internal bubble pressure (EL polytropc: initial internal pressure)
     pure elemental function f_cpbw_KM(fR0, fR, fV, fpb, fshell, fRbuck)
         $:GPU_ROUTINE(parallelism='[seq]')
         real(wp), intent(in) :: fR0, fR, fV, fpb
@@ -269,9 +269,13 @@ contains
         real(wp) :: ss_mod
 
         if (polytropic) then
-            f_cpbw_KM = Ca*((fR0/fR)**(3._wp*gam)) - Ca + 1._wp
-            if (.not. f_is_default(Web)) f_cpbw_KM = f_cpbw_KM + &
+            if (bubbles_lagrange) then
+                f_cpbw_KM = pv + (fpb-pv)*((fR0/fR)**(3._wp*gamma_m))
+            else
+                f_cpbw_KM = Ca*((fR0/fR)**(3._wp*gam)) - Ca + 1._wp
+                if (.not. f_is_default(Web)) f_cpbw_KM = f_cpbw_KM + &
                                                      (2._wp/(Web*fR0))*((fR0/fR)**(3._wp*gam))
+            end if
         else
             f_cpbw_KM = fpb
         end if
@@ -298,17 +302,21 @@ contains
         !!  @param fV Current bubble velocity
         !!  @param fR0 Equilibrium bubble radius
         !!  @param fC Current sound speed
-    pure elemental function f_rddot_KM(fpbdot, fCp, fCpbw, fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck)
+    pure elemental function f_rddot_KM(fpbdot, fCp, fCpbw, fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck, fpb)
         $:GPU_ROUTINE(parallelism='[seq]')
         real(wp), intent(in) :: fpbdot, fCp, fCpbw
-        real(wp), intent(in) :: fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck
+        real(wp), intent(in) :: fRho, fR, fV, fR0, fC, fInt, fshell, fRbuck, fpb
 
         real(wp) :: tmp1, tmp2, denom, cdot_star, ss_mod
         real(wp) :: f_rddot_KM
         if (polytropic) then
-            cdot_star = -3._wp*gam*Ca*((fR0/fR)**(3._wp*gam))*fV/fR
-            if (.not. f_is_default(Web)) cdot_star = cdot_star - &
+            if (bubbles_lagrange) then
+                cdot_star = -(3._wp*gamma_m/fR)*fV*(fpb-pv)*((fR0/fR)**(3._wp*gamma_m))
+            else
+                cdot_star = -3._wp*gam*Ca*((fR0/fR)**(3._wp*gam))*fV/fR
+                if (.not. f_is_default(Web)) cdot_star = cdot_star - &
                                                      3._wp*gam*(2._wp/(Web*fR0))*((fR0/fR)**(3._wp*gam))*fV/fR
+            end if
         else
             cdot_star = fpbdot
         end if
@@ -660,6 +668,8 @@ contains
         iter_count = 0
         adap_dt_stop = 0
 
+        !print*, fRho, fP, fR, fV, fR0, fpb, gamma_m, gam
+
         do
             if (t_new + h > 0.5_wp*dt) then
                 h = 0.5_wp*dt - t_new
@@ -728,7 +738,7 @@ contains
                         ! Update pb and mass_v
                         fpb = myPb_tmp1(4)
                         if (polytropic) then 
-                          fpb = 1._wp - Ca + Ca*(fR0/fR)**(3._wp*gamma_m) ! Override pb for polytropic model
+                          fpb = pv + (fpb - pv)*(fR0/fR)**(3._wp*gamma_m)
                         end if
                         fmass_v = myMv_tmp1(4)
                         if (fR > fRrupt) fshell = 0._wp
@@ -804,7 +814,7 @@ contains
 
         if (iter_count >= adap_dt_max_iters) adap_dt_stop = 1
 
-        if (adap_dt_stop == 1) print*, iter_count, fR, fV, fR0, err(1), err(2), err(3), err(4), err(5), h
+        if (adap_dt_stop == 1) print*, iter_count, fR, fV, fR0, fP, fpb, gamma_m, err(1), err(2), err(3), err(4), err(5), h
 
     end subroutine s_advance_step
 
