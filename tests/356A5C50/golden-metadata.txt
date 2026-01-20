@@ -39,7 +39,7 @@ pre_process:
         OMPI_CXX : 
         OMPI_FC  : 
 
-pre_process:
+syscheck:
 
     CMake Configuration:
     
@@ -48,10 +48,10 @@ pre_process:
         C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
         Fortran : GNU v15.1.0 (/opt/homebrew/bin/gfortran)
     
-        PRE_PROCESS   : ON
+        PRE_PROCESS   : OFF
         SIMULATION    : OFF
         POST_PROCESS  : OFF
-        SYSCHECK      : OFF
+        SYSCHECK      : ON
         DOCUMENTATION : OFF
         ALL           : OFF
     

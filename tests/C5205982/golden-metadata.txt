@@ -72,7 +72,7 @@ post_process:
         OMPI_CXX : 
         OMPI_FC  : 
 
-simulation:
+pre_process:
 
     CMake Configuration:
     
@@ -81,8 +81,8 @@ simulation:
         C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
         Fortran : GNU v15.1.0 (/opt/homebrew/bin/gfortran)
     
-        PRE_PROCESS   : OFF
-        SIMULATION    : ON
+        PRE_PROCESS   : ON
+        SIMULATION    : OFF
         POST_PROCESS  : OFF
         SYSCHECK      : OFF
         DOCUMENTATION : OFF

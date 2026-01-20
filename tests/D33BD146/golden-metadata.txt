@@ -124,11 +124,7 @@ post_process:
         MPI     : ON
         OpenACC : OFF
     
-<<<<<<< HEAD
-        Fypp    : /home/dgvacarevelo/MFC/build/venv/bin/fypp
-=======
         Fypp    : /Users/hyeoksu/MyWork/MFC-local/MFC/qbmm/build/venv/bin/fypp
->>>>>>> mfc/savePoint
         Doxygen : 
     
         Build Type : Release

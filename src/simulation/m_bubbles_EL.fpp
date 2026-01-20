@@ -1124,7 +1124,7 @@ contains
                 end if
             end if
             call s_compute_cson_from_pinf(q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
-
+            ! print*, 'myPinf =', myPinf, stage, proc_rank
             ! Adaptive time stepping
             if (adap_dt) then
 
@@ -1590,6 +1590,34 @@ contains
                 myRrupt = mrmtnt_Rrupt(k)
                 if (myR > myRrupt) myShell = 0._wp
 
+                ! ! Calculate velocity potentials (valid for one bubble per cell)
+                ! call s_get_pinf(k, q_prim_vf, 2, Pcell, cell, preterm1, term2, Rcell)
+
+                ! ! Obtain liquid density and computing speed of sound from myPinf
+                ! myRho = 0._wp
+                ! $:GPU_LOOP(parallelism='[seq]')
+                ! do i = 1, num_fluids
+                !     myRho = myRho + q_prim_vf(i)%sf(cell(1), cell(2), cell(3))
+                ! end do
+
+                ! aux = Rcell**3._wp - myR**3._wp
+                ! c2 = (3._wp/2._wp)*(myR**3._wp)*(1._wp - myR/Rcell)/aux
+                ! c1 = (3._wp/2._wp)*(myR*(Rcell**2._wp - myR**2._wp))/aux
+
+                ! Pw = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
+                ! Pw = Pw/myRho - 0.5_wp*myV**2._wp
+                ! bub_dphidt(k) = (Pcell/myRho - Pw) - c2*myV**2._wp
+                ! ! Accounting for the potential induced by the bubble averaged over the control volume
+                ! ! Note that this is based on the incompressible flow assumption near the bubble.
+                ! bub_dphidt(k) = bub_dphidt(k)/(1._wp - c1)
+
+                ! ! Scattered pressure
+                ! myPout = myRho*(c1*bub_dphidt(k) - c2*myV**2._wp)
+
+                ! !Update emitted Pout
+                ! bub_interact(k) = myPout
+                ! !print*, 'myPout matching:', myPout
+
                 ! Calculate velocity potentials (valid for one bubble per cell)
                 call s_get_pinf(k, q_prim_vf, 2, Pcell, cell, preterm1, term2, Rcell)
 
@@ -1602,22 +1630,20 @@ contains
 
                 aux = Rcell**3._wp - myR**3._wp
                 c2 = (3._wp/2._wp)*(myR**3._wp)*(1._wp - myR/Rcell)/aux
-                c1 = (3._wp/2._wp)*(myR*(Rcell**2._wp - myR**2._wp))/aux
+                c1 = 3._wp/2._wp*(myR*(Rcell**2._wp - myR**2._wp))/aux
 
                 Pw = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck)
-                Pw = Pw/myRho - 0.5_wp*myV**2._wp
-                bub_dphidt(k) = (Pcell/myRho - Pw) - c2*myV**2._wp
+                Pw = Pw + 0.5_wp*myV**2._wp
+                bub_dphidt(k) = (Pcell - Pw) + c2*myV**2._wp
                 ! Accounting for the potential induced by the bubble averaged over the control volume
                 ! Note that this is based on the incompressible flow assumption near the bubble.
                 bub_dphidt(k) = bub_dphidt(k)/(1._wp - c1)
 
                 ! Scattered pressure
-                myPout = myRho*(c1*bub_dphidt(k) - c2*myV**2._wp)
+                myPout = c1*bub_dphidt(k) + c2*myV**2._wp
 
                 !Update emitted Pout
                 bub_interact(k) = myPout
-                !print*, 'myPout matching:', myPout
-
             end do
 
         end if

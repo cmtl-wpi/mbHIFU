@@ -502,16 +502,29 @@ contains
 
         if (p == 0) return
 
-        !Find Pout to modif Pinf
         aux = fRcell**3._wp - fR**3._wp
         c2 = 1.5_wp*(fR**3._wp)*(1._wp - fR/fRcell)/aux
         c1 = 1.5_wp*(fR*(fRcell**2._wp - fR**2._wp))/aux
 
-        dphidt = fCpbw/fRho - 0.5_wp*fV**2._wp
-        dphidt = (fCp/fRho - dphidt) - c2*fV**2._wp
+        dphidt = fCpbw + 0.5_wp*fV**2._wp
+        dphidt = (fCp - dphidt) + c2*fV**2._wp
         dphidt = dphidt/(1._wp - c1)
 
-        f_pout = fRho*(c1*dphidt - c2*fV**2._wp)    ! p_inf = pcell - pout
+        f_pout = c1*dphidt + c2*fV**2._wp
+
+        !!!!! Errors with MFC
+        !Find Pout to modif Pinf Errors with MFC
+        ! aux = fRcell**3._wp - fR**3._wp
+        ! c2 = 1.5_wp*(fR**3._wp)*(1._wp - fR/fRcell)/aux
+        ! c1 = 1.5_wp*(fR*(fRcell**2._wp - fR**2._wp))/aux
+
+        ! dphidt = fCpbw/fRho - 0.5_wp*fV**2._wp
+        ! dphidt = (fCp/fRho - dphidt) - c2*fV**2._wp
+        ! dphidt = dphidt/(1._wp - c1)
+
+        ! f_pout = fRho*(c1*dphidt - c2*fV**2._wp)    ! p_inf = pcell - pout
+
+        !!!! Errors with MFC
 
         ! f_pout_2 = fCp - fCpbw - (c2 - 0.5_wp)*fRho*fV**2._wp
         ! f_pout_2 = f_pout_2/(1._wp - c1)
