@@ -637,7 +637,7 @@ contains
                                    bub_id, fmass_v, fmass_n, fbeta_c, &
                                    fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
                                    fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
-                                   fQvis, fQth, fRmean, fvis_inst, fth_inst, adap_dt_stop)
+                                   fQvis, fQth, fRmean, adap_dt_stop)
         $:GPU_ROUTINE(function_name='s_advance_step',parallelism='[seq]', &
             & cray_inline=True)
 
@@ -649,7 +649,7 @@ contains
         real(wp), intent(in) :: fmass_n, fbeta_c, fbeta_t, fCson, fInt, fRbuck, fRrupt, fRcell
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
-        real(wp), intent(out) :: fQvis, fQth, fRmean, fvis_inst, fth_inst
+        real(wp), intent(out) :: fQvis, fQth, fRmean
         integer, intent(inout) :: adap_dt_stop
 
         real(wp), dimension(5) :: err !< Error estimates for adaptive time stepping
@@ -661,7 +661,7 @@ contains
         real(wp) :: fR2, fV2, fpb2, fmass_v2
         integer :: iter_count
         real(wp) :: conc_v_h, R_m_h, gamma_m_h, T_bar_h, grad_T_h, heatflux_h
-        real(wp) :: fAc1, fAc21, fAc22
+        real(wp) :: fAc1, fAc21, fAc22, fvis_inst, fth_inst
 
         call s_initial_substep_h(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                                  fntait, fBtait, f_bub_adv_src, f_divu, fCson, fInt, fshell, fRbuck, fRcell, h)
@@ -779,7 +779,8 @@ contains
                                 end if
                             else
                                 T_bar_h = Tw * (fR0/fR)**(3._wp*(gamma_m-1._wp)) ! Polytropic temp
-                                heatflux_h = 3._wp*(1._wp-gamma_m)*T_bar_h/fR
+                                heatflux_h = conc_v_h*k_vl + (1._wp - conc_v_h)*k_nl 
+                                heatflux_h = 3._wp*heatflux_h*(1._wp-gamma_m)*T_bar_h/fR
                             end if
                             fth_inst = heatflux_h*4._wp*pi*fR**2._wp
                             fQth = fQth + h*fth_inst

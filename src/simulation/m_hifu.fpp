@@ -512,14 +512,12 @@ contains
         integer :: i, j, k, l, s, mtd_idx
         integer :: abortFlag, abortFlag_max
         
-        real(wp) :: total_heat, heat_moment1, heat_moment2, heat_moment3
+        real(wp), dimension(1:4) :: mom_qac
         real(wp) :: dist_radial, vol_cell, xb_Rc
         logical :: momentsFlag
 
         momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
-
-        total_heat = 0._wp;   heat_moment1 = 0._wp
-        heat_moment2 = 0._wp; heat_moment3 = 0._wp
+        if (momentsFlag) mom_qac = 0._wp
 
         focalIntensity_ac = 0._wp; focalIntensity_ac_prms = 0._wp
         sumIntensity_ac = 0._wp
@@ -839,14 +837,17 @@ contains
 
                         !Intensity summation through the domain
                         sumIntensity_ac = sumIntensity_ac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+
+                        ! Calculate heat source moments inside the bubble cloud
                         if (momentsFlag) then
                             if (dist_radial <= hifu_params%R_cloud) then
                                 xb_Rc = (x_cc(j)-hifu_params%cloud_center(1))/hifu_params%R_cloud
-                                vol_cell = dx(j)*dy(k)*dz(k)
-                                total_heat = total_heat + intensity_ac*vol_cell
-                                heat_moment1 = heat_moment1 + intensity_ac*vol_cell*xb_Rc
-                                heat_moment2 = heat_moment2 + intensity_ac*vol_cell*xb_Rc**2._wp
-                                heat_moment3 = heat_moment3 + intensity_ac*vol_cell*xb_Rc**3._wp
+                                vol_cell = dx(j)*dy(k)*dz(l)
+                                
+                                $:GPU_LOOP(parallelism='[seq]')
+                                do i = 1, 4
+                                    mom_qac(i) = mom_qac(i) + intensity_ac*hdid*vol_cell*(xb_Rc)**(i-1)
+                                end do
                             end if
                         end if
 
@@ -863,17 +864,6 @@ contains
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac)
                 tmp = focalIntensity_ac_prms
                 call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
-
-                if (momentsFlag) then
-                    tmp = total_heat
-                    call s_mpi_allreduce_sum(tmp, total_heat)
-                    tmp = heat_moment1
-                    call s_mpi_allreduce_sum(tmp, heat_moment1)
-                    tmp = heat_moment2
-                    call s_mpi_allreduce_sum(tmp, heat_moment2)
-                    tmp = heat_moment3
-                    call s_mpi_allreduce_sum(tmp, heat_moment3) 
-                end if
             end if
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
@@ -885,12 +875,8 @@ contains
                                         focalIntensity_ac_prms, &
                                         sumIntensity_ac
 
-            if (proc_rank == 0 .and. momentsFlag) write (97, '(4X,5e24.8)') &
-                                                        mytime, &
-                                                        heat_moment1/total_heat, &
-                                                        heat_moment2/total_heat, &
-                                                        heat_moment3/total_heat, &
-                                                        total_heat
+            if (momentsFlag) call s_write_moments(mom_qac, idx=0)
+
         else
             call s_mpi_abort('Getting HIFU samples (stage 2) works only with axisymmetric assumption so far!')
         end if
@@ -2599,15 +2585,20 @@ contains
             open (96, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
             write (96, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
 
-            write (file_path, '(A,I0,A)') '/D/moments_qth.dat'
+            write (file_path, '(A,I0,A)') '/D/moments_qth_pos.dat'
             file_path = trim(case_dir)//trim(file_path)
             open (95, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
             write (95, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
 
-            write (file_path, '(A,I0,A)') '/D/moments_vol.dat'
+            write (file_path, '(A,I0,A)') '/D/moments_qth_neg.dat'
             file_path = trim(case_dir)//trim(file_path)
             open (94, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
-            write (94, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalVolume'
+            write (94, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+
+            write (file_path, '(A,I0,A)') '/D/moments_vol.dat'
+            file_path = trim(case_dir)//trim(file_path)
+            open (93, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
+            write (93, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalVolume'
 
         end if
 
@@ -2630,6 +2621,7 @@ contains
             close (96)
             close (95)
             close (94)
+            close (93)
         end if
 
     end subroutine s_close_run_time_information_samplingHIFU

@@ -664,7 +664,7 @@ contains
             call s_smear_voidfraction(bc_type)
             if (stage == 3) then
                 if (hifu_params%sampling) call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
-                if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
+                call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
                     $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
                     call s_write_lag_particles(mytime, replace = .false.)

@@ -74,18 +74,21 @@ module m_bubbles_EL
 
     integer, private :: lag_num_ts      !<  Number of time stages in the time-stepping scheme
     integer :: nBubs                    !< Number of bubbles in the local domain
-    real(wp) :: Rmax_glb, Rmin_glb      !< Maximum and minimum bubbe size in the local domain
+    real(wp) :: Rmax_glb, Rmin_glb, Rmean_glb   !< Global stats of bubbe size in the local domain
     type(vector_field) :: q_beta        !< Projection of the lagrangian particles in the Eulerian framework
     integer :: q_beta_idx               !< Size of the q_beta vector field
-    $:GPU_DECLARE(create='[nBubs,lag_num_ts,Rmax_glb,Rmin_glb,q_beta,q_beta_idx]')
+    $:GPU_DECLARE(create='[nBubs,lag_num_ts,Rmax_glb,Rmin_glb,Rmean_glb,q_beta,q_beta_idx]')
 
+    real(wp), allocatable, dimension(:,:) :: moments_bubs   !< Moments of volume, qac, qvis, qth_pos, qth_neg
     real(wp), allocatable, dimension(:, :) :: mrmtnt_shell  !< Lipid shell indicator (Marmotant model)
     real(wp), allocatable, dimension(:) :: mrmtnt_Rbuck     !< Buckling radius (Marmotant model)
     real(wp), allocatable, dimension(:) :: mrmtnt_Rrupt     !< Rupture radius (Marmotant model)
     real(wp), allocatable, dimension(:) :: bub_qvis         !< Time-averaged viscous intensity (HIFU)
     real(wp), allocatable, dimension(:) :: bub_qth          !< Time-averaged thermal intensity (HIFU)
     real(wp), allocatable, dimension(:) :: bub_hifu_rad     !< Time-averaged radius
-    $:GPU_DECLARE(create='[mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
+    $:GPU_DECLARE(create='[mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, moments_bubs]')
+
+    
 
 contains
 
@@ -162,6 +165,7 @@ contains
         @:ALLOCATE(bub_qvis(1:nBubs_glb))
         @:ALLOCATE(bub_qth(1:nBubs_glb))
         @:ALLOCATE(bub_hifu_rad(1:nBubs_glb))
+        @:ALLOCATE(moments_bubs(1:4, 1:4))
         
         ! Interbubble interaction
         ! 1: emitted Pout, 2: sum of Pouts from volume of influence (self-inclusive)
@@ -347,7 +351,9 @@ contains
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
-        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb]')
+        Rmean_glb = 0._wp
+        moments_bubs(1:4, 1:4) = 0._wp
+        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb, moments_bubs]')
 
         $:GPU_UPDATE(device='[dx,dy,dz,x_cb,x_cc,y_cb,y_cc,z_cb,z_cc]')
 
@@ -364,7 +370,7 @@ contains
             call s_write_restart_lag_bubbles(save_count) ! Needed for post_processing
         end if
 
-        if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
+        call s_calculate_lag_bubble_stats()
         if (lag_params%write_bubbles) call s_write_lag_particles(qtime, replace=.false.)
         call s_write_void_evol(qtime, replace=.false.)
 
@@ -602,8 +608,6 @@ contains
                 Re_trans = trans
                 Im_trans = aimag(trans)
                 gas_betaC(k) = Re_trans*lag_params%diffcoefvap
-                
-                !intfc_ac(k,1) = 0._wp
 
             end do
 
@@ -628,6 +632,7 @@ contains
                 qtime = t_step_start*dt
             end if
 
+            call s_calculate_lag_bubble_stats()
             if (lag_params%write_bubbles) call s_write_lag_particles(qtime, replace=.true.)
             call s_write_restart_lag_bubbles(save_count) ! Needed for post_processing
             call s_write_void_evol(qtime, replace=.true.)
@@ -994,10 +999,8 @@ contains
 
         integer :: i, k, l
 
-        real(wp) :: total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis
-        real(wp) :: total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th
-        real(wp) :: total_vol, moment1_vol, moment2_vol, moment3_vol
-        real(wp) :: fVol, fxb_Rc, myth_inst, myvis_inst
+        real(wp), dimension(1:4) :: mom_vol, mom_qvis, mom_qth_p, mom_qth_n
+        real(wp) :: fVol, fxb_Rc
         logical :: momentsFlag
 
         integer :: total_ids, bub_idx
@@ -1007,22 +1010,10 @@ contains
 
         momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
 
-        total_heat_vis = 0._wp;   heat_moment1_vis = 0._wp
-        heat_moment2_vis = 0._wp; heat_moment3_vis = 0._wp
-
-        total_heat_th = 0._wp;    heat_moment1_th = 0._wp
-        heat_moment2_th = 0._wp;  heat_moment3_th = 0._wp
-
-        total_vol = 0._wp;    moment1_vol = 0._wp
-        moment2_vol = 0._wp;  moment3_vol = 0._wp
-
-        ! Needs MPI communication to update current bubble state in the buffer regions
-        ! myPb = gas_p(k, 2)
-        ! myMass_v = gas_mv(k, 2)
-        ! myR = intfc_rad(k, 2)
-        ! myV = intfc_vel(k, 2)
-        ! myA = intfc_vel(k, 2)
-        ! myShell = mrmtnt_shell(k, 2)
+        if (momentsFlag) then
+            mom_vol = 0._wp; mom_qvis = 0._wp
+            mom_qth_p = 0._wp; mom_qth_n = 0._wp
+        end if
 
         ! Subgrid p_inf model based on Maeda and Colonius (2018).
         if (lag_params%pressure_corrector) then
@@ -1050,9 +1041,9 @@ contains
         ! Radial motion
         adap_dt_stop_max = 0
         $:GPU_PARALLEL_LOOP(private='[k,myalpha_rho,myalpha,Re,cell]', &
-            & reduction='[[adap_dt_stop_max, total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]]', &
+            & reduction='[[adap_dt_stop_max, mom_vol, mom_qac, mom_qvis, mom_qth]]', &
             & reductionOp='[MAX]', &
-            & copy='[adap_dt_stop_max, total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]', &
+            & copy='[adap_dt_stop_max, mom_qac, mom_qvis, mom_qth]', &
             & copyin='[stage]')
         do k = 1, nBubs
             ! Keller-Miksis model
@@ -1077,16 +1068,6 @@ contains
             myInt = 0._wp !Interaction term from surrounding bubbles
             if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) myInt = bub_interact(k)
 
-            !if (myInt /= myInt) then 
-            !    print*, 'nan Interaction term', k, bub_interact(k)
-            !    total_ids = int(bub_int_ids(k, 1))
-            !    print*, total_ids
-            !    do i = 2, total_ids + 1
-            !        bub_idx = bub_int_ids(k, i)
-            !        print*, bub_idx
-            !    end do
-            !    print*, bub_int_ids(k, :)
-            !end if
             ! Vapor and heat fluxes
             if (.not. polytropic) then
                 call s_vflux(myR, myV, myPb, myMass_v, k, myVapFlux, myMass_n, myBeta_c, myR_m, mygamma_m, myShell)
@@ -1124,7 +1105,7 @@ contains
                 end if
             end if
             call s_compute_cson_from_pinf(q_prim_vf, myPinf, cell, myRho, gamma, pi_inf, myCson)
-            ! print*, 'myPinf =', myPinf, stage, proc_rank
+
             ! Adaptive time stepping
             if (adap_dt) then
 
@@ -1135,7 +1116,7 @@ contains
                                     k, myMass_v, myMass_n, myBeta_c, &
                                     myBeta_t, myCson, myInt, myShell, myRbuck, myRrupt, myRcell, &
                                     myNoise_constant, myLambda_c, mydk, myloc, myLag_time, myAc, & !myPhase, &
-                                    myQvis, myQth, myRmean, myvis_inst, myth_inst, adap_dt_stop)
+                                    myQvis, myQth, myRmean, adap_dt_stop)
 
                 ! Update bubble state
                 intfc_rad(k, 1) = myR
@@ -1152,18 +1133,18 @@ contains
                     if (momentsFlag) then
                         fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
                         fVol = (4._wp/3._wp)*pi*myR**3._wp
-                        total_heat_vis = total_heat_vis + myvis_inst
-                        heat_moment1_vis = heat_moment1_vis + myvis_inst*(fxb_Rc)
-                        heat_moment2_vis = heat_moment2_vis + myvis_inst*(fxb_Rc)**2._wp
-                        heat_moment3_vis = heat_moment3_vis + myvis_inst*(fxb_Rc)**3._wp
-                        total_heat_th = total_heat_th + myth_inst
-                        heat_moment1_th = heat_moment1_th + myth_inst*(fxb_Rc)
-                        heat_moment2_th = heat_moment2_th + myth_inst*(fxb_Rc)**2._wp
-                        heat_moment3_th = heat_moment3_th + myth_inst*(fxb_Rc)**3._wp
-                        total_vol = total_vol + fVol
-                        moment1_vol = moment1_vol + fVol*(fxb_Rc)
-                        moment2_vol = moment2_vol + fVol*(fxb_Rc)**2._wp
-                        moment3_vol = moment3_vol + fVol*(fxb_Rc)**3._wp
+
+                        $:GPU_LOOP(parallelism='[seq]')
+                        do i = 1, 4
+                            mom_vol(i) = mom_vol(i) + fVol*(fxb_Rc)**(i-1)
+                            mom_qvis(i) = mom_qvis(i) + myQvis*(fxb_Rc)**(i-1)
+                            if (myQth < 0._wp) then
+                                mom_qth_p(i) = mom_qth_p(i) + myQth*(fxb_Rc)**(i-1)
+                            else
+                                mom_qth_n(i) = mom_qth_n(i) + myQth*(fxb_Rc)**(i-1)
+                            end if
+                        end do
+
                     end if
                 end if
 
@@ -1194,20 +1175,30 @@ contains
 
         if (adap_dt .and. adap_dt_stop_max > 0) call s_mpi_abort("Adaptive time stepping failed to converge.")
 
-        if (hifu_params%sampling .and. adap_dt .and. momentsFlag .and. stage == 3) then
-            call s_write_moments_bubbles(total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, idx=1)
-            call s_write_moments_bubbles(total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, idx=2)
-            call s_write_moments_bubbles(total_vol, moment1_vol, moment2_vol, moment3_vol, idx=3)
-        end if
+        if (hifu_params%sampling .and. adap_dt .and. momentsFlag) then
+            if (stage == 3) then
+                do i=1,4
+                    moments_bubs(1, i) = moments_bubs(1, i) + mom_qvis(i)
+                    moments_bubs(2, i) = moments_bubs(2, i) + mom_qth_p(i)
+                    moments_bubs(3, i) = moments_bubs(3, i) + mom_qth_n(i)
+                    moments_bubs(4, i) = moments_bubs(4, i) + mom_vol(i)
+                end do
 
-        ! Bubbles remain in a fixed position
-        ! $:GPU_PARALLEL_LOOP(collapse=2, private='[k]', copyin='[stage]')
-        ! do k = 1, nBubs
-        !     do l = 1, 3
-        !         mtn_dposdt(k, l, stage) = 0._wp
-        !         mtn_dveldt(k, l, stage) = 0._wp
-        !     end do
-        ! end do
+                do i = 1, 4
+                    call s_write_moments(moments_bubs(i, 1:4), idx=i)
+                end do
+
+                moments_bubs(1:4, 1:4) = 0._wp
+            else
+                do i=1,4
+                    moments_bubs(1, i) = mom_qvis(i)
+                    moments_bubs(2, i) = mom_qth_p(i)
+                    moments_bubs(3, i) = mom_qth_n(i)
+                    moments_bubs(4, i) = mom_vol(i)
+                end do
+
+            end if
+        end if
 
         call nvtxEndRange
 
@@ -1944,32 +1935,27 @@ contains
 
         real(wp) :: fpb_h, fmass_n_h, fmass_v_h, fR_h, fV_h, fbeta_t_h, fshell_h
         real(wp) :: conc_v_h, R_m_h, gamma_m_h, T_bar_h, grad_T_h, heatflux_h, fR0_h
-        integer :: k
+        integer :: k, i
         integer :: abortFlag, abortFlag_max
 
-        real(wp) :: total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis
-        real(wp) :: total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th
-        real(wp) :: total_vol, moment1_vol, moment2_vol, moment3_vol
+        real(wp), dimension(1:4) :: mom_vol, mom_qvis, mom_qth_p, mom_qth_n
         real(wp) :: fxb_Rc, fqvis, fqth, fVol
         logical :: momentsFlag
 
         momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
         
-        total_heat_vis = 0._wp;   heat_moment1_vis = 0._wp
-        heat_moment2_vis = 0._wp; heat_moment3_vis = 0._wp
+        if (momentsFlag) then
+            mom_vol = 0._wp; mom_qvis = 0._wp
+            mom_qth_p = 0._wp; mom_qth_n = 0._wp
+        end if
 
-        total_heat_th = 0._wp;    heat_moment1_th = 0._wp
-        heat_moment2_th = 0._wp;  heat_moment3_th = 0._wp
-
-        total_vol = 0._wp;    moment1_vol = 0._wp
-        moment2_vol = 0._wp;  moment3_vol = 0._wp
 
 #ifdef MFC_DEBUG
         if (proc_rank == 0) print *, 'Computing bubble heat sources', mytime, hdid
 #endif
         abortFlag_max = 0
-        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max, total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]]', &
-        & reductionOp='[MAX]',copy='[abortFlag_max, total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, total_vol, moment1_vol, moment2_vol, moment3_vol]')
+        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max, mom_vol, mom_qvis, mom_qth_p, mom_qth_n]]', &
+        & reductionOp='[MAX]',copy='[abortFlag_max, mom_vol, mom_qvis, mom_qth_p, mom_qth_n]')
         do k = 1, nBubs
 
             abortFlag = 0
@@ -2005,6 +1991,7 @@ contains
                 end if
             else
                 T_bar_h = Tw * (fR0_h/fR_h)**(3._wp*(gamma_m-1._wp)) ! Polytropic temp
+                heatflux_h = conc_v_h*k_vl + (1._wp - conc_v_h)*k_nl 
                 heatflux_h = 3._wp*(1._wp-gamma_m)*T_bar_h/fR_h
             end if
             fqth = heatflux_h*4._wp*pi*fR_h**2._wp
@@ -2028,40 +2015,44 @@ contains
             abortFlag_max = max(abortFlag_max, abortFlag)
 
             if (momentsFlag) then
-                total_heat_vis = total_heat_vis + fqvis
-                heat_moment1_vis = heat_moment1_vis + fqvis*(fxb_Rc)
-                heat_moment2_vis = heat_moment2_vis + fqvis*(fxb_Rc)**2._wp
-                heat_moment3_vis = heat_moment3_vis + fqvis*(fxb_Rc)**3._wp
+                        fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
 
-                total_heat_th = total_heat_th + fqth
-                heat_moment1_th = heat_moment1_th + fqth*(fxb_Rc)
-                heat_moment2_th = heat_moment2_th + fqth*(fxb_Rc)**2._wp
-                heat_moment3_th = heat_moment3_th + fqth*(fxb_Rc)**3._wp
+                        $:GPU_LOOP(parallelism='[seq]')
+                        do i = 1, 4
+                            mom_vol(i) = mom_vol(i) + fVol*(fxb_Rc)**(i-1)
+                            mom_qvis(i) = mom_qvis(i) + fqvis*(fxb_Rc)**(i-1)
+                            if (fqth < 0._wp) then
+                                mom_qth_p(i) = mom_qth_p(i) + fqth*(fxb_Rc)**(i-1)
+                            else
+                                mom_qth_n(i) = mom_qth_n(i) + fqth*(fxb_Rc)**(i-1)
+                            end if
+                        end do
 
-                total_vol = total_vol + fVol
-                moment1_vol = moment1_vol + fVol*(fxb_Rc)
-                moment2_vol = moment2_vol + fVol*(fxb_Rc)**2._wp
-                moment3_vol = moment3_vol + fVol*(fxb_Rc)**3._wp
-            end if
+                    end if
 
         end do
 
         if (abortFlag_max > 0) stop "NaNs in viscous (or thermal) damping of the bubbles"
 
         if (momentsFlag) then
-            call s_write_moments_bubbles(total_heat_vis, heat_moment1_vis, heat_moment2_vis, heat_moment3_vis, idx=1)
-            call s_write_moments_bubbles(total_heat_th, heat_moment1_th, heat_moment2_th, heat_moment3_th, idx=2)
-            call s_write_moments_bubbles(total_vol, moment1_vol, moment2_vol, moment3_vol, idx=3)
+            call s_write_moments(mom_qvis, idx=1)
+            call s_write_moments(mom_qth_p, idx=2)
+            call s_write_moments(mom_qth_n, idx=3)
+            call s_write_moments(mom_vol, idx=4)
         end if
 
     end subroutine s_compute_bubble_heat_sources_HIFU
 
-    subroutine s_write_moments_bubbles(total, moment1, moment2, moment3, idx)
+    subroutine s_write_moments(mom_all, idx)
 
         integer, intent(in) :: idx
-        real(wp), intent(inout) :: total, moment1, moment2, moment3
+        real(wp), dimension(4), intent(in) :: mom_all
+        real(wp) :: total, moment1, moment2, moment3
 
         real(wp) :: val_tmp
+
+        total = mom_all(1); moment1 = mom_all(2); 
+        moment2 = mom_all(3); moment3 = mom_all(4)
 
         if (num_procs>1) then
             val_tmp = total
@@ -2084,7 +2075,7 @@ contains
                     total
         end if
         
-    end subroutine s_write_moments_bubbles
+    end subroutine s_write_moments
 
     subroutine s_mean_radius_hifu(t_sampled)
 
@@ -2271,7 +2262,7 @@ contains
             end do
 
             call s_transfer_data_to_tmp
-            if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
+            call s_calculate_lag_bubble_stats()
             if (lag_params%write_bubbles) then
                 $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
                 call s_write_lag_particles(mytime, replace=.false.)
@@ -2310,7 +2301,7 @@ contains
                 end do
 
                 call s_transfer_data_to_tmp
-                if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
+                call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
                     $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
                     call s_write_lag_particles(mytime, replace=.false.)
@@ -2362,7 +2353,7 @@ contains
                 end do
 
                 call s_transfer_data_to_tmp
-                if (lag_params%write_bubbles_stats) call s_calculate_lag_bubble_stats()
+                call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
                     $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
                     call s_write_lag_particles(mytime, replace=.false.)
@@ -2697,12 +2688,14 @@ contains
         real(wp) :: volcell, voltot
         real(wp) :: lag_void_max, lag_void_avg, lag_vol
         real(wp) :: void_max_glb, void_avg_glb, vol_glb
-        real(wp) :: aux_glb
+        real(wp) :: aux_glb, nBubs_all
 
         integer :: i, j, k
 
         character(LEN=path_len + 2*name_len) :: file_loc
-        logical :: file_exist
+        logical :: file_exist, momentsFlag
+
+        momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
 
         if (proc_rank == 0) then
             write (file_loc, '(A)') 'voidfraction.dat'
@@ -2739,7 +2732,7 @@ contains
             end do
         end do
 
-$:GPU_UPDATE(host='[Rmax_glb, Rmin_glb]')
+$:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
 
 #ifdef MFC_MPI
         if (num_procs > 1) then
@@ -2753,6 +2746,10 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb]')
             Rmax_glb = aux_glb
             call s_mpi_allreduce_min(Rmin_glb, aux_glb)
             Rmin_glb = aux_glb
+            call s_mpi_allreduce_sum(Rmean_glb, aux_glb)
+            Rmean_glb = aux_glb
+            call s_mpi_allreduce_sum(real(nBubs, wp), aux_glb)
+            nBubs_all = aux_glb
         end if
 #endif
         voltot = lag_void_avg
@@ -2764,13 +2761,24 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb]')
         if (lag_vol > 0._wp) lag_void_avg = lag_void_avg/lag_vol
 
         if (proc_rank == 0) then
-            write (12, '(6X,4e24.8)') &
+
+            if (momentsFlag) then
+            write (12, '(6X,8e24.8)') &
                 qtime, &
                 lag_void_avg, &
                 lag_void_max, &
-                voltot!, &
-            ! Rmax_glb, &
-            ! Rmin_glb
+                voltot, &
+                Rmean_glb/nBubs_all, &
+                nBubs_all, &
+                Rmax_glb, &
+                Rmin_glb
+            else
+                write (12, '(6X,4e24.8)') &
+                qtime, &
+                lag_void_avg, &
+                lag_void_max, &
+                voltot
+            end if
             close (12)
         end if
 
@@ -2936,13 +2944,15 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb]')
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
-        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb]')
-        
-        $:GPU_PARALLEL_LOOP(reduction='[[Rmax_glb], [Rmin_glb]]', &
-            & reductionOp='[MAX, MIN]', copy='[Rmax_glb,Rmin_glb]')
+        Rmean_glb = 0._wp
+        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb]')
+
+        $:GPU_PARALLEL_LOOP(reduction='[[Rmax_glb], [Rmin_glb], [Rmean_glb]]', &
+            & reductionOp='[MAX, MIN, SUM]', copy='[Rmax_glb,Rmin_glb,Rmean_glb]')
         do k = 1, nBubs
             Rmax_glb = max(Rmax_glb, intfc_rad(k, 1)/bub_R0(k))
             Rmin_glb = min(Rmin_glb, intfc_rad(k, 1)/bub_R0(k))
+            Rmean_glb = Rmean_glb + intfc_rad(k, 1)
             Rmax_stats(k) = max(Rmax_stats(k), intfc_rad(k, 1)/bub_R0(k))
             Rmin_stats(k) = min(Rmin_stats(k), intfc_rad(k, 1)/bub_R0(k))
         end do
@@ -2958,14 +2968,15 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb]')
         write (file_loc, '(A,I0,A)') 'stats_lag_bubbles_', proc_rank, '.dat'
         file_loc = trim(case_dir)//'/D/'//trim(file_loc)
 
-        $:GPU_UPDATE(host='[Rmax_glb,Rmin_glb]')
+        $:GPU_UPDATE(host='[Rmax_glb,Rmin_glb,Rmean_glb]')
 
         open (13, FILE=trim(file_loc), FORM='formatted', position='rewind')
-        write (13, *) 'proc_rank, Rmax_glb, Rmin_glb'
-        write (13, '(6X,I24.8,2e24.8)') &
+        write (13, *) 'proc_rank, Rmax_glb, Rmin_glb, Rmean_glb'
+        write (13, '(6X,I24.8,3e24.8)') &
             proc_rank, &
             Rmax_glb, &
-            Rmin_glb
+            Rmin_glb, &
+            Rmean_glb/nBubs
         write (13, *) ' '
         write (13, *) 'particleID, x, y, z, Rmax, Rmin'
 
