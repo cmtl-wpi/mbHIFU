@@ -474,6 +474,7 @@ contains
             !print *, 'Rbuck and Rrupt', mrmtnt_Rbuck(bub_id), mrmtnt_Rrupt(bub_id), bub_id
         end if
         if (pv*(massflag) > gas_p(bub_id, 1)) then
+            print*, proc_rank, gas_p(bub_id, 1), pv*(massflag), pliq
             call s_mpi_abort("Lagrange bubble initially located in a region with pressure below the vapor pressure.")
         end if
 
@@ -2950,8 +2951,8 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
         $:GPU_PARALLEL_LOOP(reduction='[[Rmax_glb], [Rmin_glb], [Rmean_glb]]', &
             & reductionOp='[MAX, MIN, SUM]', copy='[Rmax_glb,Rmin_glb,Rmean_glb]')
         do k = 1, nBubs
-            Rmax_glb = max(Rmax_glb, intfc_rad(k, 1)/bub_R0(k))
-            Rmin_glb = min(Rmin_glb, intfc_rad(k, 1)/bub_R0(k))
+            Rmax_glb = max(Rmax_glb, intfc_rad(k, 1))
+            Rmin_glb = min(Rmin_glb, intfc_rad(k, 1))
             Rmean_glb = Rmean_glb + intfc_rad(k, 1)
             Rmax_stats(k) = max(Rmax_stats(k), intfc_rad(k, 1)/bub_R0(k))
             Rmin_stats(k) = min(Rmin_stats(k), intfc_rad(k, 1)/bub_R0(k))
