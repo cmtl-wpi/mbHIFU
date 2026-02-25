@@ -144,7 +144,7 @@ class TestCase(case.Case):
 
         command = [
             mfc_script, "run", filepath, "--no-build", *tasks, *case_optimization,
-            *jobs, "-t", *target_names, *gpus_select, *ARG("--")
+            *jobs, "-t", *target_names, *gpus_select, *ARG("--"), "-c", str(ARG("computer"))
         ]
 
         return common.system(command, print_cmd=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
