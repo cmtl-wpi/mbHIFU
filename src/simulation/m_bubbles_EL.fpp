@@ -1042,9 +1042,9 @@ contains
         ! Radial motion
         adap_dt_stop_max = 0
         $:GPU_PARALLEL_LOOP(private='[k,myalpha_rho,myalpha,Re,cell]', &
-            & reduction='[[adap_dt_stop_max, mom_vol, mom_qac, mom_qvis, mom_qth]]', &
-            & reductionOp='[MAX]', &
-            & copy='[adap_dt_stop_max, mom_qac, mom_qvis, mom_qth]', &
+            & reduction='[[adap_dt_stop_max],[mom_vol,mom_qvis,mom_qth_p,mom_qth_n]]', &
+            & reductionOp='[MAX,+]', &
+            & copy='[adap_dt_stop_max,mom_vol,mom_qvis,mom_qth_p,mom_qth_n]', &
             & copyin='[stage]')
         do k = 1, nBubs
             ! Keller-Miksis model
@@ -2949,7 +2949,7 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
         $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb]')
 
         $:GPU_PARALLEL_LOOP(reduction='[[Rmax_glb], [Rmin_glb], [Rmean_glb]]', &
-            & reductionOp='[MAX, MIN, SUM]', copy='[Rmax_glb,Rmin_glb,Rmean_glb]')
+            & reductionOp='[MAX, MIN, +]', copy='[Rmax_glb,Rmin_glb,Rmean_glb]')
         do k = 1, nBubs
             Rmax_glb = max(Rmax_glb, intfc_rad(k, 1))
             Rmin_glb = min(Rmin_glb, intfc_rad(k, 1))

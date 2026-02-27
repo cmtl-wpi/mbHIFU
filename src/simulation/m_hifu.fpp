@@ -698,10 +698,10 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms, total_heat, heat_moment1, heat_moment2, heat_moment3], [sumIntensity_ac]]', &
+              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms],[sumIntensity_ac,mom_qac]]', &
               & reductionOp='[MAX,+]', &
               & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn]', &
-              & copy='[sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms, total_heat, heat_moment1, heat_moment2, heat_moment3]')
+              & copy='[sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,mom_qac]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
