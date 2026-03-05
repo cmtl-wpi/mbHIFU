@@ -529,6 +529,7 @@ contains
         integer :: n_sgn
         real(wp) :: acPw , acPw_qac
         real(wp), dimension(6) :: acPw_in_dt, acPw_out_dt
+        logical :: flg_cell_in_cv
 
         if (hifu_params%moments) mom_qac = 0._wp
 
@@ -873,7 +874,7 @@ contains
                                 if (n_sgn /= 0) then
                                     call s_compute_cv_acoustic_power(q_prim_vf, j, k, l, &
                                                               i, n_sgn, pres_h, vel_h, acPw)
-                                    acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
+                                    
                                     s = 2*i
                                     if (n_sgn == -1) s = s - 1
                                     if (acPw < 0._wp) then
@@ -882,6 +883,12 @@ contains
                                         acPw_out_dt(s) = acPw_out_dt(s) + acPw
                                     end if
                                 end if
+                                
+                                flg_cell_in_cv = f_cell_in_cv(j, k, l)
+                                if (flg_cell_in_cv) then
+                                    acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
+                                end if
+
                             end do
                          end if
 
@@ -918,6 +925,20 @@ contains
         end if
 
     end subroutine s_update_HIFU_vars_sampling
+
+    function f_cell_in_cv(j, k, l)
+        $:GPU_ROUTINE(parallelism='[seq]')
+        integer, intent(in) :: j, k, l
+        logical :: f_cell_in_cv
+
+        f_cell_in_cv = .false.
+        if ((hifu_params%cv_xb <= x_cb(j-1)) .and. (x_cb(j) <= hifu_params%cv_xe) .and. &
+            (hifu_params%cv_yb <= y_cb(k-1)) .and. (y_cb(k) <= hifu_params%cv_ye) .and. &
+            (hifu_params%cv_zb <= z_cb(l-1)) .and. (z_cb(l) <= hifu_params%cv_ze)) then
+              f_cell_in_cv = .true.
+        end if
+
+    end function f_cell_in_cv
 
     subroutine s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, hdid)
         real(wp), dimension(6), intent(inout) :: acPw_in_dt, acPw_out_dt
