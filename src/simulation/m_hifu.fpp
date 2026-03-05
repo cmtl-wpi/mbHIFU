@@ -872,6 +872,7 @@ contains
                             do i = 1, num_dims
                                 n_sgn = f_is_on_cv_border(j, k, l, i)
                                 if (n_sgn /= 0) then
+                                    !print*, ' Computing acoustic power for CV face:', proc_rank, j, k, l, i, n_sgn
                                     call s_compute_cv_acoustic_power(q_prim_vf, j, k, l, &
                                                               i, n_sgn, pres_h, vel_h, acPw)
                                     
@@ -883,13 +884,14 @@ contains
                                         acPw_out_dt(s) = acPw_out_dt(s) + acPw
                                     end if
                                 end if
-                                
-                                flg_cell_in_cv = f_cell_in_cv(j, k, l)
-                                if (flg_cell_in_cv) then
-                                    acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
-                                end if
-
                             end do
+
+                            flg_cell_in_cv = f_cell_in_cv(j, k, l)
+                            if (flg_cell_in_cv) then
+                                !print*, 'Cell in CV for power balance:', proc_rank, j, k, l
+                                acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
+                            end if
+
                          end if
 
                     end do
@@ -1001,11 +1003,19 @@ contains
             aux_j = j; aux_k = k - n_sgn; aux_l = l
             n_vct(1) = 0._wp; n_vct(2) = n_sgn; n_vct(3) = 0._wp
             Aface = dx(j)*dz(l)
+            if (bc_y%beg == BC_REFLECTIVE .and. hifu_params%cv_yb  == y_cb(k-1)) then
+                aux_j = j; aux_k = k - 1; aux_l = l
+            end if
         else if (idx_dir == 3) then
             aux_j = j; aux_k = k; aux_l = l - n_sgn
             n_vct(1) = 0._wp; n_vct(2) = 0._wp; n_vct(3) = n_sgn
             Aface = dx(j)*dy(k)
+            if (bc_z%beg == BC_REFLECTIVE .and. hifu_params%cv_zb  == z_cb(l-1)) then
+                aux_j = j; aux_k = k; aux_l = l - 1
+            end if
         end if
+
+        ! print*, j, k, l, idx_dir, n_sgn, aux_j, aux_k, aux_l
         
         do i = 1, num_dims
             vel(i) = (vel(i) + q_prim_vf(i + contxe)%sf(aux_j, aux_k, aux_l)) * 0.5_wp
@@ -1055,6 +1065,15 @@ contains
                     end if
                 end if
             end if
+            if (bc_y%beg == BC_REFLECTIVE) then
+                if (hifu_params%cv_yb  == y_cb(k-1)) then
+                    if ((x_cb(j-1) - hifu_params%cv_xb)>=0._wp .and. (hifu_params%cv_xe - x_cb(j)>=0._wp)) then
+                        if ((z_cb(l-1) - hifu_params%cv_zb)>=0._wp .and. (hifu_params%cv_ze - z_cb(l)>=0._wp)) then
+                            f_is_on_cv_border = -1
+                        end if
+                    end if
+                end if
+            end if
         else if (idx_dir == 3) then
             if (hifu_params%cv_zb  <= z_cb(l) .and. hifu_params%cv_zb  > z_cb(l-1)) then
                 if ((x_cb(j-1) - hifu_params%cv_xb)>=0._wp .and. (hifu_params%cv_xe - x_cb(j)>=0._wp)) then
@@ -1063,10 +1082,19 @@ contains
                     end if
                 end if
             end if
-             if (hifu_params%cv_ze <= z_cb(l) .and. hifu_params%cv_ze > z_cb(l-1)) then
+            if (hifu_params%cv_ze <= z_cb(l) .and. hifu_params%cv_ze > z_cb(l-1)) then
                 if ((x_cb(j-1) - hifu_params%cv_xb)>=0._wp .and. (hifu_params%cv_xe - x_cb(j)>=0._wp)) then
                     if ((y_cb(k-1) - hifu_params%cv_yb)>=0._wp .and. (hifu_params%cv_ye - y_cb(k)>=0._wp)) then
                         f_is_on_cv_border = 1
+                    end if
+                end if
+            end if
+            if (bc_z%beg == BC_REFLECTIVE) then
+                if (hifu_params%cv_zb  == z_cb(l-1)) then
+                    if ((x_cb(j-1) - hifu_params%cv_xb)>=0._wp .and. (hifu_params%cv_xe - x_cb(j)>=0._wp)) then
+                        if ((y_cb(k-1) - hifu_params%cv_yb)>=0._wp .and. (hifu_params%cv_ye - y_cb(k)>=0._wp)) then
+                            f_is_on_cv_border = -1
+                        end if
                     end if
                 end if
             end if

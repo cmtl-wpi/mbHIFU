@@ -87,17 +87,21 @@ mu_g = 1.48e-5
 
 # Domain stgs 1 - 2
 xb = 0.0e-03       # Domain boundaries - m (x direction)
-xe = 6.0e-03
+xe = 5.0e-03
 yb = 0.e-3         # Domain boundaries - m (y direction)
-ye = 3.0e-03
+ye = 2.5e-03
 zb = 0.e-3         # Domain boundaries - m (z direction)
-ze = 3.0e-03
+ze = 2.5e-03
 
 mltplo  = 10
 waveSol = 15
 Nx      = int(round(((xe-xb)/(waveLen/waveSol))/mltplo)*mltplo)      # number of elements into x direction (wavelength/35)
 Ny      = int(round(((ye-yb)/(waveLen/waveSol))/mltplo)*mltplo)
 Nz      = int(round(((ze-zb)/(waveLen/waveSol))/mltplo)*mltplo)
+
+Nx = 99
+Ny = 49
+Nz = 49
 
 # Domain stg 3 - Heat solver cartesian coords
 #xb_ht = 21.e-3 # Domain boundaries - m (x direction)
@@ -117,10 +121,10 @@ Nz      = int(round(((ze-zb)/(waveLen/waveSol))/mltplo)*mltplo)
 ########### Time set up #########
 
 # E-L solver
-dt_hyd = (1/freq)/(4*25)    # time-step - sec
-t_save_hyd  = 0.5e-06       # save time - sec0
-t_stop_stg1 = 1.0e-06       # stop time stg1 - sec 
-t_stop_stg2 = 2.0e-06       # stop time stg2 - sec
+dt_hyd = (1/freq)/(100)    # time-step - sec
+t_save_hyd  = 0.1e-06       # save time - sec0
+t_stop_stg1 = 0.1e-06       # stop time stg1 - sec 
+t_stop_stg2 = 0.2e-06       # stop time stg2 - sec
 
 # Heat solver
 cfl_heat = 0.1            # Courant number for diffusion equation cartesian (even dx, dy, dz)
@@ -151,23 +155,23 @@ print(json.dumps({
     'y_domain%end'                 : ye/x0,
     'z_domain%beg'                 : zb/x0,
     'z_domain%end'                 : ze/x0,
-    'stretch_x'                    : 'T',
+    'stretch_x'                    : 'F',
     'a_x'                          : 40,
     'x_a'                          : -65e-03/x0,
     'x_b'                          : 65e-03/x0,
-    'stretch_y'                    : 'T',
+    'stretch_y'                    : 'F',
     'a_y'                          : 0.3,
     'y_a'                          : -16e-03/x0,
     'y_b'                          : 16e-03/x0,
-    'stretch_z'                    : 'T',
+    'stretch_z'                    : 'F',
     'a_z'                          : 0.3,
     'z_a'                          : -16e-03/x0,
     'z_b'                          : 16e-03/x0,
     'm'                            : Nx,
     'n'                            : Ny,
     'p'                            : Nz,
-    'adap_dt'                      : 'T',       #Strang splitting
-    'cfl_adap_dt'                  : 'T',
+    'adap_dt'                      : 'F',       #Strang splitting
+    'cfl_adap_dt'                  : 'F',
     'cfl_target'                   : 0.5,
     'dt'                           : round(dt_hyd*c0/x0,6),
     't_step_start'                 : 0,     ############### also modify stg1, stg2 or stg3 flags
@@ -238,11 +242,11 @@ print(json.dumps({
     # power balance
     'hifu_params%power_balance'     : 'T',
     'hifu_params%cv_xb'             : 3.e-03/x0,
-    'hifu_params%cv_xe'             : 4.e-03/x0,
+    'hifu_params%cv_xe'             : 3.1005e-03/x0,
     'hifu_params%cv_yb'             : 0.,
-    'hifu_params%cv_ye'             : 1.e-03/x0,
+    'hifu_params%cv_ye'             : 0.1005e-03/x0,
     'hifu_params%cv_zb'             : 0.,
-    'hifu_params%cv_ze'             : 1.e-03/x0,
+    'hifu_params%cv_ze'             : 0.1005e-03/x0,
     # STG3: Solving heat equation
     'hifu_params%stg3'              : 'T',
     'hifu_params%intPrms'           : 'F', # True: Utilize qus from Prms
@@ -266,7 +270,7 @@ print(json.dumps({
     # ==========================================================
 
     # Lagrangian Bubbles ===========================
-     'bubbles_lagrange'                 : 'T',
+     'bubbles_lagrange'                 : 'F',
      'bubble_model'                     : 2,    # Keller-Miksis model
      'lag_params%nBubs_glb'             : 5,  # Number of bubbles
      'lag_params%solver_approach'       : 2,    # Two-way coupled
