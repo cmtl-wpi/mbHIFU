@@ -163,7 +163,7 @@ for bc_p_id in range(1, 10+1):
 
     PRE_PROCESS[f"patch_bc({bc_p_id})%radius"] = ParamType.REAL
 
-for p_id in range(1, 100+1):
+for p_id in range(1, 10+1):
     for attribute, ty in [("geometry", ParamType.INT), ("smoothen", ParamType.LOG),
                       ("smooth_patch_id", ParamType.INT), ("hcid", ParamType.INT)]:
         PRE_PROCESS[f"patch_icpp({p_id})%{attribute}"] = ty
@@ -340,7 +340,7 @@ for var in [ 'epsilonb', 'valmaxvoid', 'charwidth', 'diffcoefvap',
     SIMULATION[f'lag_params%{var}'] = ParamType.REAL
 
 for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',
-             'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian' ]:
+             'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian', 'moments','power_balance' ]:
     SIMULATION[f'hifu_params%{var}'] = ParamType.LOG
 
 for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
@@ -348,7 +348,8 @@ for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_s
     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
 
 for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-             'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud']:
+             'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud',
+             'cv_xb', 'cv_xe', 'cv_yb', 'cv_ye', 'cv_zb', 'cv_ze']:
     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
 
 for dir_id in range(1, 4):

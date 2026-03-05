@@ -1002,16 +1002,12 @@ contains
 
         real(wp), dimension(1:4) :: mom_vol, mom_qvis, mom_qth_p, mom_qth_n
         real(wp) :: fVol, fxb_Rc
-        logical :: momentsFlag
 
         integer :: total_ids, bub_idx
         call nvtxStartRange("LAGRANGE-BUBBLE-DYNAMICS")
 
         !< BUBBLE DYNAMICS
-
-        momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
-
-        if (momentsFlag) then
+        if (hifu_params%moments) then
             mom_vol = 0._wp; mom_qvis = 0._wp
             mom_qth_p = 0._wp; mom_qth_n = 0._wp
         end if
@@ -1131,7 +1127,7 @@ contains
                     bub_qth(k) = bub_qth(k) + myQth     !> Thermal damping of the bubble (Watts)
                     bub_hifu_rad(k) = bub_hifu_rad(k) + myRmean !> Mean radius (m*sec)
                     ! if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage, bub_qvis(k), bub_qth(k)
-                    if (momentsFlag) then
+                    if (hifu_params%moments) then
                         fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
                         fVol = (4._wp/3._wp)*pi*myR**3._wp
 
@@ -1176,7 +1172,7 @@ contains
 
         if (adap_dt .and. adap_dt_stop_max > 0) call s_mpi_abort("Adaptive time stepping failed to converge.")
 
-        if (hifu_params%sampling .and. adap_dt .and. momentsFlag) then
+        if (hifu_params%sampling .and. adap_dt .and. hifu_params%moments) then
             if (stage == 3) then
                 do i=1,4
                     moments_bubs(1, i) = moments_bubs(1, i) + mom_qvis(i)
@@ -1941,11 +1937,8 @@ contains
 
         real(wp), dimension(1:4) :: mom_vol, mom_qvis, mom_qth_p, mom_qth_n
         real(wp) :: fxb_Rc, fqvis, fqth, fVol
-        logical :: momentsFlag
-
-        momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
         
-        if (momentsFlag) then
+        if (hifu_params%moments) then
             mom_vol = 0._wp; mom_qvis = 0._wp
             mom_qth_p = 0._wp; mom_qth_n = 0._wp
         end if
@@ -1969,7 +1962,7 @@ contains
             fV_h = intfc_vel(k, 1)
             fbeta_t_h = gas_betaT(k)
             fshell_h = mrmtnt_shell(k, 1)
-            if (momentsFlag) fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
+            if (hifu_params%moments) fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
 
             ! Mixture properties in the bubble
             conc_v_h = 0._wp
@@ -2015,7 +2008,7 @@ contains
 
             abortFlag_max = max(abortFlag_max, abortFlag)
 
-            if (momentsFlag) then
+            if (hifu_params%moments) then
                         fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
 
                         $:GPU_LOOP(parallelism='[seq]')
@@ -2035,7 +2028,7 @@ contains
 
         if (abortFlag_max > 0) stop "NaNs in viscous (or thermal) damping of the bubbles"
 
-        if (momentsFlag) then
+        if (hifu_params%moments) then
             call s_write_moments(mom_qvis, idx=1)
             call s_write_moments(mom_qth_p, idx=2)
             call s_write_moments(mom_qth_n, idx=3)
@@ -2694,9 +2687,7 @@ contains
         integer :: i, j, k
 
         character(LEN=path_len + 2*name_len) :: file_loc
-        logical :: file_exist, momentsFlag
-
-        momentsFlag = .not. f_approx_equal(hifu_params%R_cloud, 0._wp)
+        logical :: file_exist
 
         if (proc_rank == 0) then
             write (file_loc, '(A)') 'voidfraction.dat'
@@ -2763,7 +2754,7 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
 
         if (proc_rank == 0) then
 
-            if (momentsFlag) then
+            if (hifu_params%moments) then
             write (12, '(6X,8e24.8)') &
                 qtime, &
                 lag_void_avg, &

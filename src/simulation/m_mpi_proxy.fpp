@@ -151,7 +151,7 @@ contains
 
         if (hifu) then
             #:for VAR in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages', &
-                & 'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian']
+                & 'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian', 'moments','power_balance' ]
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
@@ -161,7 +161,8 @@ contains
             #:endfor
 
             #:for VAR in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 'dt_stg3', 'dt_stg2', 't_stop_stg1', &
-                & 't_stop_stg2', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud']
+                & 't_stop_stg2', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud', & 
+                & 'cv_xb', 'cv_xe', 'cv_yb', 'cv_ye', 'cv_zb', 'cv_ze']
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 

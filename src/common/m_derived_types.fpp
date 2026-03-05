@@ -509,9 +509,13 @@ module m_derived_types
         integer :: m, n, p      !< number of cells for the cartesian grid
 
         integer :: T_idx, tsamp_idx, qus_idx, qus_prms_idx, qvis_idx, qth_idx, P_idx, u_idx, v_idx
-
+        
+        logical :: moments !< Whether to compute moments
         real(wp) :: R_cloud      !< Radius of the bubble cloud to filter moments region
         real(wp), dimension(1:3) :: cloud_center !< Center of the bubble cloud
+
+        logical :: power_balance !< Whether to compute the acoustic power balance in the domain
+        real(wp):: cv_xb, cv_xe, cv_yb, cv_ye, cv_zb, cv_ze !< Acoustic power integral bounds
 
     end type hifu_parameters
 

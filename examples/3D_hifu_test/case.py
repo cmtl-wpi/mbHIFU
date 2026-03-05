@@ -229,10 +229,20 @@ print(json.dumps({
     'hifu_params%dt_stg2'           : round(dt_hyd*c0/x0,6),
     'hifu_params%t_stop_stg2'       : t_stop_stg2*(c0/x0),
     'hifu_params%t_step_stop_stg2'  : t_step_stop_stg2,
-    'hifu_params%R_cloud'  : 1.0,
-    'hifu_params%cloud_center(1)'  : 0.0,
-    'hifu_params%cloud_center(2)'  : 0.0,
-    'hifu_params%cloud_center(3)'  : 0.0,
+    # moments
+    'hifu_params%moments'           : 'F',
+    'hifu_params%R_cloud'           : 1.e-03/x0,
+    'hifu_params%cloud_center(1)'   : 4.e-03/x0,
+    'hifu_params%cloud_center(2)'   : 0.0,
+    'hifu_params%cloud_center(3)'   : 0.0,
+    # power balance
+    'hifu_params%power_balance'     : 'T',
+    'hifu_params%cv_xb'             : 3.e-03/x0,
+    'hifu_params%cv_xe'             : 4.e-03/x0,
+    'hifu_params%cv_yb'             : 0.,
+    'hifu_params%cv_ye'             : 1.e-03/x0,
+    'hifu_params%cv_zb'             : 0.,
+    'hifu_params%cv_ze'             : 1.e-03/x0,
     # STG3: Solving heat equation
     'hifu_params%stg3'              : 'T',
     'hifu_params%intPrms'           : 'F', # True: Utilize qus from Prms

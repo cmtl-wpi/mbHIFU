@@ -903,8 +903,16 @@ contains
         hifu_params%m = dflt_int
         hifu_params%n = dflt_int
         hifu_params%p = dflt_int
+        hifu_params%moments = .false.
         hifu_params%R_cloud = 0._wp
         hifu_params%cloud_center = [0._wp, 0._wp, 0._wp]
+        hifu_params%power_balance =.false.
+        hifu_params%cv_xb = dflt_real
+        hifu_params%cv_xe = dflt_real
+        hifu_params%cv_yb = dflt_real
+        hifu_params%cv_ye = dflt_real
+        hifu_params%cv_zb = dflt_real
+        hifu_params%cv_ze = dflt_real
 
         !Acoustic wave generator (boundary condition)
         acoustic_bc_params%iwave = dflt_int
