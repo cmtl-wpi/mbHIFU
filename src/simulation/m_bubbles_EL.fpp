@@ -262,6 +262,7 @@ contains
         ! Initialize number of particles
         bub_id = 0
         id = 0
+        safeStop = 0._wp
 
         ! Read the input lag_bubble file or restart point
         if (cfl_dt) then
@@ -317,8 +318,7 @@ contains
         end if
 
         print '("Lagrange bubbles running, in proc ", I8, " number: ", I8, " / ", I8)', proc_rank, bub_id, id
-        ! print *, " Lagrange bubbles running, in proc", proc_rank, "number:", bub_id, "/", id
-        
+
         call s_mpi_barrier()
         if (num_procs > 1) then
             call s_mpi_allreduce_max(safeStop, tmp_val)
