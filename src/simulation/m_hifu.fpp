@@ -34,8 +34,6 @@ module m_hifu
     integer :: bc_pole, sys_size_hyd
     $:GPU_DECLARE(create='[bc_pole, sys_size_hyd]')
 
-    real(wp), allocatable, dimension(:,:) :: acPw_in, acPw_out
-
 contains
 
     !> Initializes the hifu model
@@ -82,15 +80,6 @@ contains
         end do
         $:GPU_UPDATE(device='[sys_size_hyd, shear_viscous_fluids, bulk_viscous_fluids, &
           & abs_coef_fluids, rho_cp_fluids, tdiff_fluids]')
-
-        ! Store acoustic power samples, 
-        !(total=1:tmp=2, faces: xe=1, xb=2, ye=3, yb=4, ze=5, zb=6)
-        @:ALLOCATE(acPw_in(1:2, 1:6))
-        @:ALLOCATE(acPw_out(1:2, 1:6))
-
-        acPw_in(:, :) = 0._wp
-        acPw_out(:, :) = 0._wp
-        $:GPU_UPDATE(device='[acPw_in, acPw_out]')
 
     end subroutine s_initialize_HIFU_module
 
@@ -2887,9 +2876,6 @@ contains
         @:DEALLOCATE(abs_coef_fluids)
         @:DEALLOCATE(rho_cp_fluids)
         @:DEALLOCATE(tdiff_fluids)
-
-        @:DEALLOCATE(acPw_in)
-        @:DEALLOCATE(acPw_out)
 
     end subroutine s_finalize_HIFU_module
 
