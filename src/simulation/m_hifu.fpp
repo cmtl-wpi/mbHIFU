@@ -805,11 +805,15 @@ contains
                         ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
                         ep23 = 0.5_wp*(duydn(3) + duzdn(2))
 
-                        varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                        varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
-                                                           6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        ! varA = ep11**2._wp + ep22**2._wp + ep33**2._wp 
+                        ! varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
+                        !                                    6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        ! intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB
 
-                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB
+                        varA = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep11*ep22 + ep11*ep33 + ep22*ep33)
+                        varB = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+
+                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB - (2._wp/3._wp)*shearVisc*varA !intensity is "q_us_ac"
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
@@ -872,7 +876,6 @@ contains
                             do i = 1, num_dims
                                 n_sgn = f_is_on_cv_border(j, k, l, i)
                                 if (n_sgn /= 0) then
-                                    !print*, ' Computing acoustic power for CV face:', proc_rank, j, k, l, i, n_sgn
                                     call s_compute_cv_acoustic_power(q_prim_vf, j, k, l, &
                                                               i, n_sgn, pres_h, vel_h, acPw)
                                     
@@ -883,12 +886,13 @@ contains
                                     else
                                         acPw_out_dt(s) = acPw_out_dt(s) + acPw
                                     end if
+                                    ! if (i==1 .and. n_sgn == -1) print*, ' Computing acoustic power for CV face:', j,k,l,s,acPw
                                 end if
                             end do
 
                             flg_cell_in_cv = f_cell_in_cv(j, k, l)
                             if (flg_cell_in_cv) then
-                                !print*, 'Cell in CV for power balance:', proc_rank, j, k, l
+                                ! print*, 'Cell in CV for power balance:', proc_rank, j, k, l
                                 acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
                             end if
 
@@ -897,6 +901,8 @@ contains
                     end do
                 end do
             end do
+
+            ! call s_mpi_abort("Debugging GPUs")
 
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity"
 
