@@ -56,9 +56,9 @@ cd "${MFC_ROOT_DIR}"
 cd - > /dev/null
 echo
 
-% if gpu:
-    export MPICH_GPU_SUPPORT_ENABLED=0 # Disable GPU-Direct MPI
-% endif
+# % if gpu:
+#     export MPICH_GPU_SUPPORT_ENABLED=1 # Disable GPU-Direct MPI
+# % endif
 
 % for target in targets:
     ${helpers.run_prologue(target)}
@@ -67,30 +67,26 @@ echo
         (set -x; ${profiler} "${target.get_install_binpath(case)}")
     % else:
     	% if gpu:
-	    % if partition:
-	    	(set -x; ${profiler}                                   \
-                        srun    --account=bgko-delta-gpu --partition=gpuA100x4 --ntasks=${nodes*tasks_per_node}\
-                                --gpus-per-node=4 --gpu-bind=closest --mem=208G  \
-                        "${target.get_install_binpath(case)}")
-	    % else:	
-        	(set -x; ${profiler}                                   \
-			srun    --account=bgko-delta-gpu --partition=gpuA100x4-interactive --ntasks=${nodes*tasks_per_node}\
-			        --gpus-per-node=4 --gpu-bind=closest --mem=208G  \
-                   	"${target.get_install_binpath(case)}")
-	    % endif
-	% else:
-	    % if partition:
-	    	(set -x; ${profiler}                                   \
-                        srun  --account=bgko-delta-cpu --partition=cpu \
-                        --ntasks=${nodes*tasks_per_node}  \
-                        "${target.get_install_binpath(case)}")
+            (set -x; ${profiler}                         \
+                    mpirun  -x UCX_NET_DEVICES=all       \
+                            -mca coll_hcoll_enable 0     \
+                            -np ${nodes*tasks_per_node}  \
+                            "${target.get_install_binpath(case)}")
 	    % else:
-		(set -x; ${profiler}                                   \
-                        srun  --account=bgko-delta-cpu --partition=cpu-interactive \
-                        --ntasks=${nodes*tasks_per_node}  \
-                        "${target.get_install_binpath(case)}")
+            % if partition:
+                (set -x; ${profiler}                            \
+                    srun    --account=bgko-delta-cpu            \
+                            --partition=cpu                     \
+                            --ntasks=${nodes*tasks_per_node}    \
+                            "${target.get_install_binpath(case)}")
+            % else:
+                (set -x; ${profiler}                            \
+                    srun    --account=bgko-delta-cpu            \
+                            --partition=cpu-interactive         \
+                            --ntasks=${nodes*tasks_per_node}    \
+                            "${target.get_install_binpath(case)}")
+            % endif
 	    % endif
-	% endif
     % endif
 
     ${helpers.run_epilogue(target)}
