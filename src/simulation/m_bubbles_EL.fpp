@@ -164,11 +164,9 @@ contains
         @:ALLOCATE(mrmtnt_Rrupt(1:nBubs_glb))
 
         ! hifu
-        if (hifu) then
-            @:ALLOCATE(bub_qvis(1:nBubs_glb))
-            @:ALLOCATE(bub_qth(1:nBubs_glb))
-            @:ALLOCATE(bub_hifu_rad(1:nBubs_glb))
-        end if
+        @:ALLOCATE(bub_qvis(1:nBubs_glb))
+        @:ALLOCATE(bub_qth(1:nBubs_glb))
+        @:ALLOCATE(bub_hifu_rad(1:nBubs_glb))
 
         if (hifu_params%moments) then
             @:ALLOCATE(moments_bubs(1:4, 1:4))
@@ -362,8 +360,7 @@ contains
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
         Rmean_glb = 0._wp
-        moments_bubs(1:4, 1:4) = 0._wp
-        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb, moments_bubs]')
+        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb]')
 
         $:GPU_UPDATE(device='[dx,dy,dz,x_cb,x_cc,y_cb,y_cc,z_cb,z_cc]')
 
@@ -1210,7 +1207,6 @@ contains
                         call s_write_moments(moments_bubs(i, 1:4), idx=i)
                     end do
 
-                    moments_bubs(1:4, 1:4) = 0._wp
                 else
                     do i=1,4
                         moments_bubs(1, i) = mom_qvis(i)
@@ -3185,11 +3181,9 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
         @:DEALLOCATE(mtn_posPrev)
         @:DEALLOCATE(mtn_s)
         ! hifu
-        if (hifu) then
-            @:DEALLOCATE(bub_qvis)
-            @:DEALLOCATE(bub_qth)
-            @:DEALLOCATE(bub_hifu_rad)
-        end if
+        @:DEALLOCATE(bub_qvis)
+        @:DEALLOCATE(bub_qth)
+        @:DEALLOCATE(bub_hifu_rad)
 
         if (.not. hifu_params%heatSolver) then
             @:DEALLOCATE(Rmax_stats)
