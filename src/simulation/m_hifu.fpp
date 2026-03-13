@@ -44,15 +44,27 @@ contains
         sys_size_hyd = sys_size
 
         ! Define hifu indexes
-        hifu_params%T_idx = 1
-        hifu_params%tsamp_idx = 3
-        hifu_params%qus_idx = 4
-        hifu_params%qvis_idx = 5
-        hifu_params%qth_idx = 7
-        hifu_params%qus_prms_idx = 9
+        hifu_params%qus_idx = 1
+        hifu_params%qus_prms_idx = 2
+        hifu_params%qvis_idx = 3
+        hifu_params%qth_idx = 5
+        hifu_params%T_idx = 7
+        hifu_params%tsamp_idx = 9
         hifu_params%P_idx = 10
-        hifu_params%u_idx = 12
-        hifu_params%v_idx = 14
+        if (hifu_params%streaming) then
+            hifu_params%u_idx = 12
+            hifu_params%v_idx = 14
+        end if
+
+        ! hifu_params%T_idx = 1
+        ! hifu_params%tsamp_idx = 3
+        ! hifu_params%qus_idx = 4
+        ! hifu_params%qvis_idx = 5
+        ! hifu_params%qth_idx = 7
+        ! hifu_params%qus_prms_idx = 9
+        ! hifu_params%P_idx = 10
+        ! hifu_params%u_idx = 12
+        ! hifu_params%v_idx = 14
 
         ! Allocating the cell-average RHS variables
         @:ALLOCATE(q_hifu%vf(1:sys_size_hifu))
@@ -517,7 +529,7 @@ contains
 
         integer :: n_sgn
         real(wp) :: acPw , acPw_qac
-        real(wp), dimension(6) :: acPw_in_dt, acPw_out_dt
+        real(wp), dimension(1:6) :: acPw_in_dt, acPw_out_dt
         logical :: flg_cell_in_cv
 
         if (hifu_params%moments) mom_qac = 0._wp
@@ -655,8 +667,10 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        if (hifu_params%streaming) then
+                            q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                            q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        end if
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > y_cc(k) .and. y_cc(k) > 0._wp)
@@ -830,8 +844,10 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        if (hifu_params%streaming) then
+                            q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                            q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        end if
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
@@ -2329,13 +2345,15 @@ contains
 
                             !> Find temperature and streaming velocities at the faces of the cell
                             Tx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, l))/2._wp
-                            Ux_L = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
                             Tx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l))/2._wp
-                            Ux_R = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
                             Tr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, l))/2._wp
-                            Ur_L = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
                             Tr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l))/2._wp
-                            Ur_R = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
+                            if (hifu_params%streaming) then
+                                Ux_L = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
+                                Ux_R = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
+                                Ur_L = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
+                                Ur_R = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
+                            end if
 
                             !> Get thermal properties
                             alpha = 0._wp
@@ -2831,6 +2849,11 @@ contains
                 file_path = trim(case_dir)//trim(file_path)
                 open (90, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
                 write (90, *) 'mytime, hdid, qac'
+
+                write (file_path, '(A,I0,A)') '/D/power_balance_qbub.dat'
+                file_path = trim(case_dir)//trim(file_path)
+                open (89, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
+                write (89, *) 'mytime, hdid, qvis, qth'
             end if
 
         end if
@@ -2858,6 +2881,7 @@ contains
             close (92)
             close (91)
             close (90)
+            close (89)
         end if
 
     end subroutine s_close_run_time_information_samplingHIFU

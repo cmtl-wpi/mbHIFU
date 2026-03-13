@@ -122,17 +122,18 @@ Nz = 49
 
 # E-L solver
 T = 1/freq
+factorTime = 1
 dt_hyd = T/(100)    # time-step - sec
-t_save_hyd  = T      # save time - sec0
-t_stop_stg1 = 2*T       # stop time stg1 - sec 
-t_stop_stg2 = 3*T       # stop time stg2 - sec
+t_save_hyd  = factorTime*T      # save time - sec0
+t_stop_stg1 = factorTime*2*T       # stop time stg1 - sec 
+t_stop_stg2 = factorTime*3*T       # stop time stg2 - sec
 
 # Heat solver
 cfl_heat = 0.1            # Courant number for diffusion equation cartesian (even dx, dy, dz)
 dt_heat = cfl_heat*((xe-xb)/Nx)**2 / tdiff_host    # time-step - sec
-t_save_heat = 1.           # save time - sec
-t_stop_stg3 = 2.           # stop time - sec
-t_stop_hifu_source = 1.    # stop hifu time - sec
+t_save_heat = 0.1           # save time - sec
+t_stop_stg3 = 0.2           # stop time - sec
+t_stop_hifu_source = 0.1    # stop hifu time - sec
 
 t_step_stop_stg1 = int(t_stop_stg1*(c0/x0)/round(dt_hyd*c0/x0,6))
 t_step_stop_stg2 = int(t_stop_stg2*(c0/x0)/round(dt_hyd*c0/x0,6))
@@ -184,7 +185,7 @@ print(json.dumps({
     # ==========================================================
 
     # Simulation Algorithm Parameters ==========================
-    'num_fluids'                   : 1,         # Water/Phantom/BubbleGas
+    'num_fluids'                   : 2,         # Water/Phantom/BubbleGas
     'num_patches'                  : 1,
     'viscous'                      : 'T',
     'model_eqns'                   : 2,         # 5 model eqns
@@ -243,7 +244,7 @@ print(json.dumps({
     # power balance
     'hifu_params%power_balance'     : 'T',
     'hifu_params%cv_xb'             : 1.e-03/x0,
-    'hifu_params%cv_xe'             : 2.e-03/x0,
+    'hifu_params%cv_xe'             : 3.e-03/x0,
     'hifu_params%cv_yb'             : 0.,
     'hifu_params%cv_ye'             : 1.e-03/x0,
     'hifu_params%cv_zb'             : 0.,
@@ -271,8 +272,10 @@ print(json.dumps({
     # ==========================================================
 
     # Lagrangian Bubbles ===========================
-     'bubbles_lagrange'                 : 'F',
+     'bubbles_lagrange'                 : 'T',
      'bubble_model'                     : 2,    # Keller-Miksis model
+     'thermal': 3,
+     'polytropic':'F',
      'lag_params%nBubs_glb'             : 5,  # Number of bubbles
      'lag_params%solver_approach'       : 2,    # Two-way coupled
      'lag_params%cluster_type'          : 2,    # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
@@ -329,7 +332,9 @@ print(json.dumps({
     'patch_icpp(1)%vel(3)'         : 0.,
     'patch_icpp(1)%pres'           : patm/p0,
     'patch_icpp(1)%alpha_rho(1)'   : rho_host/rho0,
+    'patch_icpp(1)%alpha_rho(2)'   : 0.,
     'patch_icpp(1)%alpha(1)'       : 1.,
+    'patch_icpp(1)%alpha(2)'       : 0.,
     # ==========================================================
 
     # # Patch 1: Water (left) ====================================
@@ -394,23 +399,23 @@ print(json.dumps({
     'fluid_pp(1)%rho_cp'           : (rho_host/rho0)*(cp_host*(T0/(c0*c0))),
     'fluid_pp(1)%tdiff'            : tdiff_host/(x0*c0),
     'fluid_pp(1)%absCoef'          : abs_coef_host*x0,
-    # 'fluid_pp(2)%mul0'             : mu_host,
-    # 'fluid_pp(2)%ss'               : sigBubble,
-    # 'fluid_pp(2)%pv'               : pv,
-    # 'fluid_pp(2)%gamma_v'          : gamma_v,
-    # 'fluid_pp(2)%M_v'              : MW_v,
-    # 'fluid_pp(2)%k_v'              : k_v,
-    # 'fluid_pp(2)%cp_v'             : cp_v,
+    'fluid_pp(1)%mul0'             : mu_host,
+    'fluid_pp(1)%ss'               : sigBubble,
+    'fluid_pp(1)%pv'               : pv,
+    'fluid_pp(1)%gamma_v'          : gamma_v,
+    'fluid_pp(1)%M_v'              : MW_v,
+    'fluid_pp(1)%k_v'              : k_v,
+    'fluid_pp(1)%cp_v'             : cp_v,
 
     # Bubble gas state
-    # 'fluid_pp(3)%gamma'            : 1./(gamma_g-1.),
-    # 'fluid_pp(3)%pi_inf'           : 0.0E+00,
-    # 'fluid_pp(3)%Re(1)'            : 1.0/(mu_g/(rho0*c0*x0)),
-    # 'fluid_pp(3)%Re(2)'            : 1.0/(mu_g/(rho0*c0*x0)),
-    # 'fluid_pp(3)%gamma_v'          : gamma_g,
-    # 'fluid_pp(3)%M_v'              : MW_g,
-    # 'fluid_pp(3)%k_v'              : k_g,
-    # 'fluid_pp(3)%cp_v'             : cp_g,
+    'fluid_pp(2)%gamma'            : 1./(gamma_g-1.),
+    'fluid_pp(2)%pi_inf'           : 0.0E+00,
+    'fluid_pp(2)%Re(1)'            : 1.0/(mu_g/(rho0*c0*x0)),
+    'fluid_pp(2)%Re(2)'            : 1.0/(mu_g/(rho0*c0*x0)),
+    'fluid_pp(2)%gamma_v'          : gamma_g,
+    'fluid_pp(2)%M_v'              : MW_g,
+    'fluid_pp(2)%k_v'              : k_g,
+    'fluid_pp(2)%cp_v'             : cp_g,
     # ==========================================================
  }))
 
