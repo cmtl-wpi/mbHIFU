@@ -1134,6 +1134,7 @@ contains
                 intfc_vel(k, 1) = myV
                 intfc_ac(k, 1) = myAc
                 gas_p(k, 1) = myPb
+                if (polytropic) gas_p(k, 1) = pv + (myPb - pv)*(bub_R0(k)/myR)**(3._wp*gamma_m)
                 gas_mv(k, 1) = myMass_v
                 mrmtnt_shell(k, 1) = myShell
                 if (hifu_params%sampling) then
