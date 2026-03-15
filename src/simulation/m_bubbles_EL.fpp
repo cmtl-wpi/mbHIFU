@@ -1219,8 +1219,8 @@ contains
             end if
             if (hifu_params%power_balance) then
                 if (stage == 3) then
-                    acPw_bubs(1) = acPw_bubs(1) + acPw_qvis
-                    acPw_bubs(2) = acPw_bubs(2) + acPw_qth
+                    acPw_bubs(1) = 0.5_wp * acPw_bubs(1) + 0.5_wp * acPw_qvis
+                    acPw_bubs(2) = 0.5_wp * acPw_bubs(2) + 0.5_wp * acPw_qth
                     call s_write_power_balance_bubs(acPw_bubs(1), acPw_bubs(2), acPW_nbubs, dt)
                 else
                     acPw_bubs(1) = acPw_qvis
@@ -2095,17 +2095,17 @@ contains
                     mom_vol(i) = mom_vol(i) + fVol*(fxb_Rc)**(i-1)
                     mom_qvis(i) = mom_qvis(i) + (fqvis/hdid)*(fxb_Rc)**(i-1)
                     if (fqth < 0._wp) then
-                        mom_qth_p(i) = mom_qth_p(i) + (fqth/hdid)*(fxb_Rc)**(i-1)
+                        mom_qth_p(i) = mom_qth_p(i) + fqth*(fxb_Rc)**(i-1)
                     else
-                        mom_qth_n(i) = mom_qth_n(i) + (fqth/hdid)*(fxb_Rc)**(i-1)
+                        mom_qth_n(i) = mom_qth_n(i) + fqth*(fxb_Rc)**(i-1)
                     end if
                 end do
             end if
             if (hifu_params%power_balance) then
                 flg_bub_in_cv = f_bub_in_cv(mtn_pos(k, 1:3, 1))
                 if (flg_bub_in_cv) then
-                    acPw_qvis = acPw_qvis + fqvis/hdid !(Watts)
-                    acPw_qth = acPw_qth + fqth/hdid    !(Watts)
+                    acPw_qvis = acPw_qvis + fqvis !(Watts)
+                    acPw_qth = acPw_qth + fqth    !(Watts)
                     acPW_nbubs = acPW_nbubs + 1._wp
                 end if
             end if
