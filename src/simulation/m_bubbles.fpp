@@ -749,9 +749,10 @@ contains
 
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
-                        fpb = myPb_tmp1(4)
                         if (polytropic) then 
                           fpb = pv + (fpb - pv)*(fR0/fR)**(3._wp*gamma_m)
+                        else
+                          fpb = myPb_tmp1(4)
                         end if
                         fmass_v = myMv_tmp1(4)
                         if (fR > fRrupt) fshell = 0._wp
