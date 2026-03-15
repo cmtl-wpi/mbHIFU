@@ -1061,7 +1061,6 @@ contains
 
             ! Current bubble state
             myPb = gas_p(k, 2)
-            print*, gas_p(k, 1), gas_p(k, 2), stage
             myMass_n = gas_mg(k)
             myMass_v = gas_mv(k, 2)
             myR = intfc_rad(k, 2)
