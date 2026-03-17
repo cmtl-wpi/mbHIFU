@@ -122,7 +122,7 @@ Nz = 49
 
 # E-L solver
 T = 1/freq
-factorTime = 1
+factorTime = 0.1
 dt_hyd = T/(100)    # time-step - sec
 t_save_hyd  = factorTime*T      # save time - sec0
 t_stop_stg1 = factorTime*2*T       # stop time stg1 - sec 

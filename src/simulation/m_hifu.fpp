@@ -528,7 +528,7 @@ contains
         real(wp) :: dist_radial, vol_cell, xb_Rc
 
         integer :: n_sgn
-        real(wp) :: acPw , acPw_qac
+        real(wp) :: acPw , acPw_qac, acPw_cmprssv, acPw_kntc
         real(wp), dimension(1:6) :: acPw_in_dt, acPw_out_dt
         logical :: flg_cell_in_cv
 
@@ -538,6 +538,7 @@ contains
         sumIntensity_ac = 0._wp
 
         acPw_in_dt(:) = 0._wp; acPw_out_dt(:) = 0._wp; acPw_qac = 0._wp
+        acPw_cmprssv = 0._wp; acPw_kntc = 0._wp
 
         if (bubbles_lagrange .and. .not. adap_dt) call s_compute_bubble_heat_sources_HIFU(hdid)
 
@@ -717,10 +718,10 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms],[sumIntensity_ac,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac]]', &
+              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms],[sumIntensity_ac,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac,acPw_cmprssv,acPw_kntc]]', &
               & reductionOp='[MAX,+]', &
               & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn]', &
-              & copy='[sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac]')
+              & copy='[sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac,acPw_cmprssv,acPw_kntc]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -877,6 +878,15 @@ contains
                         end if
 
                          if (hifu_params%power_balance) then
+                            
+                            flg_cell_in_cv = f_cell_in_cv(j, k, l)
+                            if (flg_cell_in_cv) then
+                                ! print*, 'Cell in CV for power balance:', proc_rank, j, k, l
+                                acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
+                                acPw_cmprssv = acPw_cmprssv + ((pres_h - hifu_params%atmPres)**2._wp/(2._wp*rho_h*cson_h**2._wp))*dx(j)*dy(k)*dz(l)
+                                acPw_kntc = acPw_kntc + (0.5_wp*rho_h*dot_product(vel_h, vel_h))*dx(j)*dy(k)*dz(l)
+                            end if
+
                             $:GPU_LOOP(parallelism='[seq]')
                             do i = 1, num_dims
                                 n_sgn = f_is_on_cv_border(j, k, l, i)
@@ -895,12 +905,6 @@ contains
                                 end if
                             end do
 
-                            flg_cell_in_cv = f_cell_in_cv(j, k, l)
-                            if (flg_cell_in_cv) then
-                                ! print*, 'Cell in CV for power balance:', proc_rank, j, k, l
-                                acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
-                            end if
-
                          end if
 
                     end do
@@ -911,7 +915,7 @@ contains
 
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity"
 
-            call s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, hdid)
+            call s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, acPw_cmprssv, acPw_kntc, hdid)
 
             if (num_procs > 1) then
                 tmp = sumIntensity_ac
@@ -953,9 +957,9 @@ contains
 
     end function f_cell_in_cv
 
-    subroutine s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, hdid)
+    subroutine s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, acPw_cmprssv, acPw_kntc, hdid)
         real(wp), dimension(6), intent(inout) :: acPw_in_dt, acPw_out_dt
-        real(wp), intent(inout) :: acPw_qac
+        real(wp), intent(inout) :: acPw_qac, acPw_cmprssv, acPw_kntc
         real(wp), intent(in) :: hdid
         real(wp) :: var_glb
         integer :: i
@@ -971,6 +975,12 @@ contains
 
             call s_mpi_allreduce_sum(acPw_qac, var_glb)
             acPw_qac = var_glb
+
+            call s_mpi_allreduce_sum(acPw_cmprssv, var_glb)
+            acPw_cmprssv = var_glb
+
+            call s_mpi_allreduce_sum(acPw_kntc, var_glb)
+            acPw_kntc = var_glb
         end if
 
         if (proc_rank == 0) then 
@@ -989,7 +999,7 @@ contains
 
           write (90, '(*(E24.8,:,","))') &
                 mytime, hdid, &
-                acPw_qac
+                acPw_qac, acPw_cmprssv, acPw_kntc
 
         end if
 
@@ -2848,7 +2858,7 @@ contains
                 write (file_path, '(A,I0,A)') '/D/power_balance_qac.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (90, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (90, *) 'mytime, hdid, qac'
+                write (90, *) 'mytime, hdid, qac, acPw_cmprssv, acPw_kntc'
 
                 write (file_path, '(A,I0,A)') '/D/power_balance_qbub.dat'
                 file_path = trim(case_dir)//trim(file_path)
