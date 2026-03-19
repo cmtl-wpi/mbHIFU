@@ -2811,9 +2811,10 @@ contains
                 end do
             end do
         end do
+        nBubs_all = real(nBubs, wp)
 
 $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
-
+        
 #ifdef MFC_MPI
         if (num_procs > 1) then
             call s_mpi_allreduce_max(lag_void_max, void_max_glb)
@@ -2828,7 +2829,7 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
             Rmin_glb = aux_glb
             call s_mpi_allreduce_sum(Rmean_glb, aux_glb)
             Rmean_glb = aux_glb
-            call s_mpi_allreduce_sum(real(nBubs, wp), aux_glb)
+            call s_mpi_allreduce_sum(nBubs_all, aux_glb)
             nBubs_all = aux_glb
         end if
 #endif
