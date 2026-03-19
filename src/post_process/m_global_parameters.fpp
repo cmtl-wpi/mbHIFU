@@ -842,7 +842,10 @@ contains
         chemxb = species_idx%beg
         chemxe = species_idx%end
 
-        if (hifu) sys_size_hifu = max(sys_size, 14)
+        if (hifu) then
+            sys_size_hifu= 11
+            if (hifu_params%streaming) sys_size_hifu = 14
+        end if
 
 #ifdef MFC_MPI
         allocate (MPI_IO_DATA%view(1:sys_size))

@@ -1288,7 +1288,10 @@ contains
             sys_size = species_idx%end
         end if
 
-        if (hifu) sys_size_hifu = max(sys_size, 14)
+        if (hifu) then
+            sys_size_hifu= 11
+            if (hifu_params%streaming) sys_size_hifu = 14
+        end if
 
         if (bubbles_euler .and. qbmm .and. .not. polytropic) then
             allocate (MPI_IO_DATA%view(1:sys_size + 2*nb*4))

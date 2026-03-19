@@ -34,8 +34,6 @@ module m_hifu
     integer :: bc_pole, sys_size_hyd
     $:GPU_DECLARE(create='[bc_pole, sys_size_hyd]')
 
-    real(wp), allocatable, dimension(:,:) :: acPw_in, acPw_out
-
 contains
 
     !> Initializes the hifu model
@@ -46,15 +44,27 @@ contains
         sys_size_hyd = sys_size
 
         ! Define hifu indexes
-        hifu_params%T_idx = 1
-        hifu_params%tsamp_idx = 3
-        hifu_params%qus_idx = 4
-        hifu_params%qvis_idx = 5
-        hifu_params%qth_idx = 7
-        hifu_params%qus_prms_idx = 9
+        hifu_params%qus_idx = 1
+        hifu_params%qus_prms_idx = 2
+        hifu_params%qvis_idx = 3
+        hifu_params%qth_idx = 5
+        hifu_params%T_idx = 7
+        hifu_params%tsamp_idx = 9
         hifu_params%P_idx = 10
-        hifu_params%u_idx = 12
-        hifu_params%v_idx = 14
+        if (hifu_params%streaming) then
+            hifu_params%u_idx = 12
+            hifu_params%v_idx = 14
+        end if
+
+        ! hifu_params%T_idx = 1
+        ! hifu_params%tsamp_idx = 3
+        ! hifu_params%qus_idx = 4
+        ! hifu_params%qvis_idx = 5
+        ! hifu_params%qth_idx = 7
+        ! hifu_params%qus_prms_idx = 9
+        ! hifu_params%P_idx = 10
+        ! hifu_params%u_idx = 12
+        ! hifu_params%v_idx = 14
 
         ! Allocating the cell-average RHS variables
         @:ALLOCATE(q_hifu%vf(1:sys_size_hifu))
@@ -82,15 +92,6 @@ contains
         end do
         $:GPU_UPDATE(device='[sys_size_hyd, shear_viscous_fluids, bulk_viscous_fluids, &
           & abs_coef_fluids, rho_cp_fluids, tdiff_fluids]')
-
-        ! Store acoustic power samples, 
-        !(total=1:tmp=2, faces: xe=1, xb=2, ye=3, yb=4, ze=5, zb=6)
-        @:ALLOCATE(acPw_in(1:2, 1:6))
-        @:ALLOCATE(acPw_out(1:2, 1:6))
-
-        acPw_in(:, :) = 0._wp
-        acPw_out(:, :) = 0._wp
-        $:GPU_UPDATE(device='[acPw_in, acPw_out]')
 
     end subroutine s_initialize_HIFU_module
 
@@ -527,8 +528,8 @@ contains
         real(wp) :: dist_radial, vol_cell, xb_Rc
 
         integer :: n_sgn
-        real(wp) :: acPw , acPw_qac
-        real(wp), dimension(6) :: acPw_in_dt, acPw_out_dt
+        real(wp) :: acPw , acPw_qac, acPw_cmprssv, acPw_kntc
+        real(wp), dimension(1:6) :: acPw_in_dt, acPw_out_dt
         logical :: flg_cell_in_cv
 
         if (hifu_params%moments) mom_qac = 0._wp
@@ -537,6 +538,7 @@ contains
         sumIntensity_ac = 0._wp
 
         acPw_in_dt(:) = 0._wp; acPw_out_dt(:) = 0._wp; acPw_qac = 0._wp
+        acPw_cmprssv = 0._wp; acPw_kntc = 0._wp
 
         if (bubbles_lagrange .and. .not. adap_dt) call s_compute_bubble_heat_sources_HIFU(hdid)
 
@@ -666,8 +668,10 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        if (hifu_params%streaming) then
+                            q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                            q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        end if
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > y_cc(k) .and. y_cc(k) > 0._wp)
@@ -714,10 +718,10 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms],[sumIntensity_ac,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac]]', &
+              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms],[sumIntensity_ac,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac,acPw_cmprssv,acPw_kntc]]', &
               & reductionOp='[MAX,+]', &
               & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn]', &
-              & copy='[sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac]')
+              & copy='[sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac,acPw_cmprssv,acPw_kntc]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -805,11 +809,15 @@ contains
                         ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
                         ep23 = 0.5_wp*(duydn(3) + duzdn(2))
 
-                        varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                        varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
-                                                           6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        ! varA = ep11**2._wp + ep22**2._wp + ep33**2._wp 
+                        ! varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
+                        !                                    6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        ! intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB
 
-                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB
+                        varA = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep11*ep22 + ep11*ep33 + ep22*ep33)
+                        varB = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+
+                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB - (2._wp/3._wp)*shearVisc*varA !intensity is "q_us_ac"
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
@@ -837,8 +845,10 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        if (hifu_params%streaming) then
+                            q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                            q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        end if
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
@@ -868,11 +878,19 @@ contains
                         end if
 
                          if (hifu_params%power_balance) then
+                            
+                            flg_cell_in_cv = f_cell_in_cv(j, k, l)
+                            if (flg_cell_in_cv) then
+                                ! print*, 'Cell in CV for power balance:', proc_rank, j, k, l
+                                acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
+                                acPw_cmprssv = acPw_cmprssv + ((pres_h - hifu_params%atmPres)**2._wp/(2._wp*rho_h*cson_h**2._wp))*dx(j)*dy(k)*dz(l)
+                                acPw_kntc = acPw_kntc + (0.5_wp*rho_h*dot_product(vel_h, vel_h))*dx(j)*dy(k)*dz(l)
+                            end if
+
                             $:GPU_LOOP(parallelism='[seq]')
                             do i = 1, num_dims
                                 n_sgn = f_is_on_cv_border(j, k, l, i)
                                 if (n_sgn /= 0) then
-                                    !print*, ' Computing acoustic power for CV face:', proc_rank, j, k, l, i, n_sgn
                                     call s_compute_cv_acoustic_power(q_prim_vf, j, k, l, &
                                                               i, n_sgn, pres_h, vel_h, acPw)
                                     
@@ -883,14 +901,9 @@ contains
                                     else
                                         acPw_out_dt(s) = acPw_out_dt(s) + acPw
                                     end if
+                                    ! if (i==1 .and. n_sgn == -1) print*, ' Computing acoustic power for CV face:', j,k,l,s,acPw
                                 end if
                             end do
-
-                            flg_cell_in_cv = f_cell_in_cv(j, k, l)
-                            if (flg_cell_in_cv) then
-                                !print*, 'Cell in CV for power balance:', proc_rank, j, k, l
-                                acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
-                            end if
 
                          end if
 
@@ -898,9 +911,11 @@ contains
                 end do
             end do
 
+            ! call s_mpi_abort("Debugging GPUs")
+
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity"
 
-            call s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, hdid)
+            call s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, acPw_cmprssv, acPw_kntc, hdid)
 
             if (num_procs > 1) then
                 tmp = sumIntensity_ac
@@ -942,9 +957,9 @@ contains
 
     end function f_cell_in_cv
 
-    subroutine s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, hdid)
+    subroutine s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, acPw_cmprssv, acPw_kntc, hdid)
         real(wp), dimension(6), intent(inout) :: acPw_in_dt, acPw_out_dt
-        real(wp), intent(inout) :: acPw_qac
+        real(wp), intent(inout) :: acPw_qac, acPw_cmprssv, acPw_kntc
         real(wp), intent(in) :: hdid
         real(wp) :: var_glb
         integer :: i
@@ -960,6 +975,12 @@ contains
 
             call s_mpi_allreduce_sum(acPw_qac, var_glb)
             acPw_qac = var_glb
+
+            call s_mpi_allreduce_sum(acPw_cmprssv, var_glb)
+            acPw_cmprssv = var_glb
+
+            call s_mpi_allreduce_sum(acPw_kntc, var_glb)
+            acPw_kntc = var_glb
         end if
 
         if (proc_rank == 0) then 
@@ -978,7 +999,7 @@ contains
 
           write (90, '(*(E24.8,:,","))') &
                 mytime, hdid, &
-                acPw_qac
+                acPw_qac, acPw_cmprssv, acPw_kntc
 
         end if
 
@@ -2334,13 +2355,15 @@ contains
 
                             !> Find temperature and streaming velocities at the faces of the cell
                             Tx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, l))/2._wp
-                            Ux_L = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
                             Tx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l))/2._wp
-                            Ux_R = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
                             Tr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, l))/2._wp
-                            Ur_L = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
                             Tr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l))/2._wp
-                            Ur_R = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
+                            if (hifu_params%streaming) then
+                                Ux_L = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
+                                Ux_R = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
+                                Ur_L = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
+                                Ur_R = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
+                            end if
 
                             !> Get thermal properties
                             alpha = 0._wp
@@ -2835,7 +2858,12 @@ contains
                 write (file_path, '(A,I0,A)') '/D/power_balance_qac.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (90, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (90, *) 'mytime, hdid, qac'
+                write (90, *) 'mytime, hdid, qac, acPw_cmprssv, acPw_kntc'
+
+                write (file_path, '(A,I0,A)') '/D/power_balance_qbub.dat'
+                file_path = trim(case_dir)//trim(file_path)
+                open (89, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
+                write (89, *) 'mytime, hdid, qvis, qth'
             end if
 
         end if
@@ -2863,6 +2891,7 @@ contains
             close (92)
             close (91)
             close (90)
+            close (89)
         end if
 
     end subroutine s_close_run_time_information_samplingHIFU
@@ -2881,9 +2910,6 @@ contains
         @:DEALLOCATE(abs_coef_fluids)
         @:DEALLOCATE(rho_cp_fluids)
         @:DEALLOCATE(tdiff_fluids)
-
-        @:DEALLOCATE(acPw_in)
-        @:DEALLOCATE(acPw_out)
 
     end subroutine s_finalize_HIFU_module
 

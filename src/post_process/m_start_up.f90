@@ -346,32 +346,33 @@ contains
 
             if (hifu_params%stg3 .and. hifu_params%cartesian) return
 
-            !------- Avg streming velocity x-dir---------------------------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i, j, k) = q_cons_hifu(hifu_params%u_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+            if (hifu_params%streaming) then
+                !------- Avg streming velocity x-dir---------------------------
+                do i = -offset_x%beg, m + offset_x%end
+                    do j = -offset_y%beg, n + offset_y%end
+                        do k = -offset_z%beg, p + offset_z%end
+                            q_sf(i, j, k) = q_cons_hifu(hifu_params%u_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                        end do
                     end do
                 end do
-            end do
 
-            write (varname, '(A)') 'avgStreaming_x'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
+                write (varname, '(A)') 'avgStreaming_x'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
 
-            !------- Avg streming velocity y-dir---------------------------
-            do i = -offset_x%beg, m + offset_x%end
-                do j = -offset_y%beg, n + offset_y%end
-                    do k = -offset_z%beg, p + offset_z%end
-                        q_sf(i, j, k) = q_cons_hifu(hifu_params%v_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                !------- Avg streming velocity y-dir---------------------------
+                do i = -offset_x%beg, m + offset_x%end
+                    do j = -offset_y%beg, n + offset_y%end
+                        do k = -offset_z%beg, p + offset_z%end
+                            q_sf(i, j, k) = q_cons_hifu(hifu_params%v_idx)%sf(i, j, k)*(1/q_cons_hifu(hifu_params%tsamp_idx)%sf(i, j, k))
+                        end do
                     end do
                 end do
-            end do
 
-            write (varname, '(A)') 'avgStreaming_y'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
+                write (varname, '(A)') 'avgStreaming_y'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+            end if
             !------- Max Pressure --------------------
 
             do i = -offset_x%beg, m + offset_x%end
