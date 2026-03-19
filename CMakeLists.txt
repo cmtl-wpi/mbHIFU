@@ -221,7 +221,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     CHECK_FORTRAN_COMPILER_FLAG("-march=native" SUPPORTS_MARCH_NATIVE)
     if (SUPPORTS_MARCH_NATIVE)
 	    add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-march=native>)
-	    #add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-march=skylake>) #Turing fix
+	    #add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-march=haswell>) #Turing fix
     else()
     	CHECK_FORTRAN_COMPILER_FLAG("-mcpu=native" SUPPORTS_MCPU_NATIVE)
         if (SUPPORTS_MCPU_NATIVE)

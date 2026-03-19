@@ -9,18 +9,19 @@
 #SBATCH --job-name="${name}"
 #SBATCH --time=24:00:00
 #SBATCH --partition=short
-#SBATCH --exclude=aswin-01
-###SBATCH --nodelist=compute-3-03
+##SBATCH --exclude=aswin-01
+##SBATCH --nodelist=compute-3-03
 % if account:
 #SBATCH --account="${account}"
 % endif
 % if gpu:
-#SBATCH --gpu-bind=verbose,closest
-#SBATCH --gres=gpu:v100-16:${tasks_per_node}
+#SBATCH --gres=gpu:1
+#SBATCH -C "A30|A100"
+#SBATCH --mem=208G
 % endif
 #SBATCH --output="${name}.out"
 #SBATCH --error="${name}.err"
-#SBATCH --export=ALL
+###SBATCH --export=ALL
 % if email:
 #SBATCH --mail-user=${email}
 #SBATCH --mail-type="BEGIN, END, FAIL"
@@ -35,15 +36,26 @@ cd "${MFC_ROOT_DIR}"
 cd - > /dev/null
 echo
 
+% if gpu:
+export LD_LIBRARY_PATH=/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-13.2.0/cuda-12.3.0-vuydybqum6mloi2vvov7yn2juaurmtao/lib64:$LD_LIBRARY_PATH 
+% endif
+
 % for target in targets:
     ${helpers.run_prologue(target)}
 
     % if not mpi:
         (set -x; ${profiler} "${target.get_install_binpath(case)}")
     % else:
-        (set -x; ${profiler}                              \
-	    srun  --mpi=pmi2   --ntasks=${nodes*tasks_per_node}  \
-                     "${target.get_install_binpath(case)}")
+        % if gpu:
+            (set -x; ${profiler} \
+                srun --gres=gpu:1 -C "A30|A100" \
+                $MPI_HOME/bin/mpirun --np ${nodes*tasks_per_node} \
+                "${target.get_install_binpath(case)}")
+        % else:
+            (set -x; ${profiler} \
+                srun  --mpi=pmi2   --ntasks=${nodes*tasks_per_node} \
+                "${target.get_install_binpath(case)}")
+        % endif
     % endif
 
     ${helpers.run_epilogue(target)}

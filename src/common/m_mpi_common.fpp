@@ -2126,7 +2126,6 @@ contains
             end if
 #endif
         end if
-#endif
 
 #ifdef MFC_PRE_PROCESS
         if (p > 0) then
@@ -2137,7 +2136,7 @@ contains
             if (proc_rank == 0) print *, 'num_procs_x', num_procs_x
         end if
 #endif
-
+#endif
     end subroutine s_mpi_decompose_computational_domain
 
     !>  The goal of this procedure is to populate the buffers of
