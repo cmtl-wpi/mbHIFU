@@ -35,7 +35,7 @@ T0 = 298            # temperature - K
 # (Gain = 23.2817 and Pfocus = 1.99 MPa 'assume pure water')
 patm = 101325.          # Atmospheric pressure - Pa
 pamplitude = 2.0e6   # Amplitud of the acoustic source - Pa
-freq = 1.e+06         # Source frequency - Hz
+freq = 600.e+03         # Source frequency - Hz
 focLen  = 46.0e-03      # Focal length - m
 aperture= 41.5e-03      # Transducer aperture - m
 waveLen = c0/freq       # wave length - m
@@ -72,7 +72,7 @@ MW_g = 238.027                      # Molar weigth of the gas - kg/kmol (https:/
 MW_v = 18.0                         # Molar weigth of the vapor - kg/kmol
 gamma_g = 1.0699                    # Specific heat ratio of the gas (https://doi.org/10.3390/pharmaceutics14010098)
 gamma_v = 1.333                     # Specific heat ratio of the vapor
-pv = 2350                           # Vapor pressure of the host - Pa
+pv = 0.0                            # Vapor pressure of the host - Pa
 cp_g = 0.809e+03                    # Specific heat of the gas - J/kg/K (https://www.f2chemicals.com/perfluorobutane.html)
 cp_v = 2.1e+03                      # Specific heat of the vapor - J/kg/K
 k_g = 0.00674                       # Thermal conductivity of the gas - W/m/K (https://doi.org/10.2172/6986083)
@@ -85,23 +85,16 @@ elasticity = 0.53                   # Elasticity of the shell - N/m (https://doi
 dilatationalViscosity = 1.2e-8      # Dilatiational viscosity of the shell - Pa.s.m (https://doi.org/10.1121/1.3418685)
 mu_g = 1.48e-5
 
-# Domain stgs 1 - 2
-xb = 0.0e-03       # Domain boundaries - m (x direction)
-xe = 5.0e-03
-yb = 0.e-3         # Domain boundaries - m (y direction)
-ye = 2.5e-03
-zb = 0.e-3         # Domain boundaries - m (z direction)
-ze = 2.5e-03
+xb = -3.e-3    # Domain boundaries - m (x direction)
+xe = 3.e-3
+yb = -3.e-3    # Domain boundaries - m (y direction)
+ye = 3.e-3
+zb = -3.e-3    # Domain boundaries - m (z direction)
+ze = 3.e-3
 
-mltplo  = 10
-waveSol = 15
-Nx      = int(round(((xe-xb)/(waveLen/waveSol))/mltplo)*mltplo)      # number of elements into x direction (wavelength/35)
-Ny      = int(round(((ye-yb)/(waveLen/waveSol))/mltplo)*mltplo)
-Nz      = int(round(((ze-zb)/(waveLen/waveSol))/mltplo)*mltplo)
-
-Nx = 99
-Ny = 49
-Nz = 49
+Nx = 59      # number of elements into x direction
+Ny = 59        # number of elements into y direction
+Nz = 59        # number of elements into z direction
 
 # Domain stg 3 - Heat solver cartesian coords
 #xb_ht = 21.e-3 # Domain boundaries - m (x direction)
@@ -122,7 +115,7 @@ Nz = 49
 
 # E-L solver
 T = 1/freq
-factorTime = 1
+factorTime = 0.1
 dt_hyd = T/(100)    # time-step - sec
 t_save_hyd  = factorTime*T      # save time - sec0
 t_stop_stg1 = factorTime*2*T       # stop time stg1 - sec 
@@ -162,17 +155,11 @@ print(json.dumps({
     'x_a'                          : -65e-03/x0,
     'x_b'                          : 65e-03/x0,
     'stretch_y'                    : 'F',
-    'a_y'                          : 0.3,
-    'y_a'                          : -16e-03/x0,
-    'y_b'                          : 16e-03/x0,
     'stretch_z'                    : 'F',
-    'a_z'                          : 0.3,
-    'z_a'                          : -16e-03/x0,
-    'z_b'                          : 16e-03/x0,
     'm'                            : Nx,
     'n'                            : Ny,
     'p'                            : Nz,
-    'adap_dt'                      : 'F',       #Strang splitting
+    'adap_dt'                      : 'T',       #Strang splitting
     'cfl_adap_dt'                  : 'F',
     'cfl_target'                   : 0.5,
     'dt'                           : round(dt_hyd*c0/x0,6),
@@ -200,11 +187,11 @@ print(json.dumps({
     'wave_speeds'                  : 1,
     'avg_state'                    : 2,
     'bc_x%beg'                     :-20,        # Acoustic input BC
-    'bc_x%end'                     :-6,         # Nonreflective subsonic BC
-    'bc_y%beg'                     :-2,         # Symmetric BC
-    'bc_y%end'                     :-6,         # Nonreflective subsonic BC
-    'bc_z%beg'                     :-2,         # Symmetric BC
-    'bc_z%end'                     :-6,         # Nonreflective subsonic BC
+    'bc_x%end'                     :-6,
+    'bc_y%beg'                     :-6,
+    'bc_y%end'                     :-6,
+    'bc_z%beg'                     :-6,
+    'bc_z%end'                     :-6,
     # ==========================================================
 
     # Acoustic source (bc == -20)===============================
@@ -238,17 +225,17 @@ print(json.dumps({
     # moments
     'hifu_params%moments'           : 'T',
     'hifu_params%R_cloud'           : 1.e-03/x0,
-    'hifu_params%cloud_center(1)'   : 4.e-03/x0,
+    'hifu_params%cloud_center(1)'   : 0.0,
     'hifu_params%cloud_center(2)'   : 0.0,
     'hifu_params%cloud_center(3)'   : 0.0,
     # power balance
     'hifu_params%power_balance'     : 'T',
-    'hifu_params%cv_xb'             : 1.e-03/x0,
-    'hifu_params%cv_xe'             : 3.e-03/x0,
-    'hifu_params%cv_yb'             : 0.,
-    'hifu_params%cv_ye'             : 1.e-03/x0,
-    'hifu_params%cv_zb'             : 0.,
-    'hifu_params%cv_ze'             : 1.e-03/x0,
+    'hifu_params%cv_xb'             : -2.e-03/x0,
+    'hifu_params%cv_xe'             : 2.e-03/x0,
+    'hifu_params%cv_yb'             : -2.e-03/x0,
+    'hifu_params%cv_ye'             : 2.e-03/x0,
+    'hifu_params%cv_zb'             : -2.e-03/x0,
+    'hifu_params%cv_ze'             : 2.e-03/x0,
     # STG3: Solving heat equation
     'hifu_params%stg3'              : 'T',
     'hifu_params%intPrms'           : 'F', # True: Utilize qus from Prms
@@ -274,9 +261,9 @@ print(json.dumps({
     # Lagrangian Bubbles ===========================
      'bubbles_lagrange'                 : 'T',
      'bubble_model'                     : 2,    # Keller-Miksis model
-     'thermal': 3,
-     'polytropic':'F',
-     'lag_params%nBubs_glb'             : 5,  # Number of bubbles
+     'thermal'                          : 3,
+     'polytropic'                       :'F',
+     'lag_params%nBubs_glb'             : 10,  # Number of bubbles
      'lag_params%solver_approach'       : 2,    # Two-way coupled
      'lag_params%cluster_type'          : 2,    # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
      'lag_params%pressure_corrector'    : 'T',

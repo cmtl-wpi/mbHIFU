@@ -775,7 +775,7 @@ contains
               el_comm = .true.
               if (el_id > 1) hifu_comm =.true.
               buffer_counts = (/ &
-                        (1+2*mapCells)*v_size*(n + 2*buff_size+ 1)*(p + 2*buff_size + 1), &
+                        (1+2*mapCells)*v_size*(n + 2*buff_size + 1)*(p + 2*buff_size + 1), &
                         (1+2*mapCells)*v_size*(m + 2*buff_size + 1)*(p + 2*buff_size + 1), &
                         (1+2*mapCells)*v_size*(m + 2*buff_size + 1)*(n + 2*buff_size + 1) &
                         /)
@@ -821,7 +821,7 @@ contains
         end if
         
         if (el_comm) then
-            pack_offset = -mapCells
+            pack_offset = - mapCells
             if (f_xor(pbc_loc == 1, beg_end_geq_0)) then
                 pack_offset = grid_dims(mpi_dir) - mapCells
             end if
@@ -847,9 +847,6 @@ contains
                                             ((l + buff_size) + (p + 2*buff_size + 1)* &
                                             ((k + buff_size) + (n + 2*buff_size + 1)*j))
                                         buff_send(r) = q_comm(i)%sf(j + pack_offset, k, l)
-                                        ! if (proc_rank == 0 .and. k==35 .and. l==35 .and. i==1) then
-                                        !     print*, 'packed data >>', j + pack_offset, k, l, buff_send(r), r
-                                        ! end if
                                     end do
                                 end do
                             end do
@@ -1035,12 +1032,6 @@ contains
         #:endfor
         call nvtxEndRange ! Packbuf
 
-        ! if (proc_rank == 0) then
-        !     do j=0,6
-        !         print*, 'proc:0, send buffer >>', 65, 35-mapCells+j, 35, q_beta%vf(1)%sf(65, 35-mapCells+j, 35)
-        !     end do
-        ! end if
-
         ! Send/Recv
 #ifdef MFC_SIMULATION
         #:for rdma_mpi in [False, True]
@@ -1090,33 +1081,30 @@ contains
             if (mpi_dir == ${mpi_dir}$) then
                 #:if mpi_dir == 1
                     if (el_comm) then
-                       $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                       do l = -buff_size, p + buff_size
-                          do k = -buff_size, n + buff_size
-                              do j = -2*mapCells, 0
-                                  do i = 1, nVar
-                                      r = (i - 1) + v_size* &
-                                          ((k + buff_size) + (n + 2*buff_size + 1)* &
-                                          ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                            (j + 2*mapCells)))
-                                      if (hifu_comm) then
-                                          if (i == v_size-2 .or. i == v_size) then 
-                                              q_comm(i)%sf(j + unpack_offset, k, l) = &
-                                              q_comm(i)%sf(j + unpack_offset, k, l) + &
-                                                                              buff_recv(r)
-                                          end if
-                                      else
-                                          q_comm(i)%sf(j + unpack_offset, k, l) = &
-                                          q_comm(i)%sf(j + unpack_offset, k, l) + &
-                                                                          buff_recv(r)
-                                      end if               
-                                      ! if (proc_rank == 1 .and. k==35 .and. l==35 .and. i==1) then
-                                      !     print*, 'recv data >>', j + unpack_offset, k, l, buff_recv(r), r
-                                      ! end if                     
-                                  end do
-                              end do
-                          end do
-                      end do 
+                        $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                        do l = -buff_size, p + buff_size
+                            do k = -buff_size, n + buff_size
+                                do j = -2*mapCells, 0
+                                    do i = 1, nVar
+                                        r = (i - 1) + v_size* &
+                                            ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                            ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                                (j + 2*mapCells)))
+                                        if (hifu_comm) then
+                                            if (i == v_size-2 .or. i == v_size) then 
+                                                q_comm(i)%sf(j + unpack_offset, k, l) = &
+                                                q_comm(i)%sf(j + unpack_offset, k, l) + &
+                                                                                buff_recv(r)
+                                            end if
+                                        else
+                                            q_comm(i)%sf(j + unpack_offset, k, l) = &
+                                            q_comm(i)%sf(j + unpack_offset, k, l) + &
+                                                                            buff_recv(r)
+                                        end if               
+                                    end do
+                                end do
+                            end do
+                        end do 
                     else
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do l = 0, p
@@ -1341,12 +1329,6 @@ contains
         #:endfor
         call nvtxEndRange
 #endif
-
-        ! if (proc_rank == 2) then
-        !     do j=0,8
-        !         print*, 'proc:2, send buffer >>', 65, -1-mapCells+j, 35, q_beta%vf(1)%sf(65, -1-mapCells+j, 35)
-        !     end do
-        ! end if
 
     end subroutine s_mpi_sendrecv_variables_buffers
 

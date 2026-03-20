@@ -2835,8 +2835,6 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
 #endif
         voltot = lag_void_avg
 
-        ! print*, qtime, lag_vol, lag_void_avg, lag_void_max
-
         ! This voidavg value does not reflect the real void fraction in the cloud
         ! since the cell which does not have bubbles are not accounted
         if (lag_vol > 0._wp) lag_void_avg = lag_void_avg/lag_vol

@@ -290,11 +290,6 @@ contains
                         end if
 
                         gaussian_sum = gaussian_sum + func*strength_vol*addFun1
-
-                        ! if (i==3 .and. j==3) then ! shows error in the standard deviation
-                        !     print*, l, addFun1, strength_vol, stddsv, func, strength_vel
-                        ! end if
-
                     end do
                 end do
             end do
