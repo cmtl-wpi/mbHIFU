@@ -115,11 +115,11 @@ Nz = 59        # number of elements into z direction
 
 # E-L solver
 T = 1/freq
-factorTime = 0.1
+factorTime = 1
 dt_hyd = T/(100)    # time-step - sec
 t_save_hyd  = factorTime*T      # save time - sec0
-t_stop_stg1 = factorTime*2*T       # stop time stg1 - sec 
-t_stop_stg2 = factorTime*3*T       # stop time stg2 - sec
+t_stop_stg1 = factorTime*3*T       # stop time stg1 - sec 
+t_stop_stg2 = factorTime*5*T       # stop time stg2 - sec
 
 # Heat solver
 cfl_heat = 0.1            # Courant number for diffusion equation cartesian (even dx, dy, dz)
