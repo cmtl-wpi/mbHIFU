@@ -2863,7 +2863,7 @@ contains
                 write (file_path, '(A,I0,A)') '/D/power_balance_qbub.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (89, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (89, *) 'mytime, hdid, qvis, qth'
+                write (89, *) 'mytime, hdid, nbubs, qvis, qth, ke'
             end if
 
         end if

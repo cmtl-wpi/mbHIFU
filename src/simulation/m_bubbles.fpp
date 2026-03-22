@@ -637,7 +637,7 @@ contains
                                    bub_id, fmass_v, fmass_n, fbeta_c, &
                                    fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
                                    fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
-                                   fQvis, fQth, fRmean, adap_dt_stop)
+                                   fQvis, fQth, fke, fRmean, adap_dt_stop)
         $:GPU_ROUTINE(function_name='s_advance_step',parallelism='[seq]', &
             & cray_inline=True)
 
@@ -649,7 +649,7 @@ contains
         real(wp), intent(in) :: fmass_n, fbeta_c, fbeta_t, fCson, fInt, fRbuck, fRrupt, fRcell
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
-        real(wp), intent(out) :: fQvis, fQth, fRmean
+        real(wp), intent(out) :: fQvis, fQth, fRmean, fke
         integer, intent(inout) :: adap_dt_stop
 
         real(wp), dimension(5) :: err !< Error estimates for adaptive time stepping
@@ -676,6 +676,7 @@ contains
         t_new = 0._wp
         fQvis = 0._wp
         fQth = 0._wp
+        fke = 0._wp
         fRmean = 0._wp
         fAc = 0._wp
         iter_count = 0
@@ -789,6 +790,9 @@ contains
 
                             !> Mean radius
                             fRmean = fRmean + h*fR
+
+                            !> Kinetic Energy
+                            fke = fke +  h*(2._wp*pi*fRho*fR**3._wp*fV**2._wp)
 
                             ! Checking for NaNs and negative qvis
                             if (fQvis /= fQvis .or. fQth /= fQth .or. fQvis < 0._wp) then
