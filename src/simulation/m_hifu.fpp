@@ -532,12 +532,14 @@ contains
         real(wp), dimension(1:6) :: acPw_in_dt, acPw_out_dt
         logical :: flg_cell_in_cv
 
-        if (hifu_params%moments) mom_qac = 0._wp
+        if (hifu_params%moments) then
+            mom_qac(1:4) = 0._wp
+        end if
 
         focalIntensity_ac = 0._wp; focalIntensity_ac_prms = 0._wp
         sumIntensity_ac = 0._wp
 
-        acPw_in_dt(:) = 0._wp; acPw_out_dt(:) = 0._wp; acPw_qac = 0._wp
+        acPw_in_dt(1:6) = 0._wp; acPw_out_dt(1:6) = 0._wp; acPw_qac = 0._wp
         acPw_cmprssv = 0._wp; acPw_kntc = 0._wp
 
         if (bubbles_lagrange .and. .not. adap_dt) call s_compute_bubble_heat_sources_HIFU(hdid)
@@ -718,10 +720,10 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms],[sumIntensity_ac,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac,acPw_cmprssv,acPw_kntc]]', &
-              & reductionOp='[MAX,+]', &
-              & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn]', &
-              & copy='[sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac,acPw_cmprssv,acPw_kntc]')
+              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max],[sumIntensity_ac,acPw_qac,acPw_cmprssv,acPw_kntc],[mom_qac(1:4),acPw_in_dt(1:6),acPw_out_dt(1:6)]]', &
+              & reductionOp='[MAX,+,+]', &
+              & private='[i,j,k,l,myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn, xb_Rc, vol_cell]', &
+              & copy='[abortFlag_max,sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,acPw_qac,acPw_cmprssv,acPw_kntc,mom_qac(1:4),acPw_in_dt(1:6),acPw_out_dt(1:6)]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -864,12 +866,12 @@ contains
                         !Intensity summation through the domain
                         sumIntensity_ac = sumIntensity_ac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
 
+                        vol_cell = dx(j)*dy(k)*dz(l)
                         ! Calculate heat source moments inside the bubble cloud
                         if (hifu_params%moments) then
                             if (dist_radial <= hifu_params%R_cloud) then
                                 xb_Rc = (x_cc(j)-hifu_params%cloud_center(1))/hifu_params%R_cloud
-                                vol_cell = dx(j)*dy(k)*dz(l)
-                                
+
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do i = 1, 4
                                     mom_qac(i) = mom_qac(i) + intensity_ac*hdid*vol_cell*(xb_Rc)**(i-1)
@@ -882,9 +884,9 @@ contains
                             flg_cell_in_cv = f_cell_in_cv(j, k, l)
                             if (flg_cell_in_cv) then
                                 ! print*, 'Cell in CV for power balance:', proc_rank, j, k, l
-                                acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
-                                acPw_cmprssv = acPw_cmprssv + ((pres_h - hifu_params%atmPres)**2._wp/(2._wp*rho_h*cson_h**2._wp))*dx(j)*dy(k)*dz(l)
-                                acPw_kntc = acPw_kntc + (0.5_wp*rho_h*dot_product(vel_h, vel_h))*dx(j)*dy(k)*dz(l)
+                                acPw_qac = acPw_qac + intensity_ac*vol_cell
+                                acPw_cmprssv = acPw_cmprssv + ((pres_h - hifu_params%atmPres)**2._wp/(2._wp*rho_h*cson_h**2._wp))*vol_cell
+                                acPw_kntc = acPw_kntc + (0.5_wp*rho_h*dot_product(vel_h, vel_h))*vol_cell
                             end if
 
                             $:GPU_LOOP(parallelism='[seq]')
@@ -901,7 +903,6 @@ contains
                                     else
                                         acPw_out_dt(s) = acPw_out_dt(s) + acPw
                                     end if
-                                    ! if (i==1 .and. n_sgn == -1) print*, ' Computing acoustic power for CV face:', j,k,l,s,acPw
                                 end if
                             end do
 
@@ -911,7 +912,6 @@ contains
                 end do
             end do
 
-            ! call s_mpi_abort("Debugging GPUs")
 
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity"
 
@@ -985,22 +985,22 @@ contains
 
         if (proc_rank == 0) then 
           
-          write (92, '(*(E24.8,:,","))') &
-                mytime, hdid, &
-                acPw_in_dt(1), acPw_in_dt(2), &
-                acPw_in_dt(3), acPw_in_dt(4), &
-                acPw_in_dt(5), acPw_in_dt(6)
+            write (92, '(*(E24.8,:,","))') &
+                    mytime, hdid, &
+                    acPw_in_dt(1), acPw_in_dt(2), &
+                    acPw_in_dt(3), acPw_in_dt(4), &
+                    acPw_in_dt(5), acPw_in_dt(6)
 
-          write (91, '(*(E24.8,:,","))') &
-                mytime, hdid, &
-                acPw_out_dt(1), acPw_out_dt(2), &
-                acPw_out_dt(3), acPw_out_dt(4), &
-                acPw_out_dt(5), acPw_out_dt(6)
+            write (91, '(*(E24.8,:,","))') &
+                    mytime, hdid, &
+                    acPw_out_dt(1), acPw_out_dt(2), &
+                    acPw_out_dt(3), acPw_out_dt(4), &
+                    acPw_out_dt(5), acPw_out_dt(6)
 
-          write (90, '(*(E24.8,:,","))') &
-                mytime, hdid, &
-                acPw_qac, acPw_cmprssv, acPw_kntc
-
+            write (90, '(*(E24.8,:,","))') &
+                    mytime, hdid, &
+                    acPw_qac, acPw_cmprssv, acPw_kntc
+            
         end if
 
     end subroutine s_write_power_balance
@@ -1036,11 +1036,11 @@ contains
             end if
         end if
 
-        ! print*, j, k, l, idx_dir, n_sgn, aux_j, aux_k, aux_l
-        
+        $:GPU_LOOP(parallelism='[seq]')
         do i = 1, num_dims
             vel(i) = (vel(i) + q_prim_vf(i + contxe)%sf(aux_j, aux_k, aux_l)) * 0.5_wp
         end do
+
         pres = (pres + q_prim_vf(E_idx)%sf(aux_j, aux_k, aux_l)) * 0.5_wp
         pres = pres - hifu_params%atmPres
 

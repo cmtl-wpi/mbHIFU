@@ -1019,8 +1019,8 @@ contains
 
         !< BUBBLE DYNAMICS
         if (hifu_params%moments) then
-            mom_vol = 0._wp; mom_qvis = 0._wp
-            mom_qth_p = 0._wp; mom_qth_n = 0._wp
+            mom_vol(1:4) = 0._wp; mom_qvis(1:4) = 0._wp
+            mom_qth_p(1:4) = 0._wp; mom_qth_n(1:4) = 0._wp
         end if
         if (hifu_params%power_balance) then
             acPw_qvis = 0._wp; acPw_qth = 0._wp
@@ -1052,10 +1052,10 @@ contains
 
         ! Radial motion
         adap_dt_stop_max = 0
-        $:GPU_PARALLEL_LOOP(private='[k,myalpha_rho,myalpha,Re,cell]', &
-            & reduction='[[adap_dt_stop_max],[mom_vol,mom_qvis,mom_qth_p,mom_qth_n,acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke]]', &
-            & reductionOp='[MAX,+]', &
-            & copy='[adap_dt_stop_max,mom_vol,mom_qvis,mom_qth_p,mom_qth_n,acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke]', &
+        $:GPU_PARALLEL_LOOP(private='[k,i,myalpha_rho,myalpha,Re,cell,myPinf]', &
+            & reduction='[[adap_dt_stop_max],[mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4)],[acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke]]', &
+            & reductionOp='[MAX,+,+]', &
+            & copy='[adap_dt_stop_max,mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4),acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke]', &
             & copyin='[stage]')
         do k = 1, nBubs
             ! Keller-Miksis model
@@ -2022,8 +2022,8 @@ contains
         real(wp) :: acPw_qvis, acPw_qth, acPW_nbubs, acPw_ke
         
         if (hifu_params%moments) then
-            mom_vol = 0._wp; mom_qvis = 0._wp
-            mom_qth_p = 0._wp; mom_qth_n = 0._wp
+            mom_vol(1:4) = 0._wp; mom_qvis(1:4) = 0._wp
+            mom_qth_p(1:4) = 0._wp; mom_qth_n(1:4) = 0._wp
         end if
 
         if (hifu_params%power_balance) then
@@ -2036,8 +2036,8 @@ contains
         if (proc_rank == 0) print *, 'Computing bubble heat sources', mytime, hdid
 #endif
         abortFlag_max = 0
-        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max, mom_vol, mom_qvis, mom_qth_p, mom_qth_n, acPw_qvis, acPw_qth, acPW_nbubs]]', &
-        & reductionOp='[MAX]',copy='[abortFlag_max, mom_vol, mom_qvis, mom_qth_p, mom_qth_n, acPw_qvis, acPw_qth, acPW_nbubs]')
+        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max],[acPw_qvis,acPw_qth,acPW_nbubs],[mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4)]]', &
+        & reductionOp='[MAX,+,+]',copy='[abortFlag_max, mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4), acPw_qvis, acPw_qth, acPW_nbubs]')
         do k = 1, nBubs
 
             abortFlag = 0
@@ -2165,7 +2165,7 @@ contains
                     moment2/total, &
                     moment3/total, &
                     total
-        end if
+        end if      
         
     end subroutine s_write_moments
 
