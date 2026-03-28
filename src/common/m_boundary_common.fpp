@@ -1393,11 +1393,11 @@ contains
 
     end subroutine s_qbmm_extrapolation
 
-    impure subroutine s_populate_EL_buffers(q_beta, bc_type, q_beta_size, hifu_EL_flag)
+    impure subroutine s_populate_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
 
         type(vector_field), intent(inout) :: q_beta
         type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
-        integer, intent(in) :: q_beta_size
+        integer, intent(in) :: nVar
         logical, intent(in) :: hifu_EL_flag
 
         integer :: k, l, el_mpi
@@ -1408,137 +1408,103 @@ contains
         !< x-direction
         if (bc_x%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 1, -1, q_beta_size, &
+                      q_beta%vf, 1, -1, nVar, &
                       el_id = el_mpi)
-            ! call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 1, -1)
-        else
-            ! !$acc parallel loop collapse(2) gang vector default(present)
-            ! do l = 0, p
-            !     do k = 0, n
-            !         select case (bc_type(1, -1)%sf(0, k, l))
-            !         case (BC_PERIODIC)
-            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 1, -1, k, l)
-            !         case (BC_REFLECTIVE)
-            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 1, -1, k, l)
-            !         case default
-            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 1, -1, k, l)
-            !         end select
-            !     end do
-            ! end do
         end if
 
         if (bc_x%end >= 0) then
           call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 1, 1, q_beta_size, &
+                      q_beta%vf, 1, 1, nVar, &
                       el_id = el_mpi)
-            ! call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 1, 1)
-        else
-            ! !$acc parallel loop collapse(2) gang vector default(present)
-            ! do l = 0, p
-            !     do k = 0, n
-            !         select case (bc_type(1, 1)%sf(0, k, l))
-            !         case (BC_PERIODIC)
-            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 1, 1, k, l)
-            !         case (BC_REFLECTIVE)
-            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 1, 1, k, l)
-            !         case default
-            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 1, 1, k, l)
-            !         end select
-            !     end do
-            ! end do
         end if
+
+        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
 
         if (n == 0) return
 
         !< y-direction
         if (bc_y%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 2, -1, q_beta_size, &
+                      q_beta%vf, 2, -1, nVar, &
                       el_id = el_mpi)
-            ! call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 2, -1)
-        else
-            ! !$acc parallel loop collapse(2) gang vector default(present)
-            ! do l = 0, p
-            !     do k = -buff_size, m + buff_size
-            !         select case (bc_type(2, -1)%sf(k, 0, l))
-            !         case (BC_PERIODIC)
-            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 2, -1, k, l)
-            !         case (BC_REFLECTIVE)
-            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 2, -1, k, l)
-            !         case default
-            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 2, -1, k, l)
-            !         end select
-            !     end do
-            ! end do
         end if
 
         if (bc_y%end >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 2, 1, q_beta_size, &
+                      q_beta%vf, 2, 1, nVar, &
                       el_id = el_mpi)
-            ! call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 2, 1)
-        else
-            ! !$acc parallel loop collapse(2) gang vector default(present)
-            ! do l = 0, p
-            !     do k = -buff_size, m + buff_size
-            !         select case (bc_type(2, 1)%sf(k, 0, l))
-            !         case (BC_PERIODIC)
-            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 2, 1, k, l)
-            !         case (BC_REFLECTIVE)
-            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 2, 1, k, l)
-            !         case default
-            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 2, 1, k, l)
-            !         end select
-            !     end do
-            ! end do
         end if
+
+        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
 
         if (p == 0) return
 
         !< z-direction
         if (bc_z%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 3, -1, q_beta_size, &
+                      q_beta%vf, 3, -1, nVar, &
                       el_id = el_mpi)
-            ! call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 3, -1)
-        else
-            ! !$acc parallel loop collapse(2) gang vector default(present)
-            ! do l = -buff_size, n + buff_size
-            !     do k = -buff_size, m + buff_size
-            !         select case (bc_type(3, -1)%sf(k, l, 0))
-            !         case (BC_PERIODIC)
-            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 3, -1, k, l)
-            !         case (BC_REFLECTIVE)
-            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 3, -1, k, l)
-            !         case default
-            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 3, -1, k, l)
-            !         end select
-            !     end do
-            ! end do
         end if
 
         if (bc_z%end >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 3, 1, q_beta_size, &
+                      q_beta%vf, 3, 1, nVar, &
                       el_id = el_mpi)
-            ! call s_mpi_sendrecv_variables_EL_buffers(q_beta, q_beta_size, hifu_EL_flag, 3, 1)
-        else
-            ! !$acc parallel loop collapse(2) gang vector default(present)
-            ! do l = -buff_size, n + buff_size
-            !     do k = -buff_size, m + buff_size
-            !         select case (bc_type(3, 1)%sf(k, l, 0))
-            !         case (BC_PERIODIC)
-            !             call s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, 3, 1, k, l)
-            !         case (BC_REFLECTIVE)
-            !             call s_EL_reflective(q_beta, q_beta_size, hifu_EL_flag, 3, 1, k, l)
-            !         case default
-            !             !call s_EL_ghost_cell_extrapolation(q_beta, q_beta_size, 3, 1, k, l)
-            !         end select
-            !     end do
-            ! end do
         end if
 
+        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
+
     end subroutine s_populate_EL_buffers
+
+    subroutine s_summation_q_beta_EL_buffers(q_comm, bc_type, nVar, hifu_EL_flag)
+
+        type(vector_field), intent(inout) :: q_comm
+        type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
+        integer, intent(in) :: nVar
+        logical, intent(in) :: hifu_EL_flag
+
+        integer :: i, j, k, l
+
+        if (hifu_EL_flag) then
+            $:GPU_PARALLEL_LOOP(collapse=3, copy='[nVar]')
+            do l = idwbuff(3)%beg, idwbuff(3)%end
+                do k = idwbuff(2)%beg, idwbuff(2)%end
+                    do j = idwbuff(1)%beg, idwbuff(1)%end
+                        q_comm%vf(nVar)%sf(j,k,l) = &
+                            q_comm%vf(nVar)%sf(j,k,l) + &
+                            q_comm%vf(nVar+1)%sf(j,k,l)
+
+                        q_comm%vf(nVar+2)%sf(j,k,l) = &
+                            q_comm%vf(nVar+2)%sf(j,k,l) + &
+                            q_comm%vf(nVar+3)%sf(j,k,l)
+                            
+                        q_comm%vf(nVar+1)%sf(j,k,l) = 0._wp
+                        q_comm%vf(nVar+3)%sf(j,k,l) = 0._wp
+                    end do
+                end do
+            end do
+        else
+            $:GPU_PARALLEL_LOOP(collapse=4, copy='[nVar]')
+            do l = idwbuff(3)%beg, idwbuff(3)%end
+                do k = idwbuff(2)%beg, idwbuff(2)%end
+                    do j = idwbuff(1)%beg, idwbuff(1)%end
+                        do i = 1, nVar
+                            if (i == 3) then 
+                                q_comm%vf(2*i - 1)%sf(j, k, l) = q_comm%vf(2*i - 1)%sf(j, k, l) + &
+                                                        q_comm%vf(2*i)%sf(j, k, l)
+                                q_comm%vf(2*i)%sf(j, k, l) = 0._wp
+                            else
+                                q_comm%vf(i)%sf(j, k, l) = q_comm%vf(i)%sf(j, k, l) + &
+                                                        q_comm%vf(nVar+i)%sf(j, k, l)
+                                q_comm%vf(nVar+i)%sf(j, k, l) = 0._wp
+                            end if
+                        end do
+                    end do
+                end do
+            end do
+        end if
+
+    end subroutine s_summation_q_beta_EL_buffers
 
 !     subroutine s_EL_periodic(q_beta, q_beta_size, hifu_EL_flag, bc_dir, bc_loc, k, l)
 ! #ifdef _CRAYFTN

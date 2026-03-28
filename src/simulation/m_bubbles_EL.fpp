@@ -1417,7 +1417,7 @@ contains
 
         type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
 
-        integer :: i, j, k, l
+        integer :: i, j, k, l, nVar
 
         call nvtxStartRange("BUBBLES-LAGRANGE-KERNELS")
 
@@ -1441,7 +1441,16 @@ contains
         end if
 
         ! Add effect of bubbles across processors
-        if (num_procs > 0) call s_populate_EL_buffers(q_beta, bc_type, q_beta_idx, .false.)
+        if (num_procs > 0) then 
+            nVar = 1
+            if (lag_params%solver_approach == 2) then
+                nVar = 2
+                if (p==0) nVar = 3
+            end if
+
+            call s_populate_EL_buffers(q_beta, bc_type, nVar, .false.)
+
+        end if
 
         !Store 1-beta
         $:GPU_PARALLEL_LOOP(collapse=3)
