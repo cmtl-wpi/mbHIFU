@@ -1014,8 +1014,11 @@ contains
 
         logical :: flg_bub_in_cv
         real(wp) :: acPw_qvis, acPw_qth, acPW_nbubs, acPw_ke
+        real(wp) :: sum_qvis, sum_qth
 
         call nvtxStartRange("LAGRANGE-BUBBLE-DYNAMICS")
+
+        sum_qvis = 0._wp; sum_qth = 0._wp
 
         !< BUBBLE DYNAMICS
         if (hifu_params%moments) then
@@ -1053,9 +1056,9 @@ contains
         ! Radial motion
         adap_dt_stop_max = 0
         $:GPU_PARALLEL_LOOP(private='[k,i,myalpha_rho,myalpha,Re,cell,myPinf]', &
-            & reduction='[[adap_dt_stop_max],[mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4)],[acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke]]', &
+            & reduction='[[adap_dt_stop_max],[mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4)],[acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke,sum_qvis,sum_qth]]', &
             & reductionOp='[MAX,+,+]', &
-            & copy='[adap_dt_stop_max,mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4),acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke]', &
+            & copy='[adap_dt_stop_max,mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4),acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke,sum_qvis,sum_qth]', &
             & copyin='[stage]')
         do k = 1, nBubs
             ! Keller-Miksis model
@@ -1142,7 +1145,8 @@ contains
                     bub_qvis(k) = bub_qvis(k) + myQvis  !> Viscous damping of the bubble (Watts*second)
                     bub_qth(k) = bub_qth(k) + myQth     !> Thermal damping of the bubble (Watts*second)
                     bub_hifu_rad(k) = bub_hifu_rad(k) + myRmean !> Mean radius (m*second)
-                    ! if (k == 1) print *, 'Sampling qvis and qth (adap dt)', stage, bub_qvis(k), bub_qth(k)
+                    sum_qvis = sum_qvis + bub_qvis(k)
+                    sum_qth = sum_qth + bub_qth(k)
                     if (hifu_params%moments) then
                         fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
                         fVol = (4._wp/3._wp)*pi*myR**3._wp
@@ -1231,11 +1235,37 @@ contains
                     acPw_bubs(3) = acPw_ke
                 end if
             end if
+            call s_sum_qbub(sum_qvis, sum_qth)
         end if
 
         call nvtxEndRange
 
     end subroutine s_compute_bubble_EL_dynamics
+
+    subroutine s_sum_qbub(sum_qvis, sum_qth)
+        real(wp), intent(inout) :: sum_qvis, sum_qth
+        real(wp) :: var_glb, sum_nBubs
+
+        if (num_procs > 1) then
+            call s_mpi_allreduce_sum(sum_qvis, var_glb)
+            sum_qvis = var_glb
+
+            call s_mpi_allreduce_sum(sum_qth, var_glb)
+            sum_qth = var_glb
+
+            call s_mpi_allreduce_sum(nBubs*1._wp, var_glb)
+            sum_nBubs = var_glb
+        end if
+
+        if (proc_rank == 0) then
+            write (98, '(*(E24.8,:,","))') &
+                mytime, dt, &
+                sum_qvis, &
+                sum_qth, &
+                sum_nBubs, 0._wp, 0._wp
+        end if
+
+    end subroutine s_sum_qbub
 
     function f_bub_in_cv(pos_part)
         $:GPU_ROUTINE(parallelism='[seq]')
@@ -2029,7 +2059,11 @@ contains
 
         logical :: flg_bub_in_cv
         real(wp) :: acPw_qvis, acPw_qth, acPW_nbubs, acPw_ke
+
+        real(wp) :: sum_qvis, sum_qth
         
+        sum_qvis=0._wp; sum_qth=0._wp
+
         if (hifu_params%moments) then
             mom_vol(1:4) = 0._wp; mom_qvis(1:4) = 0._wp
             mom_qth_p(1:4) = 0._wp; mom_qth_n(1:4) = 0._wp
@@ -2045,8 +2079,8 @@ contains
         if (proc_rank == 0) print *, 'Computing bubble heat sources', mytime, hdid
 #endif
         abortFlag_max = 0
-        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max],[acPw_qvis,acPw_qth,acPW_nbubs],[mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4)]]', &
-        & reductionOp='[MAX,+,+]',copy='[abortFlag_max, mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4), acPw_qvis, acPw_qth, acPW_nbubs]')
+        $:GPU_PARALLEL_LOOP(private='[k]',reduction='[[abortFlag_max],[acPw_qvis,acPw_qth,acPW_nbubs,sum_qvis,sum_qth],[mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4)]]', &
+        & reductionOp='[MAX,+,+]',copy='[abortFlag_max, mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4), acPw_qvis, acPw_qth, acPW_nbubs, sum_qvis, sum_qth]')
         do k = 1, nBubs
 
             abortFlag = 0
@@ -2087,6 +2121,9 @@ contains
             end if
             fqth = heatflux_h*4._wp*pi*fR_h**2._wp
             bub_qth(k) = bub_qth(k) + hdid*fqth
+
+            sum_qvis = sum_qvis + bub_qvis(k)
+            sum_qth = sum_qth + bub_qth(k)
 
             !Mean radius
             bub_hifu_rad(k) = bub_hifu_rad(k) + hdid * fR_h
@@ -2132,6 +2169,8 @@ contains
         end do
 
         if (abortFlag_max > 0) stop "NaNs in viscous (or thermal) damping of the bubbles"
+
+        call s_sum_qbub(sum_qvis, sum_qth)
 
         if (hifu_params%moments) then
             call s_write_moments(mom_qvis, idx=1)
