@@ -1235,7 +1235,7 @@ contains
                     acPw_bubs(3) = acPw_ke
                 end if
             end if
-            call s_sum_qbub(sum_qvis, sum_qth)
+            if (stage == 3) call s_sum_qbub(sum_qvis, sum_qth)
         end if
 
         call nvtxEndRange
@@ -1246,6 +1246,8 @@ contains
         real(wp), intent(inout) :: sum_qvis, sum_qth
         real(wp) :: var_glb, sum_nBubs
 
+        sum_nBubs = nBubs*1._wp
+
         if (num_procs > 1) then
             call s_mpi_allreduce_sum(sum_qvis, var_glb)
             sum_qvis = var_glb
@@ -1253,7 +1255,7 @@ contains
             call s_mpi_allreduce_sum(sum_qth, var_glb)
             sum_qth = var_glb
 
-            call s_mpi_allreduce_sum(nBubs*1._wp, var_glb)
+            call s_mpi_allreduce_sum(sum_nBubs, var_glb)
             sum_nBubs = var_glb
         end if
 
