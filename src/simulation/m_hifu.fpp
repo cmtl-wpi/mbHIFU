@@ -704,9 +704,9 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[abortFlag_max],[sum_qac,acPw_qac,acPw_cmprssv,acPw_kntc],[mom_qac(1:4),acPw_in_dt(1:6),acPw_out_dt(1:6)]]', &
+              & reduction='[[abortFlag_max],[sum_qac,sum_qac_prms,acPw_qac,acPw_cmprssv,acPw_kntc],[mom_qac(1:4),acPw_in_dt(1:6),acPw_out_dt(1:6)]]', &
               & reductionOp='[MAX,+,+]', &
-              & private='[i,j,k,l,myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn, xb_Rc, vol_cell]', &
+              & private='[i,j,k,l,myalpha_rho,myalpha,vel_h,Re_h,rhoYks_h,duxdn,duydn,duzdn,xb_Rc,vol_cell]', &
               & copy='[abortFlag_max,sum_qac,sum_qac_prms,acPw_qac,acPw_cmprssv,acPw_kntc,mom_qac(1:4),acPw_in_dt(1:6),acPw_out_dt(1:6)]')
             do l = 0, p
                 do k = 0, n

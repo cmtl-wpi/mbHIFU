@@ -1055,7 +1055,7 @@ contains
 
         ! Radial motion
         adap_dt_stop_max = 0
-        $:GPU_PARALLEL_LOOP(private='[k,i,myalpha_rho,myalpha,Re,cell,myPinf]', &
+        $:GPU_PARALLEL_LOOP(private='[k,i,myalpha_rho,myalpha,Re,cell,myPinf,fxb_Rc,fVol]', &
             & reduction='[[adap_dt_stop_max],[mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4)],[acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke,sum_qvis,sum_qth]]', &
             & reductionOp='[MAX,+,+]', &
             & copy='[adap_dt_stop_max,mom_vol(1:4),mom_qvis(1:4),mom_qth_p(1:4),mom_qth_n(1:4),acPw_qvis,acPw_qth,acPW_nbubs,acPw_ke,sum_qvis,sum_qth]', &
