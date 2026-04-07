@@ -19,7 +19,7 @@
 % else:
 #SBATCH --time=0-01:00:00
 % if gpu:
-#SBATCH --partition=gpuA100x4-interactive
+#SBATCH --partition=gpuA40x4-interactive
 % else:
 #SBATCH --partition=cpu-interactive
 % endif
@@ -54,6 +54,7 @@ echo
 
 % if gpu:
     export MPICH_GPU_SUPPORT_ENABLED=0 # Disable GPU-Direct MPI
+    export SLURM_MPI_TYPE=cray_shasta
 % endif
 
 % for target in targets:
@@ -75,7 +76,7 @@ echo
             % else:
                 (set -x; ${profiler}                            \
                     srun    --account=bgko-delta-gpu            \
-                            --partition=gpuA100x4-interactive   \
+                            --partition=gpuA40x4-interactive   \
                             --gpus-per-node=4                   \
                             --mem=208G                          \
                             --gpu-bind=closest                  \
