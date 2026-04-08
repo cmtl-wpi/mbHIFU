@@ -329,14 +329,13 @@ contains
             Rc_min_loc = minval(Rc_sf)
         end if
 #else
-        #:call GPU_PARALLEL(copyout='[icfl_max_loc]', copyin='[icfl_sf]')
-            icfl_max_loc = maxval(icfl_sf)
-        #:endcall GPU_PARALLEL
+        $:GPU_UPDATE(host='[icfl_sf]')
+        icfl_max_loc = maxval(icfl_sf)
+
         if (viscous) then
-            #:call GPU_PARALLEL(copyout='[vcfl_max_loc, Rc_min_loc]', copyin='[vcfl_sf,Rc_sf]')
-                vcfl_max_loc = maxval(vcfl_sf)
-                Rc_min_loc = minval(Rc_sf)
-            #:endcall GPU_PARALLEL
+            $:GPU_UPDATE(host='[vcfl_sf,Rc_sf]')
+            vcfl_max_loc = maxval(vcfl_sf)
+            Rc_min_loc = minval(Rc_sf)
         end if
 #endif
 
