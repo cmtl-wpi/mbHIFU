@@ -163,22 +163,12 @@ contains
         write (3, '(A)') ''; write (3, '(A)') ''
 
         ! Generating table header for the stability criteria to be outputted
-        if (cfl_dt) then
-            if (viscous) then
-                write (3, '(A)') '     Time-steps        dt     = Time         ICFL '// &
-                    'Max      VCFL Max        Rc Min       ='
-            else
-                write (3, '(A)') '            Time-steps                dt       Time '// &
-                    '               ICFL Max              '
-            end if
+        if (viscous) then
+            write (3, '(A)') '    Time-steps     dt                 Time           ICFL '// &
+                'Max       VCFL Max       Rc Min       '
         else
-            if (viscous) then
-                write (3, '(A)') '     Time-steps        Time         ICFL '// &
-                    'Max      VCFL Max        Rc Min        '
-            else
-                write (3, '(A)') '            Time-steps                Time '// &
-                    '               ICFL Max              '
-            end if
+            write (3, '(A)') '            Time-steps               dt                      Time '// &
+                '                 ICFL Max       '
         end if
 
     end subroutine s_open_run_time_information_file
@@ -364,7 +354,7 @@ contains
         ! Outputting global stability criteria extrema at current time-step
         if (proc_rank == 0) then
             if (viscous) then
-                write (3, '(6X,I8,F10.6,6X,6X,F10.6,6X,F9.6,6X,F9.6,6X,F10.6)') &
+                write (3, '(6X,I8,F10.6,6X,6X,F10.6,6X,F9.6,6X,F9.6,6X,E15.8)') &
                     t_step, dt, t_step*dt, icfl_max_glb, &
                     vcfl_max_glb, &
                     Rc_min_glb
@@ -1917,7 +1907,7 @@ contains
 
         write (3, '(A,F9.6)') 'ICFL Max: ', icfl_max
         if (viscous) write (3, '(A,F9.6)') 'VCFL Max: ', vcfl_max
-        if (viscous) write (3, '(A,F10.6)') 'Rc Min: ', Rc_min
+        if (viscous) write (3, '(A,E15.8)') 'Rc Min: ', Rc_min
 
         call cpu_time(run_time)
 
@@ -1966,7 +1956,7 @@ contains
                 @:ALLOCATE(Rc_sf  (0:m, 0:n, 0:p))
 
                 vcfl_max = 0._wp
-                Rc_min = 1.e3_wp
+                Rc_min = verysmall**(-1._wp)
             end if
         end if
 
