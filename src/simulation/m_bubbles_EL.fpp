@@ -74,10 +74,10 @@ module m_bubbles_EL
 
     integer, private :: lag_num_ts      !<  Number of time stages in the time-stepping scheme
     integer :: nBubs                    !< Number of bubbles in the local domain
-    real(wp) :: Rmax_glb, Rmin_glb, Rmean_glb   !< Global stats of bubbe size in the local domain
+    real(wp) :: Rmax_glb, Rmin_glb, Rmean_glb, lag_vol_glb   !< Global stats of bubbe size in the local domain
     type(vector_field) :: q_beta        !< Projection of the lagrangian particles in the Eulerian framework
     integer :: q_beta_idx               !< Size of the q_beta vector field
-    $:GPU_DECLARE(create='[nBubs,lag_num_ts,Rmax_glb,Rmin_glb,Rmean_glb,q_beta,q_beta_idx]')
+    $:GPU_DECLARE(create='[nBubs,lag_num_ts,Rmax_glb,Rmin_glb,Rmean_glb,lag_vol_glb,q_beta,q_beta_idx]')
 
     real(wp), allocatable, dimension(:,:) :: moments_bubs   !< Moments of volume, qac, qvis, qth_pos, qth_neg
     real(wp), allocatable, dimension(:) :: acPw_bubs         !< Acoustic power of the bubbles (HIFU)
@@ -360,7 +360,8 @@ contains
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
         Rmean_glb = 0._wp
-        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb]')
+        lag_vol_glb = 0._wp
+        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb,lag_vol_glb]')
 
         $:GPU_UPDATE(device='[dx,dy,dz,x_cb,x_cc,y_cb,y_cc,z_cb,z_cc]')
 
@@ -617,6 +618,8 @@ contains
                 Im_trans = aimag(trans)
                 gas_betaC(k) = Re_trans*lag_params%diffcoefvap
 
+                bub_interact(k) = pinf
+
             end do
 
             $:GPU_UPDATE(device='[lag_id,bub_R0,Rmax_stats,Rmin_stats,gas_mg, &
@@ -625,7 +628,7 @@ contains
                 & mtn_s,intfc_draddt,intfc_dveldt,gas_dpdt,gas_dmvdt, nBubs]')
                 ! & mtn_dposdt,mtn_dveldt]')
             
-            $:GPU_UPDATE(device='[intfc_ac, mrmtnt_shell, mrmtnt_Rbuck, &
+            $:GPU_UPDATE(device='[intfc_ac, bub_interact, mrmtnt_shell, mrmtnt_Rbuck, &
                 & mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
 
             call s_transfer_data_to_tmp
@@ -1193,6 +1196,10 @@ contains
                 ! end do
 
             end if
+
+            bub_interact(k) = myPinf ! Need the pressure seen by the bubble to be part of the printed outputs
+            ! Strang Splitting: P radiated by each bubble is internally calculated since it vary per substep, then it is not included in this var.
+            ! No adap_dt: This term includes the radiated pressure.
 
             adap_dt_stop_max = max(adap_dt_stop_max, adap_dt_stop)
 
@@ -2406,7 +2413,6 @@ contains
             call s_transfer_data_to_tmp
             call s_calculate_lag_bubble_stats()
             if (lag_params%write_bubbles) then
-                $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
                 call s_write_lag_particles(mytime, replace=.false.)
             end if
             call s_write_void_evol(mytime, replace=.false.)
@@ -2445,7 +2451,6 @@ contains
                 call s_transfer_data_to_tmp
                 call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
-                    $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
                     call s_write_lag_particles(mytime, replace=.false.)
                 end if
                 call s_write_void_evol(mytime, replace=.false.)
@@ -2497,7 +2502,6 @@ contains
                 call s_transfer_data_to_tmp
                 call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
-                    $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
                     call s_write_lag_particles(mytime, replace=.false.)
                 end if
                 call s_write_void_evol(mytime, replace=.false.)
@@ -2758,32 +2762,32 @@ contains
 
         if (.not. file_exist .or. replace) then
             open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
-            write (11, *) 'currentTime, particleID, x, y, z, ', &
-                'coreVaporMass, coreVaporConcentration, radius, interfaceVelocity, ', &
-                'corePressure'
+            write (11, *) 'mytime, dt, id, x, y, z, radius, intfc_vel, intfc_acc, p_inf, vap_mass, vap_conc, p_bub, mrmtnt_shell, mrmtnt_Rrupt'
         else
             open (11, FILE=trim(file_loc), FORM='formatted', position='append')
         end if
+
+        $:GPU_UPDATE(host='[intfc_rad,intfc_vel,intfc_ac,bub_interact,gas_mv,gas_p,mrmtnt_shell]')
 
         if (lag_params%write_only_bub_id == dflt_int) then
             ! Cycle through list
             do k = 1, nBubs
 
                 if (particle_in_domain_physical(mtn_pos(k, 1:3, 1))) then
-                    write (11, '(6X,f12.6,I12.6,13e24.8)') &
+                    write (11, '(*(ES0.12,:,","))') &
                         qtime, &
-                        lag_id(k, 1), &
+                        dt, &
+                        lag_id(k, 1)*1._wp, &
                         mtn_pos(k, 1, 1), &
                         mtn_pos(k, 2, 1), &
                         mtn_pos(k, 3, 1), &
-                        gas_mv(k, 1), &
-                        gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
                         intfc_rad(k, 1), &
                         intfc_vel(k, 1), &
-                        gas_p(k, 1), &
+                        intfc_ac(k, 1), &
                         bub_interact(k), &
-                        bub_qvis(k), &
-                        bub_qth(k), &
+                        gas_mv(k, 1), &
+                        gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
+                        gas_p(k, 1), &
                         mrmtnt_shell(k, 1), &
                         mrmtnt_Rrupt(k)
                 end if
@@ -2795,21 +2799,22 @@ contains
 
             if (k == lag_id(k, 1)) then
                 if (particle_in_domain_physical(mtn_pos(k, 1:3, 1))) then
-                    write (11, '(6X,f12.6,I12.6,12e24.8)') &
+                    write (11, '(*(ES0.12,:,","))') &
                         qtime, &
-                        lag_id(k, 1), &
+                        dt, &
+                        lag_id(k, 1)*1._wp, &
                         mtn_pos(k, 1, 1), &
                         mtn_pos(k, 2, 1), &
                         mtn_pos(k, 3, 1), &
-                        gas_mv(k, 1), &
-                        gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
                         intfc_rad(k, 1), &
                         intfc_vel(k, 1), &
-                        gas_p(k, 1), &
+                        intfc_ac(k, 1), &
                         bub_interact(k), &
-                        bub_qvis(k), &
-                        bub_qth(k), &
-                        mrmtnt_shell(k, 1)
+                        gas_mv(k, 1), &
+                        gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
+                        gas_p(k, 1), &
+                        mrmtnt_shell(k, 1), &
+                        mrmtnt_Rrupt(k)
                 end if
 
             end if
@@ -2843,6 +2848,9 @@ contains
             inquire (FILE=trim(file_loc), EXIST=file_exist)
             if (.not. file_exist .or. replace) then
                 open (12, FILE=trim(file_loc), FORM='formatted', position='rewind')
+                if (hifu) then
+                    write (12, *) 'mytime, dt, nbubs, mean_rad, max_rad, min_rad, sum_vol_bubs, avg_void, max_void, euler_vol'
+                end if
                 !write (12, *) 'currentTime, averageVoidFraction, ', &
                 !    'maximumVoidFraction, totalParticlesVolume', 'maxRadius', 'minRadius'
                 !write (12, *) 'The averageVoidFraction value does ', &
@@ -2873,7 +2881,7 @@ contains
         end do
         nBubs_all = real(nBubs, wp)
 
-$:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
+$:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb,lag_vol_glb]')
         
 #ifdef MFC_MPI
         if (num_procs > 1) then
@@ -2891,6 +2899,8 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
             Rmean_glb = aux_glb
             call s_mpi_allreduce_sum(nBubs_all, aux_glb)
             nBubs_all = aux_glb
+            call s_mpi_allreduce_sum(lag_vol_glb, aux_glb)
+            lag_vol_glb = aux_glb
         end if
 #endif
         voltot = lag_void_avg
@@ -2901,22 +2911,25 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
 
         if (proc_rank == 0) then
 
-            if (hifu_params%moments) then
-            write (12, '(6X,8e24.8)') &
-                qtime, &
-                lag_void_avg, &
-                lag_void_max, &
-                voltot, &
-                Rmean_glb/nBubs_all, &
-                nBubs_all, &
-                Rmax_glb, &
-                Rmin_glb
+            if (hifu) then
+                write (12, '(*(ES0.12,:,","))') &
+                      qtime, &
+                      dt, &
+                      nBubs_all, &
+                      Rmean_glb/nBubs_all, &
+                      Rmax_glb, &
+                      Rmin_glb, &
+                      lag_vol_glb, &
+                      lag_void_avg, &
+                      lag_void_max, &
+                      voltot
+
             else
                 write (12, '(6X,4e24.8)') &
-                qtime, &
-                lag_void_avg, &
-                lag_void_max, &
-                voltot
+                      qtime, &
+                      lag_void_avg, &
+                      lag_void_max, &
+                      voltot
             end if
             close (12)
         end if
@@ -3083,15 +3096,16 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb]')
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
-        Rmean_glb = 0._wp
-        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb]')
+        Rmean_glb = 0._wp; lag_vol_glb = 0._wp
+        $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb, lag_vol_glb]')
 
-        $:GPU_PARALLEL_LOOP(reduction='[[Rmax_glb], [Rmin_glb], [Rmean_glb]]', &
-            & reductionOp='[MAX, MIN, +]', copy='[Rmax_glb,Rmin_glb,Rmean_glb]')
+        $:GPU_PARALLEL_LOOP(reduction='[[Rmax_glb], [Rmin_glb], [Rmean_glb,lag_vol_glb]]', &
+            & reductionOp='[MAX, MIN, +]', copy='[Rmax_glb,Rmin_glb,Rmean_glb,lag_vol_glb]')
         do k = 1, nBubs
             Rmax_glb = max(Rmax_glb, intfc_rad(k, 1))
             Rmin_glb = min(Rmin_glb, intfc_rad(k, 1))
             Rmean_glb = Rmean_glb + intfc_rad(k, 1)
+            lag_vol_glb = lag_vol_glb + (4._wp/3._wp)*pi*intfc_rad(k, 1)**3._wp
             Rmax_stats(k) = max(Rmax_stats(k), intfc_rad(k, 1)/bub_R0(k))
             Rmin_stats(k) = min(Rmin_stats(k), intfc_rad(k, 1)/bub_R0(k))
         end do
