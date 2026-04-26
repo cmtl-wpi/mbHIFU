@@ -1480,7 +1480,7 @@ contains
         end if
 
         ! Add effect of bubbles across processors
-        if (num_procs > 0) then 
+        if (num_procs > 1) then 
             nVar = 1
             if (lag_params%solver_approach == 2) then
                 nVar = 2
