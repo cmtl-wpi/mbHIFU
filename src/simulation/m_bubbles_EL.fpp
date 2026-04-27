@@ -1267,7 +1267,7 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (98, '(*(E24.8,:,","))') &
+            write (98, '(*(ES0.12,:,","))') &
                 mytime, dt, &
                 sum_qvis, &
                 sum_qth, &
@@ -1309,7 +1309,7 @@ contains
 
         if (proc_rank == 0) then 
           
-          write (89, '(*(E24.8,:,","))') &
+          write (89, '(*(ES0.12,:,","))') &
                 mytime, hdid, &
                 acPW_nbubs, &
                 acPw_qvis, &
@@ -2216,7 +2216,7 @@ contains
 
         ! Write the heat statistics to file
         if (proc_rank == 0) then
-            write (97-idx, '(4X,5e24.8)') &
+            write (97-idx, '(*(ES0.12,:,","))') &
                     mytime, &
                     moment1/total, &
                     moment2/total, &
@@ -2762,7 +2762,7 @@ contains
 
         if (.not. file_exist .or. replace) then
             open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
-            write (11, *) 'mytime, dt, id, x, y, z, radius, intfc_vel, intfc_acc, p_inf, vap_mass, vap_conc, p_bub, mrmtnt_shell, mrmtnt_Rrupt'
+            write (11, '(A)') 'mytime,dt,id,x,y,z,adius,intfc_vel,intfc_acc,p_inf,vap_mass,vap_conc,p_bub,mrmtnt_shell,mrmtnt_Rrupt'
         else
             open (11, FILE=trim(file_loc), FORM='formatted', position='append')
         end if
@@ -2849,7 +2849,7 @@ contains
             if (.not. file_exist .or. replace) then
                 open (12, FILE=trim(file_loc), FORM='formatted', position='rewind')
                 if (hifu) then
-                    write (12, *) 'mytime, dt, nbubs, mean_rad, max_rad, min_rad, sum_vol_bubs, avg_void, max_void, euler_vol'
+                    write (12, '(A)') 'mytime,dt,nbubs,mean_rad,max_rad,min_rad,sum_vol_bubs,avg_void,max_void,euler_vol'
                 end if
                 !write (12, *) 'currentTime, averageVoidFraction, ', &
                 !    'maximumVoidFraction, totalParticlesVolume', 'maxRadius', 'minRadius'
@@ -3124,14 +3124,14 @@ $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb,lag_vol_glb]')
         $:GPU_UPDATE(host='[Rmax_glb,Rmin_glb,Rmean_glb]')
 
         open (13, FILE=trim(file_loc), FORM='formatted', position='rewind')
-        write (13, *) 'proc_rank, Rmax_glb, Rmin_glb, Rmean_glb'
+        write (13, '(A)') 'proc_rank,Rmax_glb,Rmin_glb,Rmean_glb'
         write (13, '(6X,I24.8,3e24.8)') &
             proc_rank, &
             Rmax_glb, &
             Rmin_glb, &
             Rmean_glb/nBubs
-        write (13, *) ' '
-        write (13, *) 'particleID, x, y, z, Rmax, Rmin'
+        write (13, '(A)') ' '
+        write (13, '(A)') 'particleID,x,y,z,Rmax,Rmin'
 
         do k = 1, nBubs
             write (13, '(6X,I24.8,7e24.8)') &

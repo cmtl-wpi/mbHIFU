@@ -691,7 +691,7 @@ contains
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(*(E24.8,:,","))') &
+            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') &
                                         mytime, &
                                         q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
                                         sum_qac, &
@@ -896,7 +896,7 @@ contains
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(*(E24.8,:,","))') &
+            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') &
                                         mytime, &
                                         q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
                                         sum_qac, &
@@ -952,19 +952,19 @@ contains
 
         if (proc_rank == 0) then 
           
-            write (92, '(*(E24.8,:,","))') &
+            write (92, '(*(ES0.12,:,","))') &
                     mytime, hdid, &
                     acPw_in_dt(1), acPw_in_dt(2), &
                     acPw_in_dt(3), acPw_in_dt(4), &
                     acPw_in_dt(5), acPw_in_dt(6)
 
-            write (91, '(*(E24.8,:,","))') &
+            write (91, '(*(ES0.12,:,","))') &
                     mytime, hdid, &
                     acPw_out_dt(1), acPw_out_dt(2), &
                     acPw_out_dt(3), acPw_out_dt(4), &
                     acPw_out_dt(5), acPw_out_dt(6)
 
-            write (90, '(*(E24.8,:,","))') &
+            write (90, '(*(ES0.12,:,","))') &
                     mytime, hdid, &
                     acPw_qac, acPw_cmprssv, acPw_kntc
             
@@ -1148,7 +1148,7 @@ contains
                     condition = (axialCondition .or. radialCondition)
                     if (condition) then
                         if (p>0) then
-                            write (100, '(6x,6E24.8)') &
+                            write (100, '(*(ES0.12,:,","))') &
                                 mytime, &
                                 x_cc(j), &
                                 y_cc(k), &
@@ -1157,7 +1157,7 @@ contains
                                 q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
 
                         else
-                            write (100, '(6x,5E24.8)') &
+                            write (100, '(*(ES0.12,:,","))') &
                                 mytime, &
                                 x_cc(j), &
                                 y_cc(k), &
@@ -1945,7 +1945,7 @@ contains
         write (13, *) 'bub_id, xPos, rPos, thetaPos, R0, avg_qvis, avg_qth'
 
         do k = 1, nBubs
-            write (13, '(6X,I24.8,6e24.8)') &
+            write (13, '(*(ES0.12,:,","))') &
                 lag_id(k, 1), &
                 mtn_pos(k, 1, 1), &
                 mtn_pos(k, 2, 1), &
@@ -2040,7 +2040,7 @@ contains
             call s_print_hifu_source_stats(hifu_params%qth_idx, sum_val_qth, sampledTime)
 
             if (proc_rank == 0) then
-                write (98, '(*(E24.8,:,","))') &
+                write (98, '(*(ES0.12,:,","))') &
                     sampledTime, 0._wp, &
                     0._wp, &
                     0._wp, &
@@ -2172,7 +2172,7 @@ contains
                 open (11, FILE=trim(file_loc), FORM='formatted', position='append')
             end if
 
-            write (11, '(4X,I24.8,4e24.8)') &
+            write (11, '(*(ES0.12,:,","))') &
                 sampledTime, &
                 heat_moment1/total_heat, &
                 heat_moment2/total_heat, &
@@ -2784,70 +2784,74 @@ contains
         write (file_path, '(A,I0,A)') '/D/Pmax_', proc_rank, '.dat'
         file_path = trim(case_dir)//trim(file_path)
         open (100, FILE=trim(file_path), FORM='formatted', STATUS='unknown')
-        write (100, *) 'mytime, x_cc, y_cc, Pmax, Pmin'
+        if (p > 0) then
+            write (100, '(A)') 'mytime,x_cc,y_cc,z_cc,Pmax,Pmin'
+        else
+            write (100, '(A)') 'mytime,x_cc,y_cc,Pmax,Pmin'
+        end if
 
         if (proc_rank == 0) then
 
             !Open files to save intensity sampling information at focus
             write (file_path, '(A)') '/D/hifu_qac.dat'
             file_path = trim(case_dir)//trim(file_path)
-            open (99, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
-            write (99, *) 'mytime, sampling, sum_qac, sum_qac_prms'
+            open (99, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
+            write (99, '(A)') 'mytime,sampling,sum_qac,sum_qac_prms'
 
             !Open files to save viscous and thermal intensity sampling information for a single bubble
             write (file_path, '(A,I0,A)') '/D/hifu_qbubs.dat'
             file_path = trim(case_dir)//trim(file_path)
-            open (98, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
-            write (98, *) 'mytime, dt, sum_qvis, sum_qth, nbubs, sum_smear_qvis, sum_smear_qth'
+            open (98, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
+            write (98, '(A)') 'mytime,dt,sum_qvis,sum_qth,nbubs,sum_smear_qvis,sum_smear_qth'
 
             if (hifu_params%moments) then
                 !Open files to save heat sources and volume moments
                 write (file_path, '(A,I0,A)') '/D/moments_qus.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (97, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (97, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (97, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_qvis.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (96, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (96, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (96, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_qth_pos.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (95, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (95, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (95, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_qth_neg.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (94, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (94, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (94, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_vol.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (93, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (93, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalVolume'
+                write (93, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalVolume'
             end if
 
             if (hifu_params%power_balance) then
                 write (file_path, '(A,I0,A)') '/D/power_balance_in.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (92, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (92, *) 'mytime, hdid, acPw_in_xb, acPw_in_xe, acPw_in_yb, acPw_in_ye, acPw_in_zb, acPw_in_ze'
+                write (92, '(A)') 'mytime,hdid,acPw_in_xb,acPw_in_xe,acPw_in_yb,acPw_in_ye,acPw_in_zb,acPw_in_ze'
 
                 write (file_path, '(A,I0,A)') '/D/power_balance_out.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (91, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (91, *) 'mytime, hdid, acPw_out_xb, acPw_out_xe, acPw_out_yb, acPw_out_ye, acPw_out_zb, acPw_out_ze'
+                write (91, '(A)') 'mytime,hdid,acPw_out_xb,acPw_out_xe,acPw_out_yb,acPw_out_ye,acPw_out_zb,acPw_out_ze'
 
                 write (file_path, '(A,I0,A)') '/D/power_balance_qac.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (90, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (90, *) 'mytime, hdid, qac, acPw_cmprssv, acPw_kntc'
+                write (90, '(A)') 'mytime,hdid,qac,acPw_cmprssv,acPw_kntc'
 
                 write (file_path, '(A,I0,A)') '/D/power_balance_qbub.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (89, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (89, *) 'mytime, hdid, nbubs, qvis, qth, ke'
+                write (89, '(A)') 'mytime,hdid,nbubs,qvis,qth,ke'
             end if
 
         end if
