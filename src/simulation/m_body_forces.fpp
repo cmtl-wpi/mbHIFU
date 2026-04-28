@@ -1,5 +1,10 @@
+!>
+!! @file
+!! @brief Contains module m_body_forces
+
 #:include 'macros.fpp'
 
+!> @brief Computes gravitational and user-defined body force source terms for the momentum equations
 module m_body_forces
 
     use m_derived_types        !< Definitions of the derived types
@@ -10,9 +15,7 @@ module m_body_forces
 
     use m_nvtx
 
-#ifdef MFC_OpenACC
-    use openacc
-#endif
+! $:USE_GPU_MODULE()
 
     implicit none
 
@@ -26,7 +29,7 @@ module m_body_forces
 
 contains
 
-    !> This subroutine inializes the module global array of mixture
+    !> This subroutine initializes the module global array of mixture
     !! densities in each grid cell
     impure subroutine s_initialize_body_forces_module
 
@@ -57,15 +60,11 @@ contains
 
         real(wp), intent(in) :: t
 
-        if (m > 0) then
-            accel_bf(1) = g_x + k_x*sin(w_x*t - p_x)
-            if (n > 0) then
-                accel_bf(2) = g_y + k_y*sin(w_y*t - p_y)
-                if (p > 0) then
-                    accel_bf(3) = g_z + k_z*sin(w_z*t - p_z)
-                end if
+        #:for DIR, XYZ in [(1, 'x'), (2, 'y'), (3, 'z')]
+            if (bf_${XYZ}$) then
+                accel_bf(${DIR}$) = g_${XYZ}$+k_${XYZ}$*sin(w_${XYZ}$*t - p_${XYZ}$)
             end if
-        end if
+        #:endfor
 
         $:GPU_UPDATE(device='[accel_bf]')
 
@@ -79,7 +78,7 @@ contains
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         integer :: i, j, k, l !< standard iterators
 
-        $:GPU_PARALLEL_LOOP(collapse=3)
+        $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
         do l = 0, p
             do k = 0, n
                 do j = 0, m
@@ -91,6 +90,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_compute_mixture_density
 
@@ -98,6 +98,7 @@ contains
     !! so the system can be advanced in time
     !! @param q_cons_vf Conservative variables
     !! @param q_prim_vf Primitive variables
+    !! @param rhs_vf Right-hand side accumulator
     subroutine s_compute_body_forces_rhs(q_prim_vf, q_cons_vf, rhs_vf)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
@@ -109,7 +110,7 @@ contains
         call s_compute_acceleration(mytime)
         call s_compute_mixture_density(q_cons_vf)
 
-        $:GPU_PARALLEL_LOOP(collapse=4)
+        $:GPU_PARALLEL_LOOP(private='[i,j,k,l]', collapse=4)
         do i = momxb, E_idx
             do l = 0, p
                 do k = 0, n
@@ -119,10 +120,11 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         if (bf_x) then ! x-direction body forces
 
-            $:GPU_PARALLEL_LOOP(collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -133,11 +135,12 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         end if
 
         if (bf_y) then ! y-direction body forces
 
-            $:GPU_PARALLEL_LOOP(collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -148,26 +151,29 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         end if
 
         if (bf_z) then ! z-direction body forces
 
-            $:GPU_PARALLEL_LOOP(collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
                         rhs_vf(momxe)%sf(j, k, l) = rhs_vf(momxe)%sf(j, k, l) + &
-                                                    (rhoM(j, k, l))*accel_bf(3)
+                                                    rhoM(j, k, l)*accel_bf(3)
                         rhs_vf(E_idx)%sf(j, k, l) = rhs_vf(E_idx)%sf(j, k, l) + &
                                                     q_cons_vf(momxe)%sf(j, k, l)*accel_bf(3)
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
         end if
 
     end subroutine s_compute_body_forces_rhs
 
+    !> @brief Deallocates module variables used for body force computations.
     impure subroutine s_finalize_body_forces_module
 
         @:DEALLOCATE(rhoM)

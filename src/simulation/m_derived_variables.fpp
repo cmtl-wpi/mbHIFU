@@ -1,12 +1,8 @@
 !>
-!! @file m_derived_variables.f90
+!! @file
 !! @brief Contains module m_derived_variables
 
-!> @brief This module features subroutines that allow for the derivation of
-!!              numerous flow variables from the conservative and primitive ones.
-!!              Currently, the available derived variables include the unadvected
-!!              volume fraction, specific heat ratio, liquid stiffness, speed of
-!!              sound, vorticity and the numerical Schlieren function.
+!> @brief Derives diagnostic flow quantities (vorticity, speed of sound, numerical Schlieren, etc.) from conservative and primitive variables
 #:include 'macros.fpp'
 
 module m_derived_variables
@@ -18,8 +14,6 @@ module m_derived_variables
     use m_mpi_proxy             !< Message passing interface (MPI) module proxy
 
     use m_data_output           !< Data output module
-
-    use m_time_steppers         !< Time-stepping algorithms
 
     use m_compile_specific
 
@@ -120,39 +114,45 @@ contains
 
     !> Writes coherent body information, communication files, and probes.
         !!  @param t_step Current time-step
-    subroutine s_compute_derived_variables(t_step)
+        !!  @param q_cons_vf Conservative variables
+        !!  @param q_prim_ts1 Primitive variables at time-stage 1
+        !!  @param q_prim_ts2 Primitive variables at time-stage 2
+    subroutine s_compute_derived_variables(t_step, q_cons_vf, q_prim_ts1, q_prim_ts2, q_hifu_vf)
 
         integer, intent(in) :: t_step
+        type(scalar_field), dimension(:), intent(inout) :: q_cons_vf
+        type(vector_field), dimension(:), intent(inout) :: q_prim_ts1, q_prim_ts2
+        type(scalar_field), dimension(:), intent(inout), optional :: q_hifu_vf
         integer :: i, j, k !< Generic loop iterators
 
         if (probe_wrt) then
 
             if (hifu_params%stg3_3d .and. hifu_params%heatSolver) then
-                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag, q_hifu_3d%vf)
+                call s_write_probe_files(t_step, q_cons_vf, accel_mag, q_hifu_vf)
                 return
             end if
 
-            call s_derive_acceleration_component(1, q_prim_ts(0)%vf, &
-                                                 q_prim_ts(1)%vf, &
-                                                 q_prim_ts(2)%vf, &
-                                                 q_prim_ts(3)%vf, &
+            call s_derive_acceleration_component(1, q_prim_ts1(1)%vf, &
+                                                 q_prim_ts1(2)%vf, &
+                                                 q_prim_ts2(1)%vf, &
+                                                 q_prim_ts2(2)%vf, &
                                                  x_accel)
             if (n > 0) then
-                call s_derive_acceleration_component(2, q_prim_ts(0)%vf, &
-                                                     q_prim_ts(1)%vf, &
-                                                     q_prim_ts(2)%vf, &
-                                                     q_prim_ts(3)%vf, &
+                call s_derive_acceleration_component(2, q_prim_ts1(1)%vf, &
+                                                     q_prim_ts1(2)%vf, &
+                                                     q_prim_ts2(1)%vf, &
+                                                     q_prim_ts2(2)%vf, &
                                                      y_accel)
             end if
             if (p > 0) then
-                call s_derive_acceleration_component(3, q_prim_ts(0)%vf, &
-                                                     q_prim_ts(1)%vf, &
-                                                     q_prim_ts(2)%vf, &
-                                                     q_prim_ts(3)%vf, &
+                call s_derive_acceleration_component(3, q_prim_ts1(1)%vf, &
+                                                     q_prim_ts1(2)%vf, &
+                                                     q_prim_ts2(1)%vf, &
+                                                     q_prim_ts2(2)%vf, &
                                                      z_accel)
             end if
 
-            $:GPU_PARALLEL_LOOP(collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[i,j,k]', collapse=3)
             do k = 0, p
                 do j = 0, n
                     do i = 0, m
@@ -169,16 +169,17 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             $:GPU_UPDATE(host='[accel_mag]')
 
-            call s_derive_center_of_mass(q_prim_ts(3)%vf, c_mass)
+            call s_derive_center_of_mass(q_prim_ts2(2)%vf, c_mass)
 
             !call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
             if (hifu) then
-                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag, q_hifu%vf)
+                call s_write_probe_files(t_step, q_cons_vf, accel_mag, q_hifu_vf)
             else
-                call s_write_probe_files(t_step, q_cons_ts(1)%vf, accel_mag)
+                call s_write_probe_files(t_step, q_cons_vf, accel_mag)
             end if
 
             call s_write_com_files(t_step, c_mass)
@@ -198,8 +199,8 @@ contains
         !!  @param q_prim_vf2 Primitive variables
         !!  @param q_prim_vf3 Primitive variables
         !!  @param q_sf Acceleration component
-    pure subroutine s_derive_acceleration_component(i, q_prim_vf0, q_prim_vf1, &
-                                                    q_prim_vf2, q_prim_vf3, q_sf)
+    subroutine s_derive_acceleration_component(i, q_prim_vf0, q_prim_vf1, &
+                                               q_prim_vf2, q_prim_vf3, q_sf)
 
         integer, intent(in) :: i
 
@@ -214,7 +215,7 @@ contains
 
         ! Computing the acceleration component in the x-coordinate direction
         if (i == 1) then
-            $:GPU_PARALLEL_LOOP(collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -225,9 +226,10 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             if (n == 0) then
-                $:GPU_PARALLEL_LOOP(collapse=4)
+                $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
@@ -239,8 +241,9 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             elseif (p == 0) then
-                $:GPU_PARALLEL_LOOP(collapse=4)
+                $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
@@ -254,9 +257,10 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             else
                 if (grid_geometry == 3) then
-                    $:GPU_PARALLEL_LOOP(collapse=4)
+                    $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                     do l = 0, p
                         do k = 0, n
                             do j = 0, m
@@ -272,8 +276,9 @@ contains
                             end do
                         end do
                     end do
+                    $:END_GPU_PARALLEL_LOOP()
                 else
-                    $:GPU_PARALLEL_LOOP(collapse=4)
+                    $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                     do l = 0, p
                         do k = 0, n
                             do j = 0, m
@@ -289,11 +294,12 @@ contains
                             end do
                         end do
                     end do
+                    $:END_GPU_PARALLEL_LOOP()
                 end if
             end if
             ! Computing the acceleration component in the y-coordinate direction
         elseif (i == 2) then
-            $:GPU_PARALLEL_LOOP(collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -304,9 +310,10 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             if (p == 0) then
-                $:GPU_PARALLEL_LOOP(collapse=4)
+                $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
@@ -320,9 +327,10 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             else
                 if (grid_geometry == 3) then
-                    $:GPU_PARALLEL_LOOP(collapse=4)
+                    $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                     do l = 0, p
                         do k = 0, n
                             do j = 0, m
@@ -339,8 +347,9 @@ contains
                             end do
                         end do
                     end do
+                    $:END_GPU_PARALLEL_LOOP()
                 else
-                    $:GPU_PARALLEL_LOOP(collapse=4)
+                    $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                     do l = 0, p
                         do k = 0, n
                             do j = 0, m
@@ -356,11 +365,12 @@ contains
                             end do
                         end do
                     end do
+                    $:END_GPU_PARALLEL_LOOP()
                 end if
             end if
             ! Computing the acceleration component in the z-coordinate direction
         else
-            $:GPU_PARALLEL_LOOP(collapse=3)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -371,9 +381,10 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             if (grid_geometry == 3) then
-                $:GPU_PARALLEL_LOOP(collapse=4)
+                $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
@@ -391,8 +402,9 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             else
-                $:GPU_PARALLEL_LOOP(collapse=4)
+                $:GPU_PARALLEL_LOOP(private='[j,k,l,r]', collapse=4)
                 do l = 0, p
                     do k = 0, n
                         do j = 0, m
@@ -408,6 +420,7 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             end if
         end if
 
@@ -418,7 +431,7 @@ contains
     !!      of the center of mass for each fluid from the inputted
     !!      primitive variables, q_prim_vf. The computed location
     !!      is then written to a formatted data file by the root process.
-    !!  @param q_prim_vf Primitive variables
+    !!  @param q_vf Primitive variables
     !!  @param c_m Mass,x-location,y-location,z-location
     impure subroutine s_derive_center_of_mass(q_vf, c_m)
         type(scalar_field), dimension(sys_size), intent(IN) :: q_vf
@@ -435,8 +448,10 @@ contains
             end do
         end do
 
+        $:GPU_UPDATE(device='[c_m]')
+
         if (n == 0) then !1D simulation
-            $:GPU_PARALLEL_LOOP(collapse=3,private='[dV]')
+            $:GPU_PARALLEL_LOOP(collapse=3,private='[j,k,l,dV]')
             do l = 0, p !Loop over grid
                 do k = 0, n
                     do j = 0, m
@@ -456,8 +471,9 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         elseif (p == 0) then !2D simulation
-            $:GPU_PARALLEL_LOOP(collapse=3,private='[dV]')
+            $:GPU_PARALLEL_LOOP(collapse=3,private='[j,k,l,dV]')
             do l = 0, p !Loop over grid
                 do k = 0, n
                     do j = 0, m
@@ -480,8 +496,9 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         else !3D simulation
-            $:GPU_PARALLEL_LOOP(collapse=3,private='[dV]')
+            $:GPU_PARALLEL_LOOP(collapse=3,private='[j,k,l,dV]')
             do l = 0, p !Loop over grid
                 do k = 0, n
                     do j = 0, m
@@ -508,6 +525,7 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         end if
 
         $:GPU_UPDATE(host='[c_m]')

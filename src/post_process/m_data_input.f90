@@ -1,10 +1,8 @@
 !>
-!! @file m_data_input.f90
+!! @file
 !> @brief Contains module m_data_input
 
-!> @brief This module features procedures, which for a specific time-step,
-!!             read in the raw simulation data for the grid and the conservative
-!!             variables and fill out their buffer regions.
+!> @brief Reads raw simulation grid and conservative-variable data for a given time-step and fills buffer regions
 module m_data_input
 
 #ifdef MFC_MPI
@@ -163,17 +161,21 @@ contains
 
     !> Helper subroutine to read IB data files
     !!  @param file_loc_base Base file location for IB data
-    impure subroutine s_read_ib_data_files(file_loc_base)
+    !!  @param t_step Time step index
+    impure subroutine s_read_ib_data_files(file_loc_base, t_step)
 
         character(len=*), intent(in) :: file_loc_base
+        integer, intent(in), optional :: t_step
 
         character(LEN=len_trim(file_loc_base) + 20) :: file_loc
         logical :: file_exist
-        integer :: ifile, ierr, data_size
+        integer :: ifile, ierr, data_size, var_MOK
 
 #ifdef MFC_MPI
         integer, dimension(MPI_STATUS_SIZE) :: status
         integer(KIND=MPI_OFFSET_KIND) :: disp
+        integer :: m_MOK, n_MOK, p_MOK, MOK, WP_MOK, save_index
+
 #endif
         if (.not. ib) return
 
@@ -189,8 +191,20 @@ contains
 #ifdef MFC_MPI
                 call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
 
+                m_MOK = int(m_glb + 1, MPI_OFFSET_KIND)
+                n_MOK = int(n_glb + 1, MPI_OFFSET_KIND)
+                p_MOK = int(p_glb + 1, MPI_OFFSET_KIND)
+                MOK = int(1._wp, MPI_OFFSET_KIND)
+                WP_MOK = int(8._wp, MPI_OFFSET_KIND)
+                save_index = t_step/t_step_save ! get the number of saves done to this point
+
                 data_size = (m + 1)*(n + 1)*(p + 1)
-                disp = 0
+                var_MOK = int(sys_size + 1, MPI_OFFSET_KIND)
+                if (t_step == 0) then
+                    disp = 0
+                else
+                    disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1 + int(save_index, MPI_OFFSET_KIND))
+                end if
 
                 call MPI_FILE_SET_VIEW(ifile, disp, MPI_INTEGER, MPI_IO_IB_DATA%view, &
                                        'native', mpi_info_int, ierr)
@@ -214,8 +228,10 @@ contains
     end subroutine s_read_ib_data_files
 
     !> Helper subroutine to allocate field arrays for given dimensionality
-    !!  @param start_idx Starting index for allocation
-    !!  @param end_x, end_y, end_z End indices for each dimension
+    !!  @param local_start_idx Starting index for allocation
+    !!  @param end_x End index for x dimension
+    !!  @param end_y End index for y dimension
+    !!  @param end_z End index for z dimension
     impure subroutine s_allocate_field_arrays(local_start_idx, end_x, end_y, end_z)
 
         integer, intent(in) :: local_start_idx, end_x, end_y, end_z
@@ -290,15 +306,6 @@ contains
                              ' is missing. Exiting.')
         end if
 
-        file_loc = trim(t_step_ib_dir)//'/.'
-        call my_inquire(file_loc, dir_check)
-
-        ! If the time-step directory is missing, the post-process exits.
-        if (dir_check .neqv. .true.) then
-            call s_mpi_abort('Time-step folder '//trim(t_step_ib_dir)// &
-                             ' is missing. Exiting.')
-        end if
-
         if (bc_io) then
             call s_read_serial_boundary_condition_files(t_step_dir, bc_type)
         else
@@ -332,6 +339,10 @@ contains
                       STATUS='old', ACTION='read')
                 read (1) q_cons_vf(i)%sf(0:m, 0:n, 0:p)
                 close (1)
+            else if (bubbles_lagrange .and. i == beta_idx) then
+                ! beta (Lagrangian void fraction) is not written by pre_process
+                ! for t_step_start; initialize to zero.
+                q_cons_vf(i)%sf(0:m, 0:n, 0:p) = 0._wp
             else
                 call s_mpi_abort('File q_cons_vf'//trim(file_num)// &
                                  '.dat is missing in '//trim(t_step_dir)// &
@@ -341,7 +352,7 @@ contains
         end do
 
         ! Reading IB data using helper subroutine
-        call s_read_ib_data_files(t_step_ib_dir)
+        call s_read_ib_data_files(t_step_dir)
 
     end subroutine s_read_serial_data_files
 
@@ -562,14 +573,14 @@ contains
                 if (bubbles_euler .or. elasticity .or. mhd) then
                     do i = 1, sys_size
                         var_MOK = int(i, MPI_OFFSET_KIND)
-                        call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                               mpi_p, status, ierr)
+                        call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                               mpi_io_p, status, ierr)
                     end do
                 else
                     do i = 1, sys_size
                         var_MOK = int(i, MPI_OFFSET_KIND)
-                        call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                               mpi_p, status, ierr)
+                        call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                               mpi_io_p, status, ierr)
                     end do
                 end if
 
@@ -582,7 +593,7 @@ contains
                     end do
                 end if
 
-                call s_read_ib_data_files(trim(case_dir)//'/restart_data'//trim(mpiiofs))
+                call s_read_ib_data_files(trim(case_dir)//'/restart_data'//trim(mpiiofs), t_step)
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
             end if
@@ -609,10 +620,10 @@ contains
                         ! Initial displacement to skip at beginning of file
                         disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, MPI_DOUBLE_PRECISION, MPI_IO_HIFU_DATA%view(i), &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_HIFU_DATA%view(i), &
                                                'native', mpi_info_int, ierr)
                         call MPI_FILE_READ_ALL(ifile, MPI_IO_HIFU_DATA%var(i)%sf, data_size, &
-                                               MPI_DOUBLE_PRECISION, status, ierr)
+                                               mpi_io_p, status, ierr)
                     end do
                 else
                     do i = 1, sys_size
@@ -622,16 +633,16 @@ contains
                         disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
                         call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
-                                              'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                              mpi_p, status, ierr)
+                                           'native', mpi_info_int, ierr)
+                        call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                              mpi_io_p, status, ierr)
                     end do
                 end if
 
                 call s_mpi_barrier()
                 call MPI_FILE_CLOSE(ifile, ierr)
 
-                call s_read_ib_data_files(trim(case_dir)//'/restart_data'//trim(mpiiofs))
+                call s_read_ib_data_files(trim(case_dir)//'/restart_data'//trim(mpiiofs), t_step)
             else
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
             end if
@@ -677,16 +688,16 @@ contains
         end if
 
         ! Allocating arrays to store the bc types
-        allocate (bc_type(1:num_dims, -1:1))
+        allocate (bc_type(1:num_dims, 1:2))
 
-        allocate (bc_type(1, -1)%sf(0:0, 0:n, 0:p))
         allocate (bc_type(1, 1)%sf(0:0, 0:n, 0:p))
+        allocate (bc_type(1, 2)%sf(0:0, 0:n, 0:p))
         if (n > 0) then
-            allocate (bc_type(2, -1)%sf(-buff_size:m + buff_size, 0:0, 0:p))
             allocate (bc_type(2, 1)%sf(-buff_size:m + buff_size, 0:0, 0:p))
+            allocate (bc_type(2, 2)%sf(-buff_size:m + buff_size, 0:0, 0:p))
             if (p > 0) then
-                allocate (bc_type(3, -1)%sf(-buff_size:m + buff_size, -buff_size:n + buff_size, 0:0))
                 allocate (bc_type(3, 1)%sf(-buff_size:m + buff_size, -buff_size:n + buff_size, 0:0))
+                allocate (bc_type(3, 2)%sf(-buff_size:m + buff_size, -buff_size:n + buff_size, 0:0))
             end if
         end if
 
@@ -730,12 +741,12 @@ contains
             end do
             deallocate (q_cons_hifu)
         end if
-
-        deallocate (bc_type(1, -1)%sf, bc_type(1, 1)%sf)
+        
+        deallocate (bc_type(1, 1)%sf, bc_type(1, 2)%sf)
         if (n > 0) then
-            deallocate (bc_type(2, -1)%sf, bc_type(2, 1)%sf)
+            deallocate (bc_type(2, 1)%sf, bc_type(2, 2)%sf)
             if (p > 0) then
-                deallocate (bc_type(3, -1)%sf, bc_type(3, 1)%sf)
+                deallocate (bc_type(3, 1)%sf, bc_type(3, 2)%sf)
             end if
         end if
 

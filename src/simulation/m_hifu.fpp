@@ -21,6 +21,8 @@ module m_hifu
     use m_bubbles_EL
 
     use m_bubbles_EL_kernels
+
+    use m_helper
     ! ==========================================================================
 
     implicit none
@@ -34,8 +36,6 @@ module m_hifu
     integer :: bc_pole, sys_size_hyd
     $:GPU_DECLARE(create='[bc_pole, sys_size_hyd]')
 
-    real(wp), allocatable, dimension(:,:) :: acPw_in, acPw_out
-
 contains
 
     !> Initializes the hifu model
@@ -46,15 +46,27 @@ contains
         sys_size_hyd = sys_size
 
         ! Define hifu indexes
-        hifu_params%T_idx = 1
-        hifu_params%tsamp_idx = 3
-        hifu_params%qus_idx = 4
-        hifu_params%qvis_idx = 5
-        hifu_params%qth_idx = 7
-        hifu_params%qus_prms_idx = 9
+        hifu_params%qus_idx = 1
+        hifu_params%qus_prms_idx = 2
+        hifu_params%qvis_idx = 3
+        hifu_params%qth_idx = 5
+        hifu_params%T_idx = 7
+        hifu_params%tsamp_idx = 9
         hifu_params%P_idx = 10
-        hifu_params%u_idx = 12
-        hifu_params%v_idx = 14
+        if (hifu_params%streaming) then
+            hifu_params%u_idx = 12
+            hifu_params%v_idx = 14
+        end if
+
+        ! hifu_params%T_idx = 1
+        ! hifu_params%tsamp_idx = 3
+        ! hifu_params%qus_idx = 4
+        ! hifu_params%qvis_idx = 5
+        ! hifu_params%qth_idx = 7
+        ! hifu_params%qus_prms_idx = 9
+        ! hifu_params%P_idx = 10
+        ! hifu_params%u_idx = 12
+        ! hifu_params%v_idx = 14
 
         ! Allocating the cell-average RHS variables
         @:ALLOCATE(q_hifu%vf(1:sys_size_hifu))
@@ -83,15 +95,6 @@ contains
         $:GPU_UPDATE(device='[sys_size_hyd, shear_viscous_fluids, bulk_viscous_fluids, &
           & abs_coef_fluids, rho_cp_fluids, tdiff_fluids]')
 
-        ! Store acoustic power samples, 
-        !(total=1:tmp=2, faces: xe=1, xb=2, ye=3, yb=4, ze=5, zb=6)
-        @:ALLOCATE(acPw_in(1:2, 1:6))
-        @:ALLOCATE(acPw_out(1:2, 1:6))
-
-        acPw_in(:, :) = 0._wp
-        acPw_out(:, :) = 0._wp
-        $:GPU_UPDATE(device='[acPw_in, acPw_out]')
-
     end subroutine s_initialize_HIFU_module
 
     !> Populate HIFU vars with user inputs and zeroing the time-averaged vars.
@@ -111,6 +114,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         $:GPU_PARALLEL_LOOP(collapse=3)
         do k = idwbuff(3)%beg, idwbuff(3)%end
@@ -125,6 +129,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         call s_open_run_time_information_samplingHIFU()
 
@@ -590,12 +595,7 @@ contains
                         durdr = (q_prim_vf(contxe + 2)%sf(j, k + 1, 0) - q_prim_vf(contxe + 2)%sf(j, k - 1, 0))/(y_cc(k + 1) - y_cc(k - 1))
 
                         !>> Get pressure, density and speed of sound
-                        $:GPU_LOOP(parallelism='[seq]')
-                        do i = 1, contxe
-                            myalpha_rho(i) = q_prim_vf(i)%sf(j, k, l)
-                            myalpha(i) = q_prim_vf(E_idx + i)%sf(j, k, l)
-                        end do
-
+                        call s_compute_species_fraction(q_prim_vf, j, k, l, myalpha_rho, myalpha)
                         call s_convert_species_to_mixture_variables_acc(rho_h, gamma_h, pi_inf_h, qv_h, myalpha, &
                                                                 myalpha_rho, Re_h)
 
@@ -608,8 +608,8 @@ contains
                                                                         pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
         
                         call s_compute_speed_of_sound(pres_h, rho_h, gamma_h, pi_inf_h, &
-                                                      ((gamma_h + 1._wp)*pres_h + pi_inf_h)/rho_h, myalpha, 0._wp, c_c_h, cson_h)
-                        
+                                                      ((gamma_h + 1._wp)*pres_h + pi_inf_h + qv_h)/rho_h, myalpha, 0._wp, 0._wp, cson_h, qv_h)
+
                         !Obtaining Pmax and Pmin fields
                         q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), pres_h)
                         q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
@@ -666,8 +666,10 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        if (hifu_params%streaming) then
+                            q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                            q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        end if
 
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > y_cc(k) .and. y_cc(k) > 0._wp)
@@ -684,6 +686,7 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity (prms)"
 
@@ -774,7 +777,8 @@ contains
                         call s_compute_pressure(q_cons_vf(E_idx)%sf(j, k, l), 0._wp, 0.5_wp*rho_h*dot_product(vel_h, vel_h), &
                                                 pi_inf_h, gamma_h, rho_h, qv_h, rhoYks_h, pres_h, T_h)
                         call s_compute_speed_of_sound(pres_h, rho_h, gamma_h, pi_inf_h, &
-                                                ((gamma_h + 1._wp)*pres_h + pi_inf_h)/rho_h, myalpha, 0._wp, c_c_h, cson_h)
+                                                      ((gamma_h + 1._wp)*pres_h + pi_inf_h + qv_h)/rho_h, myalpha, &
+                                                      0._wp, 0._wp, cson_h, qv_h)
                                      
                         !Obtaining Pmax and Pmin fields
                         q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), pres_h)
@@ -837,9 +841,10 @@ contains
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
                         !Update average velocities for streaming
-                        q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
-                        q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
-
+                        if (hifu_params%streaming) then
+                            q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
+                            q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
+                        end if
                         !Get focal intensity and velocities
                         axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
                         if (p>0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
@@ -897,6 +902,7 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity"
 
@@ -1427,6 +1433,7 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             !Smear qvis and qth from the bubbles
             if (bubbles_lagrange) then 
@@ -1673,6 +1680,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         ! 3d q_hifu: Acoustic intensity
         $:GPU_PARALLEL_LOOP(collapse=3)
@@ -1684,6 +1692,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         if (proc_rank==0) print*, 'Grid populated: Initial temp & qus'
 
@@ -1882,6 +1891,7 @@ contains
                 min_old = min(min_old, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, 0)/q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, 0))
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         if (num_procs>1) then
             tmp_local = max_old
@@ -1913,6 +1923,7 @@ contains
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
 
             ! Report stats
             print*, 'Min avg qus 2D:', min_old
@@ -1929,6 +1940,7 @@ contains
         do i = 1, nBubs
             max_qvis = max(max_qvis, bub_qvis(i)/q_hifu_3d%vf(hifu_params%tsamp_idx)%sf(0,0,0))
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         if (num_procs>1) then
             tmp_local = max_qvis
@@ -1945,7 +1957,7 @@ contains
             print*, 'Max avg q_vis (lagrange):', max_qvis
             print*, 'Max avg q_vis (euler):', max_qvis_smooth
             print*, 'Sampled time:', sampledTime
-            print*, 'Host viscosity:', mul0
+            print*, 'Host viscosity:', mu_l
         end if
 
         if (proc_rank == 0) print*, 'Printing avg viscous and thermal intensities in W for all bubbles in ./D/ file'
@@ -2046,7 +2058,7 @@ contains
             call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                     mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
             ! Add effect of bubbles across processors
-            if (num_procs > 0) call s_populate_EL_buffers(q_hifu, bc_type, hifu_params%qth_idx, .true.)
+            if (num_procs > 1) call s_populate_EL_buffers(q_hifu, bc_type, hifu_params%qth_idx, .true.)
             call s_print_hifu_source_stats(hifu_params%qvis_idx)
             call s_print_hifu_source_stats(hifu_params%qth_idx)
         end if
@@ -2075,6 +2087,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         if (num_procs>1) then
             tmp_local = max_val
@@ -2137,6 +2150,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         if (num_procs>1) then
             val_tmp = total_heat
@@ -2246,9 +2260,9 @@ contains
                             dTdr_R = (dTdr*(y_cb_hf(k) - y_cc_hf(k)) + dTdr_R*(y_cc_hf(k+1) - y_cb_hf(k)))/(y_cc_hf(k+1) - y_cc_hf(k))
                             dTdz_R = (dTdz*(z_cb_hf(l) - z_cc_hf(l)) + dTdz_R*(z_cc_hf(l+1) - z_cb_hf(l)))/(z_cc_hf(l+1) - z_cc_hf(l))
 
-                            !> Get thermal properties (Assume host is num_fluids-1)
-                            rho_cp = rho_cp_fluids(num_fluids - 1)
-                            tdiff = tdiff_fluids(num_fluids - 1)
+                            !> Get thermal properties (Assume host is num_fluids)
+                            rho_cp = rho_cp_fluids(num_fluids)
+                            tdiff = tdiff_fluids(num_fluids)
 
                             if (f_is_default(rho_cp) .or. f_is_default(tdiff)) then
                                 print *, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
@@ -2303,6 +2317,7 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
                 
             end if
 
@@ -2334,13 +2349,15 @@ contains
 
                             !> Find temperature and streaming velocities at the faces of the cell
                             Tx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, l))/2._wp
-                            Ux_L = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
                             Tx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l))/2._wp
-                            Ux_R = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
                             Tr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, l))/2._wp
-                            Ur_L = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
                             Tr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l))/2._wp
-                            Ur_R = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
+                            if (hifu_params%streaming) then
+                                Ux_L = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j - 1, k, l))/2._wp
+                                Ux_R = (q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%u_idx)%sf(j + 1, k, l))/2._wp
+                                Ur_L = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k - 1, l))/2._wp
+                                Ur_R = (q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + q_hifu%vf(hifu_params%v_idx)%sf(j, k + 1, l))/2._wp
+                            end if
 
                             !> Get thermal properties
                             alpha = 0._wp
@@ -2402,12 +2419,15 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
 
                 if (proc_rank==0 .and. t_step == 0) print*, 'Max CFL:', CFL_heat
 
             else 
 
                 if (cyl_coord) then !< from axisymmetric to 3D Cylindrical
+
+                    if (hifu_params%streaming) call s_mpi_abort("HIFU: Streaming not implemented for 3D")
 
                     call s_populate_variables_buffers(bc_type, q_hifu_3d%vf, pb, mv)
 
@@ -2480,11 +2500,6 @@ contains
                                                                                     q_hifu_3d%vf(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
                                                                                     q_hifu_3d%vf(hifu_params%qth_idx)%sf(j, k, l))        !Thermal intensity
 
-
-                                    if (hifu_params%streaming) then
-                                        !> Convected heat flux
-                                        stop "HIFU: No streaming valid for 3D heat solver!"
-                                    end if
                                 end if
 
                                 !Checking NaNs
@@ -2527,6 +2542,7 @@ contains
                             end do
                         end do
                     end do
+                    $:END_GPU_PARALLEL_LOOP()
 
 
                     if (t_step == 0) then
@@ -2558,6 +2574,8 @@ contains
                 else ! 3D cartesian (all stages)
 
                     call s_populate_variables_buffers(bc_type, q_hifu%vf, pb, mv)
+
+                    if (hifu_params%streaming) call s_mpi_abort("HIFU: Streaming not implemented for 3D")
 
                     $:GPU_PARALLEL_LOOP(collapse=3, copyin='[qus_hifu_idx_ht, t_step]', &
                     & reduction='[[abortFlag_max, CFL_heat_max]]',reductionOp='[MAX]', &
@@ -2628,12 +2646,6 @@ contains
                                             q_hifu%vf(hifu_params%qvis_idx)%sf(j, k, l) + &    !Viscous intensity
                                             q_hifu%vf(hifu_params%qth_idx)%sf(j, k, l))        !Thermal intensity
 
-
-                                    if (hifu_params%streaming) then
-                                        !> Convected heat flux
-                                        print*, "HIFU: No streaming valid for 3D heat solver!"
-                                        abortFlag = 1._wp
-                                    end if
                                 end if
 
                                 !Checking NaNs
@@ -2662,6 +2674,7 @@ contains
                             end do
                         end do
                     end do
+                    $:END_GPU_PARALLEL_LOOP()
 
                 end if
             end if
@@ -2881,9 +2894,6 @@ contains
         @:DEALLOCATE(abs_coef_fluids)
         @:DEALLOCATE(rho_cp_fluids)
         @:DEALLOCATE(tdiff_fluids)
-
-        @:DEALLOCATE(acPw_in)
-        @:DEALLOCATE(acPw_out)
 
     end subroutine s_finalize_HIFU_module
 

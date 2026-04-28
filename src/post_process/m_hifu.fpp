@@ -100,16 +100,27 @@ contains
     subroutine s_HIFU_indexes()
 
         ! Define hifu indexes
-        hifu_params%T_idx = 1
-        hifu_params%tsamp_idx = 3
-        hifu_params%qus_idx = 4
-        hifu_params%qvis_idx = 5
-        hifu_params%qth_idx = 7
-        hifu_params%qus_prms_idx = 9
+        hifu_params%qus_idx = 1
+        hifu_params%qus_prms_idx = 2
+        hifu_params%qvis_idx = 3
+        hifu_params%qth_idx = 5
+        hifu_params%T_idx = 7
+        hifu_params%tsamp_idx = 9
         hifu_params%P_idx = 10
-        hifu_params%u_idx = 12
-        hifu_params%v_idx = 14
-        !sys_size = hifu_params%v_idx
+        if (hifu_params%streaming) then
+            hifu_params%u_idx = 12
+            hifu_params%v_idx = 14
+        end if
+
+        ! hifu_params%T_idx = 1
+        ! hifu_params%tsamp_idx = 3
+        ! hifu_params%qus_idx = 4
+        ! hifu_params%qvis_idx = 5
+        ! hifu_params%qth_idx = 7
+        ! hifu_params%qus_prms_idx = 9
+        ! hifu_params%P_idx = 10
+        ! hifu_params%u_idx = 12
+        ! hifu_params%v_idx = 14
 
     end subroutine s_HIFU_indexes
 

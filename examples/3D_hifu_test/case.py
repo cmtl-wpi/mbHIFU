@@ -70,8 +70,8 @@ mu_host = absCoef_to_mu(abs_coef_host, freq, rho_host, c_host)    # Dynamic visc
 R_uni = 8314                        # Universal gas constant - J/kmol/K
 MW_g = 238.027                      # Molar weigth of the gas - kg/kmol (https://pubs.acs.org/doi/10.1021/acs.iecr.1c02969)
 MW_v = 18.0                         # Molar weigth of the vapor - kg/kmol
-gamma_g = 1.0699                    # Specific heat ratio of the gas (https://doi.org/10.3390/pharmaceutics14010098)
-gamma_v = 1.333                     # Specific heat ratio of the vapor
+gam_g = 1.0699                    # Specific heat ratio of the gas (https://doi.org/10.3390/pharmaceutics14010098)
+gam_v = 1.333                     # Specific heat ratio of the vapor
 pv = 2350                           # Vapor pressure of the host - Pa
 cp_g = 0.809e+03                    # Specific heat of the gas - J/kg/K (https://www.f2chemicals.com/perfluorobutane.html)
 cp_v = 2.1e+03                      # Specific heat of the vapor - J/kg/K
@@ -183,7 +183,7 @@ print(json.dumps({
     # ==========================================================
 
     # Simulation Algorithm Parameters ==========================
-    'num_fluids'                   : 3,         # Water/Phantom/BubbleGas
+    'num_fluids'                   : 2,         # Water/Phantom/BubbleGas
     'num_patches'                  : 2,
     'viscous'                      : 'T',
     'model_eqns'                   : 2,         # 5 model eqns
@@ -234,7 +234,7 @@ print(json.dumps({
     'hifu_params%t_stop_stg2'       : t_stop_stg2*(c0/x0),
     'hifu_params%t_step_stop_stg2'  : t_step_stop_stg2,
     # moments
-    'hifu_params%moments'           : 'F',
+    'hifu_params%moments'           : 'T',
     'hifu_params%R_cloud'           : 1.e-03/x0,
     'hifu_params%cloud_center(1)'   : 4.e-03/x0,
     'hifu_params%cloud_center(2)'   : 0.0,
@@ -270,11 +270,13 @@ print(json.dumps({
     # ==========================================================
 
     # Lagrangian Bubbles ===========================
-     'bubbles_lagrange'                 : 'F',
-     'bubble_model'                     : 2,    # Keller-Miksis model
+     'bubbles_lagrange'                 : 'T',
+     'bubble_model'                     : 2,  # Keller-Miksis model
+     'thermal'                          : 3,
+     'polytropic'                       : 'F',
      'lag_params%nBubs_glb'             : 5,  # Number of bubbles
-     'lag_params%solver_approach'       : 2,    # Two-way coupled
-     'lag_params%cluster_type'          : 2,    # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
+     'lag_params%solver_approach'       : 2,  # Two-way coupled
+     'lag_params%cluster_type'          : 2,  # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
      'lag_params%pressure_corrector'    : 'T',
      'lag_params%interaction_model'     : 1, # Interaction model: 1 -> kazuki & 2 -> Aditya's model
     #  'lag_params%influence'             : 3, # Number of surrounding cells to define influence volume
@@ -286,15 +288,28 @@ print(json.dumps({
      'lag_params%valmaxvoid'            : 0.9,
      'lag_params%write_bubbles'         : 'T',
      'lag_params%write_bubbles_stats'   : 'F',
-     'lag_params%c0'                    : c0,
-     'lag_params%rho0'                  : rho0,
-     'lag_params%T0'                    : T0,
-     'lag_params%x0'                    : x0,
-     'lag_params%diffcoefvap'           : diffVapor,
-     'lag_params%Thost'                 : T_host,
-     'lag_params%ss0_ctdBub'            : sigmaInit,
-     'lag_params%srfElast_ctdBub'       : elasticity,
-     'lag_params%srfDilVsc_ctdBub'      : dilatationalViscosity,
+     # ==========================================================
+
+     # Bubble parameters ===========================
+     'bub_pp%R0ref': x0/x0,
+     'bub_pp%p0ref': p0/p0,
+     'bub_pp%rho0ref': rho0/rho0,
+     'bub_pp%T0ref': T0/T0,
+     'bub_pp%Thost': T0/T0,
+     'bub_pp%ss': sigBubble / (rho0 * x0 * c0 * c0),
+     'bub_pp%pv': pv/p0,
+     'bub_pp%vd': diffVapor / (x0 * c0),
+     'bub_pp%mu_l': mu_host / (rho0 * x0 * c0),
+     'bub_pp%gam_v': gam_v,
+     'bub_pp%gam_g': gam_g,
+     'bub_pp%cp_v': cp_v * (T0 / (c0 * c0)),
+     'bub_pp%cp_g': cp_g * (T0 / (c0 * c0)),
+     'bub_pp%k_v': k_v * (T0 / (x0 * rho0 * c0 * c0 * c0)),
+     'bub_pp%k_g': k_g * (T0 / (x0 * rho0 * c0 * c0 * c0)),
+     'bub_pp%M_v': MW_v,   
+     'bub_pp%M_g': MW_g,
+     'bub_pp%R_v': (R_uni / MW_v) * (T0 / (c0 * c0)),
+     'bub_pp%R_g': (R_uni / MW_g) * (T0 / (c0 * c0)),
     # ==========================================================
 
     # Formatted Database Files Structure Parameters ============
@@ -329,10 +344,10 @@ print(json.dumps({
     'patch_icpp(1)%pres'           : patm/p0,
     'patch_icpp(1)%alpha_rho(1)'   : rho_water/rho0,
     'patch_icpp(1)%alpha_rho(2)'   : 0.,
-    'patch_icpp(1)%alpha_rho(3)'   : 0.,
+    # 'patch_icpp(1)%alpha_rho(3)'   : 0.,
     'patch_icpp(1)%alpha(1)'       : 1.,
     'patch_icpp(1)%alpha(2)'       : 0.,
-    'patch_icpp(1)%alpha(3)'       : 0.,
+    # 'patch_icpp(1)%alpha(3)'       : 0.,
     # ==========================================================
 
     # Patch 2: EMP (right) ====================================
@@ -353,10 +368,10 @@ print(json.dumps({
     'patch_icpp(2)%pres'            : patm/p0,
     'patch_icpp(2)%alpha_rho(1)'    : 0.,
     'patch_icpp(2)%alpha_rho(2)'    : rho_host/rho0,
-    'patch_icpp(2)%alpha_rho(3)'    : 0.,
+    # 'patch_icpp(2)%alpha_rho(3)'    : 0.,
     'patch_icpp(2)%alpha(1)'        : 0.,
     'patch_icpp(2)%alpha(2)'        : 1.,
-    'patch_icpp(2)%alpha(3)'        : 0.,
+    # 'patch_icpp(2)%alpha(3)'        : 0.,
     # ==========================================================
 
     # Fluids Physical Parameters ===============================
@@ -377,23 +392,23 @@ print(json.dumps({
     'fluid_pp(2)%rho_cp'           : (rho_host/rho0)*(cp_host*(T0/(c0*c0))),
     'fluid_pp(2)%tdiff'            : tdiff_host/(x0*c0),
     'fluid_pp(2)%absCoef'          : abs_coef_host*x0,
-    'fluid_pp(2)%mul0'             : mu_host,
-    'fluid_pp(2)%ss'               : sigBubble,
-    'fluid_pp(2)%pv'               : pv,
-    'fluid_pp(2)%gamma_v'          : gamma_v,
-    'fluid_pp(2)%M_v'              : MW_v,
-    'fluid_pp(2)%k_v'              : k_v,
-    'fluid_pp(2)%cp_v'             : cp_v,
+    # 'fluid_pp(2)%mul0'             : mu_host,
+    # 'fluid_pp(2)%ss'               : sigBubble,
+    # 'fluid_pp(2)%pv'               : pv,
+    # 'fluid_pp(2)%gamma_v'          : gamma_v,
+    # 'fluid_pp(2)%M_v'              : MW_v,
+    # 'fluid_pp(2)%k_v'              : k_v,
+    # 'fluid_pp(2)%cp_v'             : cp_v,
 
-    # Bubble gas state
-    'fluid_pp(3)%gamma'            : 1./(gamma_g-1.),
-    'fluid_pp(3)%pi_inf'           : 0.0E+00,
-    'fluid_pp(3)%Re(1)'            : 1.0/(mu_g/(rho0*c0*x0)),
-    'fluid_pp(3)%Re(2)'            : 1.0/(mu_g/(rho0*c0*x0)),
-    'fluid_pp(3)%gamma_v'          : gamma_g,
-    'fluid_pp(3)%M_v'              : MW_g,
-    'fluid_pp(3)%k_v'              : k_g,
-    'fluid_pp(3)%cp_v'             : cp_g,
+    # # Bubble gas state
+    # 'fluid_pp(3)%gamma'            : 1./(gam_g-1.),
+    # 'fluid_pp(3)%pi_inf'           : 0.0E+00,
+    # 'fluid_pp(3)%Re(1)'            : 1.0/(mu_g/(rho0*c0*x0)),
+    # 'fluid_pp(3)%Re(2)'            : 1.0/(mu_g/(rho0*c0*x0)),
+    # 'fluid_pp(3)%gamma_v'          : gamma_g,
+    # 'fluid_pp(3)%M_v'              : MW_g,
+    # 'fluid_pp(3)%k_v'              : k_g,
+    # 'fluid_pp(3)%cp_v'             : cp_g,
     # ==========================================================
  }))
 

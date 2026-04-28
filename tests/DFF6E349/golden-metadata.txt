@@ -1,19 +1,53 @@
-This file was created on 2025-04-29 13:31:31.032977.
+This file was created on 2026-03-07 14:35:14.683955.
 
 mfc.sh:
 
-    Invocation: test -j 4 -o Lagrange Bubbles --generate
-    Lock:       mpi=Yes & gpu=No & debug=No & gcov=No & unified=No & single=No
-    Git:        c6b2fe08e6d08650f06233b2b38ed4e0d8da82e4 on master (dirty)
+    Invocation: test -j 4 -o DFF6E349 --generate
+    Lock:       mpi=Yes & gpu=No & debug=No & gcov=No & unified=No & single=No & mixed=No & fastmath=No
+    Git:        4e436bca9732da22965a5763dc2ae245a181b472 on main-HIFU (dirty)
+
+pre_process:
+
+    CMake Configuration:
+    
+        CMake v4.2.3 on Mac-93.lan
+    
+        C       : AppleClang v17.0.0.17000604 (/usr/bin/cc)
+        Fortran : GNU v15.2.0 (/opt/homebrew/bin/gfortran)
+    
+        PRE_PROCESS   : ON
+        SIMULATION    : OFF
+        POST_PROCESS  : OFF
+        SYSCHECK      : OFF
+        DOCUMENTATION : OFF
+        ALL           : OFF
+    
+        MPI     : ON
+        OpenACC : OFF
+        OpenMP  : OFF
+    
+        Fypp    : /Users/gissela/Documents/diego/mbHIFU/build/venv/bin/fypp
+        Doxygen : 
+    
+        Build Type : Release
+    
+    Configuration Environment:
+    
+        CC       : /usr/bin/cc
+        CXX      : /usr/bin/c++
+        FC       : /opt/homebrew/bin/gfortran
+        OMPI_CC  : 
+        OMPI_CXX : 
+        OMPI_FC  : 
 
 simulation:
 
     CMake Configuration:
     
-        CMake v4.0.1 on autoreg-6682246.dyn.wpi.edu
+        CMake v4.2.3 on Mac-93.lan
     
-        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
-        Fortran : GNU v14.2.0 (/opt/homebrew/bin/gfortran)
+        C       : AppleClang v17.0.0.17000604 (/usr/bin/cc)
+        Fortran : GNU v15.2.0 (/opt/homebrew/bin/gfortran)
     
         PRE_PROCESS   : OFF
         SIMULATION    : ON
@@ -24,8 +58,9 @@ simulation:
     
         MPI     : ON
         OpenACC : OFF
+        OpenMP  : OFF
     
-        Fypp    : /Users/diegovaca/Documents/implementations_MFC/MFC/build/venv/bin/fypp
+        Fypp    : /Users/gissela/Documents/diego/mbHIFU/build/venv/bin/fypp
         Doxygen : 
     
         Build Type : Release
@@ -43,10 +78,10 @@ post_process:
 
     CMake Configuration:
     
-        CMake v4.0.1 on autoreg-6682246.dyn.wpi.edu
+        CMake v4.2.3 on Mac-93.lan
     
-        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
-        Fortran : GNU v14.2.0 (/opt/homebrew/bin/gfortran)
+        C       : AppleClang v17.0.0.17000604 (/usr/bin/cc)
+        Fortran : GNU v15.2.0 (/opt/homebrew/bin/gfortran)
     
         PRE_PROCESS   : OFF
         SIMULATION    : OFF
@@ -57,8 +92,9 @@ post_process:
     
         MPI     : ON
         OpenACC : OFF
+        OpenMP  : OFF
     
-        Fypp    : /Users/diegovaca/Documents/implementations_MFC/MFC/build/venv/bin/fypp
+        Fypp    : /Users/gissela/Documents/diego/mbHIFU/build/venv/bin/fypp
         Doxygen : 
     
         Build Type : Release
@@ -76,10 +112,10 @@ syscheck:
 
     CMake Configuration:
     
-        CMake v4.0.1 on autoreg-6682246.dyn.wpi.edu
+        CMake v4.2.3 on Mac-93.lan
     
-        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
-        Fortran : GNU v14.2.0 (/opt/homebrew/bin/gfortran)
+        C       : AppleClang v17.0.0.17000604 (/usr/bin/cc)
+        Fortran : GNU v15.2.0 (/opt/homebrew/bin/gfortran)
     
         PRE_PROCESS   : OFF
         SIMULATION    : OFF
@@ -90,41 +126,9 @@ syscheck:
     
         MPI     : ON
         OpenACC : OFF
+        OpenMP  : OFF
     
-        Fypp    : /Users/diegovaca/Documents/implementations_MFC/MFC/build/venv/bin/fypp
-        Doxygen : 
-    
-        Build Type : Release
-    
-    Configuration Environment:
-    
-        CC       : /usr/bin/cc
-        CXX      : /usr/bin/c++
-        FC       : /opt/homebrew/bin/gfortran
-        OMPI_CC  : 
-        OMPI_CXX : 
-        OMPI_FC  : 
-
-pre_process:
-
-    CMake Configuration:
-    
-        CMake v4.0.1 on autoreg-6682246.dyn.wpi.edu
-    
-        C       : AppleClang v17.0.0.17000013 (/usr/bin/cc)
-        Fortran : GNU v14.2.0 (/opt/homebrew/bin/gfortran)
-    
-        PRE_PROCESS   : ON
-        SIMULATION    : OFF
-        POST_PROCESS  : OFF
-        SYSCHECK      : OFF
-        DOCUMENTATION : OFF
-        ALL           : OFF
-    
-        MPI     : ON
-        OpenACC : OFF
-    
-        Fypp    : /Users/diegovaca/Documents/implementations_MFC/MFC/build/venv/bin/fypp
+        Fypp    : /Users/gissela/Documents/diego/mbHIFU/build/venv/bin/fypp
         Doxygen : 
     
         Build Type : Release
@@ -142,9 +146,9 @@ CPU:
 
     CPU Info:
     From sysctl -a 
-    machdep.cpu.cores_per_package: 8
-    machdep.cpu.core_count: 8
-    machdep.cpu.logical_per_package: 8
-    machdep.cpu.thread_count: 8
-    machdep.cpu.brand_string: Apple M3
+    machdep.cpu.cores_per_package: 10
+    machdep.cpu.core_count: 10
+    machdep.cpu.logical_per_package: 10
+    machdep.cpu.thread_count: 10
+    machdep.cpu.brand_string: Apple M4
 

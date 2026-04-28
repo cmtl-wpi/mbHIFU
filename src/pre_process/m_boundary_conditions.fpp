@@ -1,8 +1,8 @@
 !>
-!! @file m_boundary_conditions.fpp
+!! @file
 !! @brief Contains module m_boundary_conditions
 
-!> @brief This module contains
+!> @brief Applies spatially varying boundary condition patches along domain edges and faces
 module m_boundary_conditions
 
     use m_derived_types
@@ -27,9 +27,10 @@ module m_boundary_conditions
     private; public :: s_apply_boundary_patches
 
 contains
+    !> @brief Applies a line-segment boundary condition patch along a domain edge in 2D.
     impure subroutine s_line_segment_bc(patch_id, bc_type)
 
-        type(integer_field), dimension(1:num_dims, -1:1), intent(inout) :: bc_type
+        type(integer_field), dimension(1:num_dims, 1:2), intent(inout) :: bc_type
         integer, intent(in) :: patch_id
 
         integer :: j
@@ -43,11 +44,11 @@ contains
             y_boundary%end = y_centroid + 0.5_wp*length_y
 
             ! Patch is a vertical line at x_beg and x_beg is a domain boundary
-            #:for BOUND, X, LOC in [('beg', '-i', -1), ('end', 'm+i', 1)]
+            #:for BOUND, X, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'm+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_x%${BOUND}$ < 0) then
                     do j = 0, n
                         if (y_cc(j) > y_boundary%beg .and. y_cc(j) < y_boundary%end) then
-                            bc_type(1, ${LOC}$)%sf(0, j, 0) = patch_bc(patch_id)%type
+                            bc_type(1, ${IDX}$)%sf(0, j, 0) = patch_bc(patch_id)%type
                         end if
                     end do
                 end if
@@ -63,11 +64,11 @@ contains
             x_boundary%end = x_centroid + 0.5_wp*length_x
 
             ! Patch is a vertical line at x_beg and x_beg is a domain boundary
-            #:for BOUND, Y, LOC in [('beg', '-i', -1), ('end', 'n+i', 1)]
+            #:for BOUND, Y, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'n+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_y%${BOUND}$ < 0) then
                     do j = 0, m
                         if (x_cc(j) > x_boundary%beg .and. x_cc(j) < x_boundary%end) then
-                            bc_type(2, ${LOC}$)%sf(j, 0, 0) = patch_bc(patch_id)%type
+                            bc_type(2, ${IDX}$)%sf(j, 0, 0) = patch_bc(patch_id)%type
                         end if
                     end do
                 end if
@@ -76,9 +77,10 @@ contains
 
     end subroutine s_line_segment_bc
 
+    !> @brief Applies a circular boundary condition patch on a domain face in 3D.
     impure subroutine s_circle_bc(patch_id, bc_type)
 
-        type(integer_field), dimension(1:num_dims, -1:1), intent(inout) :: bc_type
+        type(integer_field), dimension(1:num_dims, 1:2), intent(inout) :: bc_type
 
         integer, intent(in) :: patch_id
 
@@ -88,13 +90,13 @@ contains
             z_centroid = patch_bc(patch_id)%centroid(3)
             radius = patch_bc(patch_id)%radius
             ! Patch is a circle at x_beg and x_beg is a domain boundary
-            #:for BOUND, X, LOC in [('beg', '-i', -1), ('end', 'm+i', 1)]
+            #:for BOUND, X, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'm+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_x%${BOUND}$ < 0) then
                     do k = 0, p
                         do j = 0, n
                             if ((z_cc(k) - z_centroid)**2._wp + &
                                 (y_cc(j) - y_centroid)**2._wp <= radius**2._wp) then
-                                bc_type(1, -1)%sf(0, j, k) = patch_bc(patch_id)%type
+                                bc_type(1, ${IDX}$)%sf(0, j, k) = patch_bc(patch_id)%type
                             end if
                         end do
                     end do
@@ -106,13 +108,13 @@ contains
             z_centroid = patch_bc(patch_id)%centroid(3)
             radius = patch_bc(patch_id)%radius
             ! Patch is a circle at y_beg and y_beg is a domain boundary
-            #:for BOUND, Y, LOC in [('beg', '-i', -1), ('end', 'n+i', 1)]
+            #:for BOUND, Y, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'n+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_y%${BOUND}$ < 0) then
                     do k = 0, p
                         do j = 0, m
                             if ((z_cc(k) - z_centroid)**2._wp + &
                                 (x_cc(j) - x_centroid)**2._wp <= radius**2._wp) then
-                                bc_type(2, -1)%sf(j, 0, k) = patch_bc(patch_id)%type
+                                bc_type(2, ${IDX}$)%sf(j, 0, k) = patch_bc(patch_id)%type
                             end if
                         end do
                     end do
@@ -123,13 +125,13 @@ contains
             x_centroid = patch_bc(patch_id)%centroid(1)
             y_centroid = patch_bc(patch_id)%centroid(2)
             radius = patch_bc(patch_id)%radius
-            #:for BOUND, Z, LOC in [('beg', '-i', -1), ('end', 'p+i', 1)]
+            #:for BOUND, Z, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'p+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_z%${BOUND}$ < 0) then
                     do k = 0, n
                         do j = 0, m
                             if ((y_cc(k) - y_centroid)**2._wp + &
                                 (x_cc(j) - x_centroid)**2._wp <= radius**2._wp) then
-                                bc_type(3, -1)%sf(j, k, 0) = patch_bc(patch_id)%type
+                                bc_type(3, ${IDX}$)%sf(j, k, 0) = patch_bc(patch_id)%type
                             end if
                         end do
                     end do
@@ -139,9 +141,10 @@ contains
 
     end subroutine s_circle_bc
 
+    !> @brief Applies a rectangular boundary condition patch on a domain face in 3D.
     impure subroutine s_rectangle_bc(patch_id, bc_type)
 
-        type(integer_field), dimension(1:num_dims, -1:1), intent(inout) :: bc_type
+        type(integer_field), dimension(1:num_dims, 1:2), intent(inout) :: bc_type
 
         integer, intent(in) :: patch_id
         integer :: j, k
@@ -157,7 +160,7 @@ contains
             z_boundary%beg = z_centroid - 0.5_wp*length_z
             z_boundary%end = z_centroid + 0.5_wp*length_z
             ! Patch is a circle at x_beg and x_beg is a domain boundary
-            #:for BOUND, X, LOC in [('beg', '-i', -1), ('end', 'm+i', 1)]
+            #:for BOUND, X, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'm+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_x%${BOUND}$ < 0) then
                     do k = 0, p
                         do j = 0, n
@@ -165,7 +168,7 @@ contains
                                 y_boundary%end >= y_cc(j) .and. &
                                 z_boundary%beg <= z_cc(k) .and. &
                                 z_boundary%end >= z_cc(k)) then
-                                bc_type(1, -1)%sf(0, j, k) = patch_bc(patch_id)%type
+                                bc_type(1, ${IDX}$)%sf(0, j, k) = patch_bc(patch_id)%type
                             end if
                         end do
                     end do
@@ -184,7 +187,7 @@ contains
             z_boundary%beg = z_centroid - 0.5_wp*length_z
             z_boundary%end = z_centroid + 0.5_wp*length_z
             ! Patch is a circle at y_beg and y_beg is a domain boundary
-            #:for BOUND, Y, LOC in [('beg', '-i', -1), ('end', 'n+i', 1)]
+            #:for BOUND, Y, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'n+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_y%${BOUND}$ < 0) then
                     do k = 0, p
                         do j = 0, m
@@ -192,7 +195,7 @@ contains
                                 x_boundary%end >= x_cc(j) .and. &
                                 z_boundary%beg <= z_cc(k) .and. &
                                 z_boundary%end >= z_cc(k)) then
-                                bc_type(2, -1)%sf(j, 0, k) = patch_bc(patch_id)%type
+                                bc_type(2, ${IDX}$)%sf(j, 0, k) = patch_bc(patch_id)%type
                             end if
                         end do
                     end do
@@ -210,7 +213,7 @@ contains
 
             y_boundary%beg = y_centroid - 0.5_wp*length_y
             y_boundary%end = y_centroid + 0.5_wp*length_y
-            #:for BOUND, Z, LOC in [('beg', '-i', -1), ('end', 'p+i', 1)]
+            #:for BOUND, Z, LOC, IDX in [('beg', '-i', -1, 1), ('end', 'p+i', 1, 2)]
                 if (patch_bc(patch_id)%loc == ${LOC}$ .and. bc_z%${BOUND}$ < 0) then
                     do k = 0, n
                         do j = 0, m
@@ -218,7 +221,7 @@ contains
                                 x_boundary%end >= x_cc(j) .and. &
                                 y_boundary%beg <= y_cc(k) .and. &
                                 y_boundary%end >= y_cc(k)) then
-                                bc_type(3, -1)%sf(j, k, 0) = patch_bc(patch_id)%type
+                                bc_type(3, ${IDX}$)%sf(j, k, 0) = patch_bc(patch_id)%type
                             end if
                         end do
                     end do
@@ -228,10 +231,11 @@ contains
 
     end subroutine s_rectangle_bc
 
+    !> @brief Iterates over all boundary condition patches and dispatches them by geometry type.
     impure subroutine s_apply_boundary_patches(q_prim_vf, bc_type)
 
         type(scalar_field), dimension(sys_size) :: q_prim_vf
-        type(integer_field), dimension(1:num_dims, -1:1) :: bc_type
+        type(integer_field), dimension(1:num_dims, 1:2) :: bc_type
         integer :: i
 
         !< Apply 2D patches to 3D domain

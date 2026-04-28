@@ -18,6 +18,7 @@ project(MFC LANGUAGES C CXX Fortran)
 
 option(MFC_MPI           "Build with MPI"                                     ON)
 option(MFC_OpenACC       "Build with OpenACC"                                OFF)
+option(MFC_OpenMP        "Build with OpenMP"                                 OFF)
 option(MFC_GCov          "Build with GCov"                                   OFF)
 option(MFC_Unified       "Build with unified CPU & GPU memory (GH-200 only)" OFF)
 option(MFC_Fastmath      "Build with -gpu=fastmath on NV GPUs"               OFF)
@@ -28,6 +29,7 @@ option(MFC_SYSCHECK      "Build syscheck"                                    OFF
 option(MFC_DOCUMENTATION "Build documentation"                               OFF)
 option(MFC_ALL           "Build everything"                                  OFF)
 option(MFC_SINGLE_PRECISION "Build single precision"                         OFF)
+option(MFC_MIXED_PRECISION "Build mixed precision"                           OFF)
 
 if (MFC_ALL)
     set(MFC_PRE_PROCESS   ON FORCE)
@@ -40,6 +42,10 @@ if (MFC_SINGLE_PRECISION)
     add_compile_definitions(MFC_SINGLE_PRECISION)
 else()
     add_compile_definitions(MFC_DOUBLE_PRECISION)
+endif()
+
+if (MFC_MIXED_PRECISION)
+    add_compile_definitions(MFC_MIXED_PRECISION)
 endif()
 
 
@@ -195,7 +201,7 @@ elseif ((CMAKE_Fortran_COMPILER_ID STREQUAL "NVHPC") OR (CMAKE_Fortran_COMPILER_
     add_compile_options(
         $<$<COMPILE_LANGUAGE:Fortran>:-Mfreeform>
         $<$<COMPILE_LANGUAGE:Fortran>:-cpp>
-	    $<$<COMPILE_LANGUAGE:Fortran>:-Minfo=inline>
+        $<$<COMPILE_LANGUAGE:Fortran>:-Minfo=inline>
         $<$<COMPILE_LANGUAGE:Fortran>:-Minfo=accel>
     )
 
@@ -233,8 +239,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     if (CMAKE_Fortran_COMPILER_ID STREQUAL "NVHPC")
         if (MFC_Unified)
             message(STATUS "LTO/IPO is not available with NVHPC using Unified Memory")
-	elseif (CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER "24.11" AND CMAKE_Fortran_COMPILER_VERSION VERSION_LESS "25.9")
-	    message(STATUS "LTO/IPO is not supported in NVHPC Version 24.11 to 25.9. Use >=25.9 or (<=24.11 && > 23.11) Performance will be degraded.")
+        elseif (CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER "24.11" AND CMAKE_Fortran_COMPILER_VERSION VERSION_LESS "25.9")
+            message(STATUS "LTO/IPO is not supported in NVHPC Version 24.11 to 25.9. Use >=25.9 or (<=24.11 && > 23.11) Performance will be degraded.")
             set(NVHPC_USE_TWO_PASS_IPO FALSE)
         elseif(CMAKE_Fortran_COMPILER_VERSION VERSION_LESS "23.11")
             message(STATUS "LTO/IPO is not supported in NVHPC Version < 23.11. Use a newer version of NVHPC for best performance.")
@@ -309,6 +315,7 @@ endif()
 # files that will eventually be used to compile <target>.
 
 macro(HANDLE_SOURCES target useCommon)
+
     set(${target}_DIR "${CMAKE_SOURCE_DIR}/src/${target}")
     set(common_DIR    "${CMAKE_SOURCE_DIR}/src/common")
 
@@ -369,7 +376,7 @@ macro(HANDLE_SOURCES target useCommon)
                                  -D MFC_${CMAKE_Fortran_COMPILER_ID}
                                  -D MFC_${${target}_UPPER}
                                  -D MFC_COMPILER="${CMAKE_Fortran_COMPILER_ID}"
-                                 -D MFC_CASE_OPTIMIZATION=False
+				                 -D MFC_CASE_OPTIMIZATION=False
                                  -D chemistry=False
                                  --line-numbering
                                  --no-folding
@@ -391,7 +398,6 @@ HANDLE_SOURCES(simulation ON)
 HANDLE_SOURCES(post_process ON)
 HANDLE_SOURCES(syscheck OFF)
 
-
 # MFC_SETUP_TARGET: Given a target (herein <target>), this macro creates a new
 # executable <target> with the appropriate sources, compiler definitions, and
 # linked libraries (assuming HANDLE_SOURCES was called on <target>).
@@ -409,13 +415,13 @@ HANDLE_SOURCES(syscheck OFF)
 #  * LAPACK   (optional) Should be linked with LAPACK
 
 function(MFC_SETUP_TARGET)
-    cmake_parse_arguments(ARGS "OpenACC;MPI;SILO;HDF5;FFTW;LAPACK" "TARGET" "SOURCES" ${ARGN})
+    cmake_parse_arguments(ARGS "OpenACC;MPI;SILO;HDF5;FFTW;LAPACK;OpenMP" "TARGET" "SOURCES" ${ARGN})
 
     add_executable(${ARGS_TARGET} ${ARGS_SOURCES})
     set(IPO_TARGETS ${ARGS_TARGET})
     # Here we need to split into "library" and "executable" to perform IPO on the NVIDIA compiler.
     # A little hacky, but it *is* an edge-case for *one* compiler.
-    if (NVHPC_USE_TWO_PASS_IPO)
+    if (NVHPC_USE_TWO_PASS_IPO AND NOT(MFC_OpenMP AND ARGS_OpenMP))
         add_library(${ARGS_TARGET}_lib OBJECT ${ARGS_SOURCES})
         target_compile_options(${ARGS_TARGET}_lib PRIVATE
 		    $<$<COMPILE_LANGUAGE:Fortran>:-Mextract=lib:${ARGS_TARGET}_lib>
@@ -428,6 +434,7 @@ function(MFC_SETUP_TARGET)
 
     foreach (a_target ${IPO_TARGETS})
         set_target_properties(${a_target} PROPERTIES Fortran_PREPROCESS ON)
+	    message(STATUS ${CMAKE_Fortran_COMPILER_ID})
 
         target_include_directories(${a_target} PRIVATE
             "${CMAKE_SOURCE_DIR}/src/common"
@@ -447,9 +454,14 @@ function(MFC_SETUP_TARGET)
 
         if (MFC_MPI AND ARGS_MPI)
             find_package(MPI COMPONENTS Fortran REQUIRED)
-
+	    
             target_compile_definitions(${a_target} PRIVATE MFC_MPI)
-            target_link_libraries     (${a_target} PRIVATE MPI::MPI_Fortran)
+            if(CMAKE_Fortran_COMPILER_ID STREQUAL "LLVMFlang")
+                target_compile_options(${a_target} PRIVATE "$ENV{CRAY_MPICH_INC}")
+                target_link_libraries(${a_target} PRIVATE $ENV{CRAY_MPICH_LIB})
+            else() 
+                target_link_libraries(${a_target} PRIVATE MPI::MPI_Fortran)
+            endif()
         endif()
 
         if (ARGS_SILO)
@@ -463,13 +475,15 @@ function(MFC_SETUP_TARGET)
         endif()
 
         if (ARGS_FFTW)
-            if (MFC_OpenACC AND ARGS_OpenACC)
+            if ((MFC_OpenACC AND ARGS_OpenACC) OR (MFC_OpenMP AND ARGS_OpenMP))
                 if (CMAKE_Fortran_COMPILER_ID STREQUAL "NVHPC" OR CMAKE_Fortran_COMPILER_ID STREQUAL "PGI")
                     find_package(CUDAToolkit REQUIRED)
                     target_link_libraries(${a_target} PRIVATE CUDA::cudart CUDA::cufft)
-                else()
+                elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "LLVMFlang")
+                    target_link_libraries(${a_target} PRIVATE $ENV{CRAY_HIPFORT_LIB})
+                else() 
                     find_package(hipfort COMPONENTS hipfft CONFIG REQUIRED)
-                    target_link_libraries(${a_target} PRIVATE hipfort::hipfft)
+                    target_link_libraries(${a_target} PRIVATE hipfort::hipfft)                    
                 endif()
             else()
                 find_package(FFTW REQUIRED)
@@ -477,21 +491,48 @@ function(MFC_SETUP_TARGET)
             endif()
         endif()
 
-				if (ARGS_LAPACK)
-					find_package(LAPACK REQUIRED)
-					target_link_libraries(${a_target} PRIVATE LAPACK::LAPACK)
-				endif()
+        if (ARGS_LAPACK)
+            find_package(LAPACK REQUIRED)
+            target_link_libraries(${a_target} PRIVATE LAPACK::LAPACK)
+        endif()
 
-        if (MFC_OpenACC AND ARGS_OpenACC)
-            find_package(OpenACC)
+        if ((MFC_OpenACC AND ARGS_OpenACC) OR (MFC_OpenMP AND ARGS_OpenMP))
+            if ((MFC_OpenACC AND ARGS_OpenACC))
+                find_package(OpenACC)
 
-            # This should be equivalent to if (NOT OpenACC_FC_FOUND)
-            if (NOT TARGET OpenACC::OpenACC_Fortran)
-                message(FATAL_ERROR "OpenACC + Fortran is unsupported.")
+                # This should be equivalent to if (NOT OpenACC_FC_FOUND)
+                if (NOT TARGET OpenACC::OpenACC_Fortran)
+                    message(FATAL_ERROR "OpenACC + Fortran is unsupported.")
+                endif()
+
+                target_link_libraries(${a_target} PRIVATE OpenACC::OpenACC_Fortran)
+                target_compile_definitions(${a_target} PRIVATE MFC_OpenACC MFC_GPU)
+            elseif((MFC_OpenMP AND ARGS_OpenMP))
+                find_package(OpenMP)
+
+                # This should be equivalent to if (NOT OpenACC_FC_FOUND)
+                if (NOT TARGET OpenMP::OpenMP_Fortran)
+                    message(FATAL_ERROR "OpenMP + Fortran is unsupported.")
+                endif()
+                set(ENV{OMP_TARGET_OFFLOAD} [MANDATORY])
+                # target_link_libraries(${a_target} PRIVATE OpenMP::OpenMP_Fortran)
+                target_compile_definitions(${a_target} PRIVATE MFC_OpenMP MFC_GPU)
+
+                if(CMAKE_Fortran_COMPILER_ID STREQUAL "NVHPC" OR CMAKE_Fortran_COMPILER_ID STREQUAL "PGI")
+                    target_compile_options(${a_target} PRIVATE "-mp=gpu" "-Minfo=mp")
+                    target_link_options(${a_target} PRIVATE "-mp=gpu")
+                    set_target_properties(${a_target} PROPERTIES Fortran_FLAGS "-mp=gpu -gpu=ccall")
+                elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
+                    target_compile_options(${a_target} PRIVATE -fopenmp -fopenmp-targets=spir64)
+                    target_link_options(${a_target} PRIVATE -fopenmp -fopenmp-targets=spir64)
+                elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "Cray")
+                    target_compile_options(${a_target} PRIVATE -fopenmp)
+                    target_link_options(${a_target} PRIVATE -fopenmp)
+                elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "LLVMFlang")
+                    target_compile_options(${a_target} PRIVATE -fopenmp --offload-arch=gfx90a)
+                    target_link_options(${a_target} PRIVATE -fopenmp --offload-arch=gfx90a)
+                endif()
             endif()
-
-            target_link_libraries(${a_target} PRIVATE OpenACC::OpenACC_Fortran)
-            target_compile_definitions(${a_target} PRIVATE MFC_OpenACC)
 
             if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
                 # FIXME: This should work with other cards than gfx90a ones.
@@ -532,7 +573,7 @@ function(MFC_SETUP_TARGET)
 
                 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
                     target_compile_options(${a_target}
-                        PRIVATE -gpu=autocompare,debug
+                        PRIVATE -gpu=debug
                     )
                 endif()
             elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "Cray")
@@ -548,6 +589,15 @@ function(MFC_SETUP_TARGET)
 
                 find_package(hipfort COMPONENTS hip CONFIG REQUIRED)
                 target_link_libraries(${a_target} PRIVATE hipfort::hip hipfort::hipfort-amdgcn)
+            elseif(CMAKE_Fortran_COMPILER_ID STREQUAL "LLVMFlang")
+
+                if (MFC_Unified)
+                    target_compile_options(${ARGS_TARGET}
+                        PRIVATE -DFRONTIER_UNIFIED)
+                endif()
+
+                find_package(hipfort COMPONENTS hip CONFIG REQUIRED)
+                target_link_libraries(${a_target} PRIVATE hipfort::hip hipfort::hipfort-amdgcn flang_rt.hostdevice)
             endif()
         elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Cray")
             target_compile_options(${a_target} PRIVATE "SHELL:-h noacc" "SHELL:-x acc")
@@ -583,7 +633,7 @@ endif()
 if (MFC_SIMULATION)
     MFC_SETUP_TARGET(TARGET  simulation
                      SOURCES "${simulation_SRCs}"
-                     MPI OpenACC FFTW)
+                     MPI FFTW OpenACC OpenMP)
 endif()
 
 if (MFC_POST_PROCESS)
@@ -598,7 +648,7 @@ endif()
 if (MFC_SYSCHECK)
     MFC_SETUP_TARGET(TARGET  syscheck
                      SOURCES "${syscheck_SRCs}"
-                     MPI OpenACC)
+                     MPI OpenACC OpenMP)
 endif()
 
 if (MFC_DOCUMENTATION)
@@ -611,6 +661,46 @@ if (MFC_DOCUMENTATION)
         COMMAND "bash" "${CMAKE_CURRENT_SOURCE_DIR}/docs/examples.sh"
                        "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Generating examples.md"
+        VERBATIM
+    )
+
+    # Generate case_constraints.md and physics_constraints.md together.
+    # Both are produced by gen_constraints.sh, so a single command avoids races.
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/case_constraints.md"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/physics_constraints.md"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/gen_case_constraints_docs.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/gen_physics_docs.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/case_validator.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/params/definitions.py"
+                "${examples_DOCs}"
+        COMMAND "bash" "${CMAKE_CURRENT_SOURCE_DIR}/docs/gen_constraints.sh"
+                       "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Generating case_constraints.md and physics_constraints.md"
+        VERBATIM
+    )
+
+    # Generate cli-reference.md from cli/commands.py
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/cli-reference.md"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/cli/commands.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/cli/docs_gen.py"
+        COMMAND "bash" "${CMAKE_CURRENT_SOURCE_DIR}/docs/gen_cli_reference.sh"
+                       "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Generating cli-reference.md"
+        VERBATIM
+    )
+
+    # Generate parameters.md from parameter registry
+    # docs_gen.py now AST-parses case_validator.py, so it must be a dependency
+    file(GLOB_RECURSE params_SRCs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/params/*.py")
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/parameters.md"
+        DEPENDS "${params_SRCs}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/toolchain/mfc/case_validator.py"
+        COMMAND "bash" "${CMAKE_CURRENT_SOURCE_DIR}/docs/gen_parameters.sh"
+                       "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Generating parameters.md"
         VERBATIM
     )
 
@@ -637,8 +727,11 @@ if (MFC_DOCUMENTATION)
         set(DOXYGEN_HTML_OUTPUT      "\"${CMAKE_CURRENT_BINARY_DIR}/${target}\"")
         set(DOXYGEN_MATHJAX_CODEFILE "\"${CMAKE_CURRENT_SOURCE_DIR}/docs/config.js\"")
         set(DOXYGEN_PROJECT_LOGO     "\"${CMAKE_CURRENT_SOURCE_DIR}/docs/res/icon.ico\"")
+        set(DOXYGEN_CITE_BIB_FILES   "\"${CMAKE_CURRENT_SOURCE_DIR}/docs/references.bib\"")
         set(DOXYGEN_IMAGE_PATH       "\"${CMAKE_CURRENT_SOURCE_DIR}/docs/res\"\
                                       \"${CMAKE_CURRENT_SOURCE_DIR}/docs/${target}\"")
+
+        set(DOXYGEN_WARN_LOGFILE "\"${CMAKE_CURRENT_BINARY_DIR}/${target}-doxygen-warnings.log\"")
 
         file(MAKE_DIRECTORY "${DOXYGEN_OUTPUT_DIRECTORY}")
 
@@ -647,8 +740,16 @@ if (MFC_DOCUMENTATION)
             "${CMAKE_CURRENT_BINARY_DIR}/${target}-Doxyfile" @ONLY)
 
         set(opt_example_dependency "")
+        set(opt_constraints_dependency "")
+        set(opt_physics_dependency "")
+        set(opt_cli_reference_dependency "")
+        set(opt_parameters_dependency "")
         if (${target} STREQUAL documentation)
             set(opt_example_dependency "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/examples.md")
+            set(opt_constraints_dependency "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/case_constraints.md")
+            set(opt_physics_dependency "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/physics_constraints.md")
+            set(opt_cli_reference_dependency "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/cli-reference.md")
+            set(opt_parameters_dependency "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/parameters.md")
         endif()
 
         file(GLOB_RECURSE ${target}_DOCs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/${target}/*")
@@ -658,8 +759,14 @@ if (MFC_DOCUMENTATION)
             OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/${target}/html/index.html"
             DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${target}-Doxyfile"
                     "${opt_example_dependency}"
+                    "${opt_constraints_dependency}"
+                    "${opt_physics_dependency}"
+                    "${opt_cli_reference_dependency}"
+                    "${opt_parameters_dependency}"
                     "${${target}_SRCs}" "${${target}_DOCs}"
             COMMAND "${DOXYGEN_EXECUTABLE}" "${target}-Doxyfile"
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/docs/postprocess_citations.py"
+                    "${CMAKE_CURRENT_BINARY_DIR}/${target}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
             COMMENT "${target}: Generating documentation"
         )
@@ -679,12 +786,13 @@ if (MFC_DOCUMENTATION)
     add_custom_target(documentation)
 
     find_package(Doxygen REQUIRED dot REQUIRED)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
     # > Fetch CSS Theme
     ExternalProject_Add(doxygen-awesome-css
         PREFIX            doxygen-awesome-css
         GIT_REPOSITORY    "https://github.com/jothepro/doxygen-awesome-css"
-        GIT_TAG           "df88fe4fdd97714fadfd3ef17de0b4401f804052"
+        GIT_TAG           "v2.4.1"
         CONFIGURE_COMMAND ""
         BUILD_COMMAND     ""
         INSTALL_COMMAND   ""
@@ -695,13 +803,91 @@ if (MFC_DOCUMENTATION)
 
     set(DOXYGEN_HTML_EXTRA_STYLESHEET
         "\"${theme_dirpath}/doxygen-awesome.css\"\
-         \"${theme_dirpath}/doxygen-awesome-sidebar-only.css\"")
+         \"${theme_dirpath}/doxygen-awesome-sidebar-only.css\"\
+         \"${CMAKE_CURRENT_SOURCE_DIR}/docs/custom.css\"")
 
     # > Generate Documentation & Landing Page
-    GEN_DOCS(pre_process   "MFC: Pre-Process")
-    GEN_DOCS(simulation    "MFC: Simulation")
-    GEN_DOCS(post_process  "MFC: Post-Process")
+    GEN_DOCS(pre_process   "MFC")
+    GEN_DOCS(simulation    "MFC")
+    GEN_DOCS(post_process  "MFC")
+    GEN_DOCS(api           "MFC")
     GEN_DOCS(documentation "MFC")
+
+    # Generate API landing pages for pre_process, simulation, post_process.
+    # Scans src/{target}/*.fpp to produce module lists in docs/{target}/readme.md.
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/gen-api-landing.stamp"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/gen_api_landing.py"
+                ${pre_process_FPPs} ${pre_process_F90s}
+                ${simulation_FPPs} ${simulation_F90s}
+                ${post_process_FPPs} ${post_process_F90s}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/docs/gen_api_landing.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_CURRENT_BINARY_DIR}/gen-api-landing.stamp"
+        COMMENT "Generating API landing pages"
+        VERBATIM
+    )
+    add_custom_target(gen_api_landing DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/gen-api-landing.stamp")
+    add_dependencies(pre_process_doxygen gen_api_landing)
+    add_dependencies(simulation_doxygen gen_api_landing)
+    add_dependencies(post_process_doxygen gen_api_landing)
+    add_dependencies(api_doxygen gen_api_landing)
+
+    # Fix @file/@brief headers to match actual module/program declarations.
+    # Handles mixed-case Fortran names and catches stale module renames.
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/fix-file-briefs.stamp"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/fix_file_briefs.py"
+                ${pre_process_FPPs} ${pre_process_F90s}
+                ${simulation_FPPs} ${simulation_F90s}
+                ${post_process_FPPs} ${post_process_F90s}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/docs/fix_file_briefs.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_CURRENT_BINARY_DIR}/fix-file-briefs.stamp"
+        COMMENT "Fixing @file brief headers"
+        VERBATIM
+    )
+    add_custom_target(fix_file_briefs DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/fix-file-briefs.stamp")
+    add_dependencies(pre_process_doxygen fix_file_briefs)
+    add_dependencies(simulation_doxygen fix_file_briefs)
+    add_dependencies(post_process_doxygen fix_file_briefs)
+
+    # Generate architecture.md from template + module_categories.json + source briefs.
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/gen-architecture.stamp"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/gen_architecture.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/module_categories.json"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/architecture.md.in"
+                ${pre_process_FPPs} ${pre_process_F90s}
+                ${simulation_FPPs} ${simulation_F90s}
+                ${post_process_FPPs} ${post_process_F90s}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/docs/gen_architecture.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_CURRENT_BINARY_DIR}/gen-architecture.stamp"
+        COMMENT "Generating architecture page"
+        VERBATIM
+    )
+    add_custom_target(gen_architecture DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/gen-architecture.stamp")
+    add_dependencies(documentation_doxygen gen_architecture)
+
+    # Inject per-page last-updated dates into documentation markdown files.
+    # Runs after auto-generated .md files exist, before Doxygen processes them.
+    # Uses a stamp file so it only runs once per build.
+    add_custom_command(
+        OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/inject-dates.stamp"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/examples.md"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/case_constraints.md"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/physics_constraints.md"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/cli-reference.md"
+                "${CMAKE_CURRENT_SOURCE_DIR}/docs/documentation/parameters.md"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/docs/inject-dates.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${CMAKE_CURRENT_BINARY_DIR}/inject-dates.stamp"
+        COMMENT "Injecting page dates into documentation"
+        VERBATIM
+    )
+    add_custom_target(inject_page_dates DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/inject-dates.stamp")
+    add_dependencies(documentation_doxygen inject_page_dates)
 
     # > Copy Resources (main landing page & assets)
     install(DIRECTORY   "${CMAKE_CURRENT_SOURCE_DIR}/docs/res"
@@ -711,6 +897,7 @@ if (MFC_DOCUMENTATION)
             DESTINATION "docs/mfc")
 
     install(FILES       "${CMAKE_CURRENT_SOURCE_DIR}/docs/index.html"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/docs/404.html"
             DESTINATION "docs/mfc")
 endif()
 

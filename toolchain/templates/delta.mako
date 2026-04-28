@@ -17,7 +17,7 @@
 % if account:
 #SBATCH --account="${account}"
 % endif
-% if gpu:
+% if gpu_enabled:
 #SBATCH --gpus-per-node=4
 #SBATCH --mem=208G
 #SBATCH --gpu-bind=closest
@@ -40,11 +40,11 @@ ${helpers.template_prologue()}
 
 ok ":) Loading modules:\n"
 cd "${MFC_ROOT_DIR}"
-. ./mfc.sh load -c d -m ${'g' if gpu else 'c'}
+. ./mfc.sh load -c d -m ${'g' if gpu_enabled else 'c'}
 cd - > /dev/null
 echo
 
-% if gpu:
+% if gpu_enabled:
     export MPICH_GPU_SUPPORT_ENABLED=0 # Disable GPU-Direct MPI
 % endif
 
@@ -54,16 +54,19 @@ echo
     % if not mpi:
         (set -x; ${profiler} "${target.get_install_binpath(case)}")
     % else:
-    	% if gpu:
-        	(set -x; ${profiler}                                   \
-			srun    --account=bgko-delta-gpu --partition=gpuA100x4-interactive --ntasks=${nodes*tasks_per_node}\
-			        --gpus-per-node=4 --gpu-bind=closest --mem=208G  \
-                   	"${target.get_install_binpath(case)}")
-	% else:
-		(set -x; ${profiler}                                   \
-                        srun  --account=bgko-delta-cpu --partition=cpu-interactive \
-                        --ntasks=${nodes*tasks_per_node}  \
-                        "${target.get_install_binpath(case)}")
+    	% if gpu_enabled:
+        	(set -x; ${profiler}                          \
+            srun  --account=bgko-delta-gpu              \
+                  --partition=gpuA100x4-interactive     \
+                  --ntasks=${nodes*tasks_per_node}      \
+                  --gpus-per-node=4 --gpu-bind=closest  \ 
+                  --mem=208G "${target.get_install_binpath(case)}")
+	    % else:
+		      (set -x; ${profiler}                      \
+            srun  --account=bgko-delta-cpu          \
+                  --partition=cpu-interactive       \
+                  --ntasks=${nodes*tasks_per_node}  \
+                  "${target.get_install_binpath(case)}")
 	% endif
     % endif
 

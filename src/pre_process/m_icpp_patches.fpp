@@ -1,6 +1,6 @@
 !>
-!! @file m_patches.fpp
-!! @brief Contains module m_patches
+!! @file
+!! @brief Contains module m_icpp_patches
 
 #:include 'case.fpp'
 #:include 'ExtrusionHardcodedIC.fpp'
@@ -9,6 +9,7 @@
 #:include '3dHardcodedIC.fpp'
 #:include 'macros.fpp'
 
+!> @brief Constructs initial condition patch geometries (lines, circles, rectangles, spheres, etc.) on the grid
 module m_icpp_patches
 
     use m_model                 ! Subroutine(s) related to STL files
@@ -19,15 +20,13 @@ module m_icpp_patches
 
     use m_helper
 
-    use m_compute_levelset      ! Subroutines to calculate levelsets for IBs
-
     use m_mpi_common
 
     use m_assign_variables
 
     use m_mpi_common
 
-    use m_ib_patches
+    use m_variables_conversion
 
     implicit none
 
@@ -64,11 +63,15 @@ module m_icpp_patches
 
 contains
 
+    !> @brief Dispatches each initial condition patch to its geometry-specific initialization routine.
     impure subroutine s_apply_icpp_patches(patch_id_fp, q_prim_vf)
 
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
-        integer, dimension(0:m, 0:m, 0:m), intent(inout) :: patch_id_fp
-
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
+        integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         integer :: i
 
         !  3D Patch Geometries
@@ -190,7 +193,11 @@ contains
     subroutine s_icpp_line_segment(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         ! Generic loop iterators
@@ -201,9 +208,9 @@ contains
         @:HardcodedDimensionsExtrusion()
         @:Hardcoded1DVariables()
 
-        pi_inf = fluid_pp(1)%pi_inf
-        gamma = fluid_pp(1)%gamma
-        lit_gamma = (1._wp + gamma)/gamma
+        pi_inf = pi_infs(1)
+        gamma = gammas(1)
+        lit_gamma = gs_min(1)
         j = 0
         k = 0
 
@@ -260,7 +267,11 @@ contains
     impure subroutine s_icpp_spiral(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< Generic loop iterators
@@ -331,7 +342,11 @@ contains
     subroutine s_icpp_circle(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         real(wp) :: radius
@@ -403,7 +418,11 @@ contains
 
         ! Patch identifier
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         ! Generic loop iterators
@@ -460,6 +479,7 @@ contains
 
     end subroutine s_icpp_varcircle
 
+    !> @brief Initializes a 3D variable-thickness circular annulus patch extruded along the z-axis.
     !! @param patch_id is the patch identifier
     !! @param patch_id_fp Array to track patch ids
     !! @param q_prim_vf Array of primitive variables
@@ -467,7 +487,11 @@ contains
 
         ! Patch identifier
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         ! Generic loop iterators
@@ -540,7 +564,11 @@ contains
     subroutine s_icpp_ellipse(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< Generic loop operators
@@ -613,7 +641,11 @@ contains
 
         ! Patch identifier
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         ! Generic loop iterators
@@ -703,7 +735,11 @@ contains
     subroutine s_icpp_rectangle(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< generic loop iterators
@@ -711,9 +747,9 @@ contains
         @:HardcodedDimensionsExtrusion()
         @:Hardcoded2DVariables()
 
-        pi_inf = fluid_pp(1)%pi_inf
-        gamma = fluid_pp(1)%gamma
-        lit_gamma = (1._wp + gamma)/gamma
+        pi_inf = pi_infs(1)
+        gamma = gammas(1)
+        lit_gamma = gs_min(1)
 
         ! Transferring the rectangle's centroid and length information
         x_centroid = patch_icpp(patch_id)%x_centroid
@@ -786,7 +822,11 @@ contains
     subroutine s_icpp_sweep_line(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< Generic loop operators
@@ -857,7 +897,11 @@ contains
     subroutine s_icpp_2D_TaylorGreen_Vortex(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< generic loop iterators
@@ -866,9 +910,9 @@ contains
         @:HardcodedDimensionsExtrusion()
         @:Hardcoded2DVariables()
 
-        pi_inf = fluid_pp(1)%pi_inf
-        gamma = fluid_pp(1)%gamma
-        lit_gamma = (1._wp + gamma)/gamma
+        pi_inf = pi_infs(1)
+        gamma = gammas(1)
+        lit_gamma = gs_min(1)
 
         ! Transferring the patch's centroid and length information
         x_centroid = patch_icpp(patch_id)%x_centroid
@@ -929,6 +973,7 @@ contains
 
     end subroutine s_icpp_2D_TaylorGreen_Vortex
 
+    !> @brief Initializes a 1D bubble-pulse patch with analytical primitive variable profiles.
         !! @param patch_id is the patch identifier
         !! @param patch_id_fp Array to track patch ids
         !! @param q_prim_vf Array of primitive variables
@@ -938,7 +983,11 @@ contains
 
         ! Patch identifier
         integer, intent(in) :: patch_id
-        integer, intent(inout), dimension(0:m, 0:n, 0:p) :: patch_id_fp
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
+        integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         ! Generic loop iterators
@@ -948,9 +997,9 @@ contains
         @:HardcodedDimensionsExtrusion()
         @:Hardcoded1DVariables()
 
-        pi_inf = fluid_pp(1)%pi_inf
-        gamma = fluid_pp(1)%gamma
-        lit_gamma = (1._wp + gamma)/gamma
+        pi_inf = pi_infs(1)
+        gamma = gammas(1)
+        lit_gamma = gs_min(1)
 
         ! Transferring the patch's centroid and length information
         x_centroid = patch_icpp(patch_id)%x_centroid
@@ -998,7 +1047,11 @@ contains
     subroutine s_icpp_spherical_harmonic(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(IN) :: patch_id
-        integer, intent(INOUT), dimension(0:m, 0:n, 0:p) :: patch_id_fp
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
+        integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         real(wp) :: r, x_p, eps, phi
@@ -1145,7 +1198,11 @@ contains
     subroutine s_icpp_sphere(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         ! Generic loop iterators
@@ -1230,7 +1287,11 @@ contains
     subroutine s_icpp_cuboid(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< Generic loop iterators
@@ -1318,7 +1379,11 @@ contains
     subroutine s_icpp_cylinder(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< Generic loop iterators
@@ -1437,7 +1502,11 @@ contains
     subroutine s_icpp_sweep_plane(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         integer :: i, j, k !< Generic loop iterators
@@ -1516,19 +1585,20 @@ contains
     !! @param patch_id is the patch identifier
     !! @param patch_id_fp Array to track patch ids
     !! @param q_prim_vf Primitive variables
-    !! @param STL_levelset STL levelset
-    !! @param STL_levelset_norm STL levelset normals
     subroutine s_icpp_model(patch_id, patch_id_fp, q_prim_vf)
 
         integer, intent(in) :: patch_id
+#ifdef MFC_MIXED_PRECISION
+        integer(kind=1), dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#else
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: patch_id_fp
+#endif
         type(scalar_field), dimension(1:sys_size), intent(inout) :: q_prim_vf
 
         ! Variables for IBM+STL
         real(wp) :: normals(1:3) !< Boundary normal buffer
         integer :: boundary_vertex_count, boundary_edge_count, total_vertices !< Boundary vertex
         real(wp), allocatable, dimension(:, :, :) :: boundary_v !< Boundary vertex buffer
-        real(wp), allocatable, dimension(:, :) :: interpolated_boundary_v !< Interpolated vertex buffer
         real(wp) :: distance !< Levelset distance buffer
         logical :: interpolate !< Logical variable to determine whether or not the model should be interpolated
 
@@ -1580,35 +1650,11 @@ contains
             print *, ' * Number of input model vertices:', 3*model%ntrs
         end if
 
-        call f_check_boundary(model, boundary_v, boundary_vertex_count, boundary_edge_count)
-
-        ! Check if the model needs interpolation
-        if (p > 0) then
-            call f_check_interpolation_3D(model, (/dx, dy, dz/), interpolate)
-        else
-            call f_check_interpolation_2D(boundary_v, boundary_edge_count, (/dx, dy, dz/), interpolate)
-        end if
+        call s_check_boundary(model, boundary_v, boundary_vertex_count, boundary_edge_count)
 
         ! Show the number of edges and boundary edges in 2D STL models
         if (proc_rank == 0 .and. p == 0) then
             print *, ' * Number of 2D model boundary edges:', boundary_edge_count
-        end if
-
-        ! Interpolate the STL model along the edges (2D) and on triangle facets (3D)
-        if (interpolate) then
-            if (proc_rank == 0) then
-                print *, ' * Interpolating STL vertices.'
-            end if
-
-            if (p > 0) then
-                call f_interpolate_3D(model, (/dx, dy, dz/), interpolated_boundary_v, total_vertices)
-            else
-                call f_interpolate_2D(boundary_v, boundary_edge_count, (/dx, dy, dz/), interpolated_boundary_v, total_vertices)
-            end if
-
-            if (proc_rank == 0) then
-                print *, ' * Total number of interpolated boundary vertices:', total_vertices
-            end if
         end if
 
         if (proc_rank == 0) then
@@ -1677,6 +1723,7 @@ contains
 
     end subroutine s_icpp_model
 
+    !> @brief Converts cylindrical (r, theta) coordinates to Cartesian (y, z) module variables.
     subroutine s_convert_cylindrical_to_cartesian_coord(cyl_y, cyl_z)
         $:GPU_ROUTINE(parallelism='[seq]')
 
@@ -1687,7 +1734,8 @@ contains
 
     end subroutine s_convert_cylindrical_to_cartesian_coord
 
-    pure function f_convert_cyl_to_cart(cyl) result(cart)
+    !> @brief Returns a 3D Cartesian coordinate vector from a cylindrical (x, r, theta) input vector.
+    function f_convert_cyl_to_cart(cyl) result(cart)
 
         $:GPU_ROUTINE(parallelism='[seq]')
 
@@ -1700,6 +1748,7 @@ contains
 
     end function f_convert_cyl_to_cart
 
+    !> @brief Computes the spherical azimuthal angle from cylindrical (x, r) coordinates.
     subroutine s_convert_cylindrical_to_spherical_coord(cyl_x, cyl_y)
         $:GPU_ROUTINE(parallelism='[seq]')
 
@@ -1713,7 +1762,8 @@ contains
     !! @param myth Angle
     !! @param offset Thickness
     !! @param a Starting position
-    pure elemental function f_r(myth, offset, a)
+    elemental function f_r(myth, offset, a)
+
         $:GPU_ROUTINE(parallelism='[seq]')
         real(wp), intent(in) :: myth, offset, a
         real(wp) :: b

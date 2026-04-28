@@ -1,7 +1,8 @@
 !>
-!! @file m_constants.f90
+!! @file
 !! @brief Contains constant values used throughout the code(s).
 
+!> @brief Compile-time constant parameters: default values, tolerances, and physical constants
 module m_constants
 
     use m_precision_select
@@ -10,6 +11,7 @@ module m_constants
 
     real(wp), parameter :: dflt_real = -1.e6_wp                !< Default real value
     real(wp), parameter :: sgm_eps = 1.e-16_wp               !< Segmentation tolerance
+    real(wp), parameter :: Chem_Tolerance = 1.e-16_wp               !< Speed of Sound Tolerance in Chemistry
     real(wp), parameter :: small_alf = 1.e-11_wp                !< Small alf tolerance
     real(wp), parameter :: pi = 3.141592653589793_wp !< Pi
     real(wp), parameter :: verysmall = 1.e-12_wp              !< Very small number
@@ -21,7 +23,7 @@ module m_constants
     integer, parameter :: fourier_rings = 5                       !< Fourier filter ring limit
     integer, parameter :: num_fluids_max = 10                     !< Maximum number of fluids in the simulation
     integer, parameter :: num_probes_max = 10                     !< Maximum number of flow probes in the simulation
-    integer, parameter :: num_patches_max = 10
+    integer, parameter :: num_patches_max = 1000
     integer, parameter :: num_bc_patches_max = 10
     integer, parameter :: pathlen_max = 400
     integer, parameter :: nnode = 4    !< Number of QBMM nodes
@@ -48,14 +50,10 @@ module m_constants
     real(wp), parameter :: dflt_T_guess = 1200._wp ! Default guess for temperature (when a previous value is not available)
 
     ! IBM+STL interpolation constants
-    integer, parameter :: Ifactor_2D = 50 !< Multiple factor of the ratio (edge to cell width) for interpolation along edges for 2D models
-    integer, parameter :: Ifactor_3D = 5 !< Multiple factor of the ratio (edge to cell width) for interpolation along edges for 3D models
-    integer, parameter :: Ifactor_bary_3D = 20 !< Multiple factor of the ratio (triangle area to cell face area) for interpolation on triangle facets for 3D models
     integer, parameter :: num_ray = 20 !< Default number of rays traced per cell
     real(wp), parameter :: ray_tracing_threshold = 0.9_wp !< Threshold above which the cell is marked as the model patch
     real(wp), parameter :: threshold_vector_zero = 1.e-10_wp !< Threshold to treat the component of a vector to be zero
     real(wp), parameter :: threshold_edge_zero = 1.e-10_wp !< Threshold to treat two edges to be overlapped
-    real(wp), parameter :: threshold_bary = 1.e-1_wp !< Threshold to interpolate a barycentric facet
     real(wp), parameter :: initial_distance_buffer = 1.e12_wp !< Initialized levelset distance for the shortest path pair algorithm
 
     ! Lagrange bubbles constants
@@ -63,6 +61,7 @@ module m_constants
     real(wp), parameter :: R_uni = 8314._wp    !< Universal gas constant - J/kmol/K
     integer, parameter :: num_noise = 100 !< Number of fluctuations in the stochastic clousure to find the corrected Pinf (2D model reduction)
     integer, parameter :: max_bub_int = 2500 !< Limits the maximum number of interacting bubbles
+    integer, parameter :: lag_io_vars = 28 ! Number of variables per particle for MPI_IO
 
     ! Strang Splitting constants
     real(wp), parameter :: dflt_adap_dt_tol = 1.e-4_wp !< Default tolerance for adaptive step size

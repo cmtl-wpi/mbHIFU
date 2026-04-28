@@ -1,12 +1,10 @@
 !>
-!! @file m_global_parameters.f90
+!! @file
 !! @brief Contains module m_global_parameters
 
 #:include 'case.fpp'
 
-!> @brief This module contains all of the parameters characterizing the
-!!      computational domain, simulation algorithm, stiffened equation of
-!!      state and finally, the formatted database file(s) structure.
+!> @brief Global parameters for the post-process: domain geometry, equation of state, and output database settings
 module m_global_parameters
 
 #ifdef MFC_MPI
@@ -60,7 +58,6 @@ module m_global_parameters
     !> @name Cell-boundary locations in the x-, y- and z-coordinate directions
     !> @{
     real(wp), allocatable, dimension(:) :: x_cb, x_root_cb, y_cb, z_cb
-    real(wp), allocatable, dimension(:) :: x_cb_s, y_cb_s, z_cb_s
     !> @}
 
     !> @name Cell-center locations in the x-, y- and z-coordinate directions
@@ -118,6 +115,7 @@ module m_global_parameters
     integer :: b_size          !< Number of components in the b tensor
     integer :: tensor_size     !< Number of components in the nonsymmetric tensor
     logical :: cont_damage     !< Continuum damage modeling
+    logical :: hyper_cleaning  !< Hyperbolic cleaning for MHD
     logical :: igr             !< enable IGR
     integer :: igr_order       !< IGR reconstruction order
     logical, parameter :: chemistry = .${chemistry}$. !< Chemistry modeling
@@ -144,6 +142,7 @@ module m_global_parameters
     integer :: c_idx                               !< Index of color function
     type(int_bounds_info) :: species_idx           !< Indexes of first & last concentration eqns.
     integer :: damage_idx                          !< Index of damage state variable (D) for continuum damage model
+    integer :: psi_idx                                 !< Index of hyperbolic cleaning state variable for MHD
     !> @}
 
     ! Cell Indices for the (local) interior points (O-m, O-n, 0-p).
@@ -203,7 +202,10 @@ module m_global_parameters
     type(physical_parameters), dimension(num_fluids_max) :: fluid_pp !<
     !! Database of the physical parameters of each of the fluids that is present
     !! in the flow. These include the stiffened gas equation of state parameters,
-    !! the Reynolds numbers and the Weber numbers.
+    !! and the Reynolds numbers.
+
+    ! Subgrid Bubble Parameters
+    type(subgrid_bubble_physical_parameters) :: bub_pp
 
     real(wp), allocatable, dimension(:) :: adv !< Advection variables
 
@@ -242,6 +244,9 @@ module m_global_parameters
     integer :: flux_lim
     logical, dimension(3) :: flux_wrt
     logical :: E_wrt
+    logical, dimension(num_fluids_max) :: alpha_rho_e_wrt
+    logical :: fft_wrt
+    logical :: dummy   !< AMDFlang workaround: keep a dummy logical to avoid a compiler case-optimization bug when a parameter+GPU-kernel conditional is false
     logical :: pres_wrt
     logical, dimension(num_fluids_max) :: alpha_wrt
     logical :: gamma_wrt
@@ -259,6 +264,24 @@ module m_global_parameters
     logical :: ib
     logical :: chem_wrt_Y(1:num_species)
     logical :: chem_wrt_T
+    logical :: lag_header
+    logical :: lag_txt_wrt
+    logical :: lag_db_wrt
+    logical :: lag_id_wrt
+    logical :: lag_pos_wrt
+    logical :: lag_pos_prev_wrt
+    logical :: lag_vel_wrt
+    logical :: lag_rad_wrt
+    logical :: lag_rvel_wrt
+    logical :: lag_r0_wrt
+    logical :: lag_rmax_wrt
+    logical :: lag_rmin_wrt
+    logical :: lag_dphidt_wrt
+    logical :: lag_pres_wrt
+    logical :: lag_mv_wrt
+    logical :: lag_mg_wrt
+    logical :: lag_betaT_wrt
+    logical :: lag_betaC_wrt
     !> @}
 
     real(wp), dimension(num_fluids_max) :: schlieren_alpha    !<
@@ -282,11 +305,11 @@ module m_global_parameters
     real(wp) :: rhoref, pref
     !> @}
 
+    type(chemistry_parameters) :: chem_params
     !> @name Bubble modeling variables and parameters
     !> @{
     integer :: nb
-    real(wp) :: R0ref
-    real(wp) :: Ca, Web, Re_inv
+    real(wp) :: Eu, Ca, Web, Re_inv
     real(wp), dimension(:), allocatable :: weight, R0
     logical :: bubbles_euler
     logical :: qbmm
@@ -294,11 +317,14 @@ module m_global_parameters
     logical :: polydisperse
     logical :: adv_n
     integer :: thermal  !< 1 = adiabatic, 2 = isotherm, 3 = transfer
-    real(wp) :: R_n, R_v, phi_vn, phi_nv, Pe_c, Tw, G, pv, M_n, M_v
-    real(wp), dimension(:), allocatable :: k_n, k_v, pb0, mass_n0, mass_v0, Pe_T
+    real(wp) :: phi_vg, phi_gv, Pe_c, Tw, k_vl, k_gl
+    real(wp) :: gam_m
+    real(wp), dimension(:), allocatable :: pb0, mass_g0, mass_v0, Pe_T, k_v, k_g
     real(wp), dimension(:), allocatable :: Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN
-    real(wp) :: mul0, ss, gamma_v, mu_v
-    real(wp) :: gamma_m, gamma_n, mu_n
+    real(wp) :: R0ref, p0ref, rho0ref, T0ref, ss, pv, vd, mu_l, mu_v, mu_g, &
+                gam_v, gam_g, M_v, M_g, cp_v, cp_g, R_v, R_g
+    real(wp) :: ss0, dil_vsc, el_vsc
+    real(wp) :: G
     real(wp) :: poly_sigma
     real(wp) :: sigR
     integer :: nmom
@@ -309,7 +335,7 @@ module m_global_parameters
 
     real(wp) :: sigma
     logical :: surface_tension
-    !> #}
+    !> @}
 
     !> @name Index variables used for m_variables_conversion
     !> @{
@@ -344,6 +370,8 @@ module m_global_parameters
     !> @}
 
     real(wp) :: Bx0 !< Constant magnetic field in the x-direction (1D)
+
+    real(wp) :: wall_time, wall_time_avg !< Wall time measurements
 
 contains
 
@@ -396,6 +424,7 @@ contains
         b_size = dflt_int
         tensor_size = dflt_int
         cont_damage = .false.
+        hyper_cleaning = .false.
         igr = .false.
 
         bc_x%beg = dflt_int; bc_x%end = dflt_int
@@ -411,6 +440,9 @@ contains
             #:endfor
         #:endfor
 
+        chem_params%gamma_method = 1
+        chem_params%transport_model = 1
+
         ! Fluids physical parameters
         do i = 1, num_fluids_max
             fluid_pp(i)%gamma = dflt_real
@@ -421,6 +453,32 @@ contains
             fluid_pp(i)%G = dflt_real
         end do
 
+        ! Subgrid bubble parameters
+        bub_pp%R0ref = dflt_real; R0ref = dflt_real
+        bub_pp%p0ref = dflt_real; p0ref = dflt_real
+        bub_pp%rho0ref = dflt_real; rho0ref = dflt_real
+        bub_pp%T0ref = dflt_real; T0ref = dflt_real
+        bub_pp%ss = dflt_real; ss = dflt_real
+        bub_pp%pv = dflt_real; pv = dflt_real
+        bub_pp%vd = dflt_real; vd = dflt_real
+        bub_pp%mu_l = dflt_real; mu_l = dflt_real
+        bub_pp%mu_v = dflt_real; mu_v = dflt_real
+        bub_pp%mu_g = dflt_real; mu_g = dflt_real
+        bub_pp%gam_v = dflt_real; gam_v = dflt_real
+        bub_pp%gam_g = dflt_real; gam_g = dflt_real
+        bub_pp%M_v = dflt_real; M_v = dflt_real
+        bub_pp%M_g = dflt_real; M_g = dflt_real
+        bub_pp%k_v = dflt_real; k_vl = dflt_real
+        bub_pp%k_g = dflt_real; k_gl = dflt_real
+        bub_pp%cp_v = dflt_real; cp_v = dflt_real
+        bub_pp%cp_g = dflt_real; cp_g = dflt_real
+        bub_pp%R_v = dflt_real; R_v = dflt_real
+        bub_pp%R_g = dflt_real; R_g = dflt_real
+        bub_pp%ss0 = dflt_real; ss0 = dflt_real
+        bub_pp%dil_vsc = dflt_real; dil_vsc = dflt_real
+        bub_pp%el_vsc = dflt_real; el_vsc = dflt_real
+        bub_pp%Thost = dflt_real
+
         ! Formatted database file(s) structure parameters
         format = dflt_int
 
@@ -428,6 +486,7 @@ contains
         down_sample = .false.
 
         alpha_rho_wrt = .false.
+        alpha_rho_e_wrt = .false.
         rho_wrt = .false.
         mom_wrt = .false.
         vel_wrt = .false.
@@ -438,6 +497,8 @@ contains
         parallel_io = .false.
         file_per_process = .false.
         E_wrt = .false.
+        fft_wrt = .false.
+        dummy = .false.
         pres_wrt = .false.
         alpha_wrt = .false.
         gamma_wrt = .false.
@@ -453,6 +514,25 @@ contains
         schlieren_wrt = .false.
         sim_data = .false.
         cf_wrt = .false.
+        ib = .false.
+        lag_txt_wrt = .false.
+        lag_header = .true.
+        lag_db_wrt = .false.
+        lag_id_wrt = .true.
+        lag_pos_wrt = .true.
+        lag_pos_prev_wrt = .false.
+        lag_vel_wrt = .true.
+        lag_rad_wrt = .true.
+        lag_rvel_wrt = .false.
+        lag_r0_wrt = .false.
+        lag_rmax_wrt = .false.
+        lag_rmin_wrt = .false.
+        lag_dphidt_wrt = .false.
+        lag_pres_wrt = .false.
+        lag_mv_wrt = .false.
+        lag_mg_wrt = .false.
+        lag_betaT_wrt = .false.
+        lag_betaC_wrt = .false.
 
         schlieren_alpha = dflt_real
 
@@ -620,7 +700,6 @@ contains
 
                 allocate (bub_idx%rs(nb), bub_idx%vs(nb))
                 allocate (bub_idx%ps(nb), bub_idx%ms(nb))
-                allocate (weight(nb), R0(nb))
 
                 if (qbmm) then
                     allocate (bub_idx%moms(nb, nmom))
@@ -648,21 +727,6 @@ contains
                         end if
                     end do
                 end if
-
-                if (nb == 1) then
-                    weight(:) = 1._wp
-                    R0(:) = 1._wp
-                else if (nb < 1) then
-                    stop 'Invalid value of nb'
-                end if
-
-                if (polytropic .neqv. .true.) then
-                    !call s_initialize_nonpoly
-                else
-                    rhoref = 1._wp
-                    pref = 1._wp
-                end if
-
             end if
 
             if (bubbles_lagrange) then
@@ -805,6 +869,13 @@ contains
                 damage_idx = dflt_int
             end if
 
+            if (hyper_cleaning) then
+                psi_idx = sys_size + 1
+                sys_size = psi_idx
+            else
+                psi_idx = dflt_int
+            end if
+
         end if
 
         if (chemistry) then
@@ -842,7 +913,10 @@ contains
         chemxb = species_idx%beg
         chemxe = species_idx%end
 
-        if (hifu) sys_size_hifu = max(sys_size, 14)
+        if (hifu) then
+            sys_size_hifu= 11
+            if (hifu_params%streaming) sys_size_hifu = 14
+        end if
 
 #ifdef MFC_MPI
         allocate (MPI_IO_DATA%view(1:sys_size))
@@ -872,10 +946,17 @@ contains
         ! in the Silo-HDF5 format. If this is the case, one must also verify
         ! whether the raw simulation data is 2D or 3D. In the 2D case, size
         ! of the z-coordinate direction ghost zone layer must be zeroed out.
-        if (num_procs == 1 .or. format /= 1 .or. n == 0) then
+        if (num_procs == 1 .or. format /= 1) then
 
             offset_x%beg = 0
             offset_x%end = 0
+            offset_y%beg = 0
+            offset_y%end = 0
+            offset_z%beg = 0
+            offset_z%end = 0
+
+        elseif (n == 0) then
+
             offset_y%beg = 0
             offset_y%end = 0
             offset_z%beg = 0
@@ -915,17 +996,7 @@ contains
         idwbuff(3)%end = idwint(3)%end - idwbuff(3)%beg
 
         ! Allocating single precision grid variables if needed
-        if (precision == 1) then
-            allocate (x_cb_s(-1 - offset_x%beg:m + offset_x%end))
-            if (n > 0) then
-                allocate (y_cb_s(-1 - offset_y%beg:n + offset_y%end))
-                if (p > 0) then
-                    allocate (z_cb_s(-1 - offset_z%beg:p + offset_z%end))
-                end if
-            end if
-        else
-            allocate (x_cc_s(-buff_size:m + buff_size))
-        end if
+        allocate (x_cc_s(-buff_size:m + buff_size))
 
         ! Allocating the grid variables in the x-coordinate direction
         allocate (x_cb(-1 - offset_x%beg:m + offset_x%end))

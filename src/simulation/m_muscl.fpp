@@ -1,4 +1,10 @@
+!>
+!! @file
+!! @brief Contains module m_muscl
+
 #:include 'macros.fpp'
+
+!> @brief MUSCL reconstruction with interface sharpening for contact-preserving advection
 module m_muscl
 
     use m_derived_types        !< Definitions of the derived types
@@ -34,9 +40,9 @@ module m_muscl
     !! of the characteristic decomposition are stored in custom-constructed muscl-
     !! stencils (WS) that are annexed to each position of a given scalar field.
     !> @{
-    real(wp), allocatable, dimension(:, :, :, :) :: v_rs_ws_x, v_rs_ws_y, v_rs_ws_z
+    real(wp), allocatable, dimension(:, :, :, :) :: v_rs_ws_x_muscl, v_rs_ws_y_muscl, v_rs_ws_z_muscl
     !> @}
-    $:GPU_DECLARE(create='[v_rs_ws_x,v_rs_ws_y,v_rs_ws_z]')
+    $:GPU_DECLARE(create='[v_rs_ws_x_muscl,v_rs_ws_y_muscl,v_rs_ws_z_muscl]')
 
 contains
 
@@ -60,7 +66,7 @@ contains
 
         is3_muscl%end = p - is3_muscl%beg
 
-        @:ALLOCATE(v_rs_ws_x(is1_muscl%beg:is1_muscl%end, &
+        @:ALLOCATE(v_rs_ws_x_muscl(is1_muscl%beg:is1_muscl%end, &
             is2_muscl%beg:is2_muscl%end, is3_muscl%beg:is3_muscl%end, 1:sys_size))
 
         if (n == 0) return
@@ -77,7 +83,7 @@ contains
 
         is3_muscl%end = p - is3_muscl%beg
 
-        @:ALLOCATE(v_rs_ws_y(is2_muscl%beg:is2_muscl%end, &
+        @:ALLOCATE(v_rs_ws_y_muscl(is2_muscl%beg:is2_muscl%end, &
             is1_muscl%beg:is1_muscl%end, is3_muscl%beg:is3_muscl%end, 1:sys_size))
 
         if (p == 0) return
@@ -87,11 +93,12 @@ contains
         is1_muscl%beg = -buff_size; is1_muscl%end = m - is1_muscl%beg
         is3_muscl%beg = -buff_size; is3_muscl%end = p - is3_muscl%beg
 
-        @:ALLOCATE(v_rs_ws_z(is3_muscl%beg:is3_muscl%end, &
+        @:ALLOCATE(v_rs_ws_z_muscl(is3_muscl%beg:is3_muscl%end, &
             is2_muscl%beg:is2_muscl%end, is1_muscl%beg:is1_muscl%end, 1:sys_size))
 
     end subroutine s_initialize_muscl_module
 
+    !> @brief Performs MUSCL reconstruction of left and right cell-boundary values from cell-averaged variables.
     subroutine s_muscl(v_vf, vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, &
                        muscl_dir, &
                        is1_muscl_d, is2_muscl_d, is3_muscl_d)
@@ -112,11 +119,11 @@ contains
 
         $:GPU_UPDATE(device='[is1_muscl,is2_muscl,is3_muscl]')
 
-        if (muscl_order /= 1) then
+        if (muscl_order /= 1 .or. dummy) then
             call s_initialize_muscl(v_vf, muscl_dir)
         end if
 
-        if (muscl_order == 1) then
+        if (muscl_order == 1 .or. dummy) then
             if (muscl_dir == 1) then
                 $:GPU_PARALLEL_LOOP(collapse=4)
                 do i = 1, ubound(v_vf, 1)
@@ -129,8 +136,9 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             else if (muscl_dir == 2) then
-                $:GPU_PARALLEL_LOOP(collapse=4)
+                $:GPU_PARALLEL_LOOP(private='[i,j,k,l]', collapse=4)
                 do i = 1, ubound(v_vf, 1)
                     do l = is3_muscl%beg, is3_muscl%end
                         do k = is2_muscl%beg, is2_muscl%end
@@ -141,8 +149,9 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             else if (muscl_dir == 3) then
-                $:GPU_PARALLEL_LOOP(collapse=4)
+                $:GPU_PARALLEL_LOOP(private='[i,j,k,l]', collapse=4)
                 do i = 1, ubound(v_vf, 1)
                     do l = is3_muscl%beg, is3_muscl%end
                         do k = is2_muscl%beg, is2_muscl%end
@@ -153,22 +162,24 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             end if
+        end if
 
-        else if (muscl_order == 2) then
+        if (muscl_order == 2 .or. dummy) then
             ! MUSCL Reconstruction
             #:for MUSCL_DIR, XYZ in [(1, 'x'), (2, 'y'), (3, 'z')]
                 if (muscl_dir == ${MUSCL_DIR}$) then
-                    $:GPU_PARALLEL_LOOP(collapse=4,private='[slopeL,slopeR,slope]')
+                    $:GPU_PARALLEL_LOOP(collapse=4,private='[i,j,k,l,slopeL,slopeR,slope]')
                     do l = is3_muscl%beg, is3_muscl%end
                         do k = is2_muscl%beg, is2_muscl%end
                             do j = is1_muscl%beg, is1_muscl%end
                                 do i = 1, v_size
 
-                                    slopeL = v_rs_ws_${XYZ}$ (j + 1, k, l, i) - &
-                                             v_rs_ws_${XYZ}$ (j, k, l, i)
-                                    slopeR = v_rs_ws_${XYZ}$ (j, k, l, i) - &
-                                             v_rs_ws_${XYZ}$ (j - 1, k, l, i)
+                                    slopeL = v_rs_ws_${XYZ}$_muscl(j + 1, k, l, i) - &
+                                             v_rs_ws_${XYZ}$_muscl(j, k, l, i)
+                                    slopeR = v_rs_ws_${XYZ}$_muscl(j, k, l, i) - &
+                                             v_rs_ws_${XYZ}$_muscl(j - 1, k, l, i)
                                     slope = 0._wp
 
                                     if (muscl_lim == 1) then ! minmod
@@ -199,16 +210,17 @@ contains
 
                                     ! reconstruct from left side
                                     vL_rs_vf_${XYZ}$ (j, k, l, i) = &
-                                        v_rs_ws_${XYZ}$ (j, k, l, i) - (5.e-1_wp*slope)
+                                        v_rs_ws_${XYZ}$_muscl(j, k, l, i) - (5.e-1_wp*slope)
 
                                     ! reconstruct from the right side
                                     vR_rs_vf_${XYZ}$ (j, k, l, i) = &
-                                        v_rs_ws_${XYZ}$ (j, k, l, i) + (5.e-1_wp*slope)
+                                        v_rs_ws_${XYZ}$_muscl(j, k, l, i) + (5.e-1_wp*slope)
 
                                 end do
                             end do
                         end do
                     end do
+                    $:END_GPU_PARALLEL_LOOP()
                 end if
             #:endfor
         end if
@@ -221,6 +233,7 @@ contains
 
     end subroutine s_muscl
 
+    !> @brief Applies THINC interface-compression to sharpen volume-fraction reconstructions at material interfaces.
     subroutine s_interface_compression(vL_rs_vf_x, vL_rs_vf_y, vL_rs_vf_z, vR_rs_vf_x, vR_rs_vf_y, vR_rs_vf_z, &
                                        muscl_dir, &
                                        is1_muscl_d, is2_muscl_d, is3_muscl_d)
@@ -239,14 +252,14 @@ contains
         #:for MUSCL_DIR, XYZ in [(1, 'x'), (2, 'y'), (3, 'z')]
             if (muscl_dir == ${MUSCL_DIR}$) then
 
-                $:GPU_PARALLEL_LOOP(collapse=3,private='[aCL,aC,aCR,aTHINC,moncon,sign,qmin,qmax]')
+                $:GPU_PARALLEL_LOOP(collapse=3,private='[j,k,l,aCL,aC,aCR,aTHINC,moncon,sign,qmin,qmax]')
                 do l = is3_muscl%beg, is3_muscl%end
                     do k = is2_muscl%beg, is2_muscl%end
                         do j = is1_muscl%beg, is1_muscl%end
 
-                            aCL = v_rs_ws_${XYZ}$ (j - 1, k, l, advxb)
-                            aC = v_rs_ws_${XYZ}$ (j, k, l, advxb)
-                            aCR = v_rs_ws_${XYZ}$ (j + 1, k, l, advxb)
+                            aCL = v_rs_ws_${XYZ}$_muscl(j - 1, k, l, advxb)
+                            aC = v_rs_ws_${XYZ}$_muscl(j, k, l, advxb)
+                            aCR = v_rs_ws_${XYZ}$_muscl(j + 1, k, l, advxb)
 
                             moncon = (aCR - aC)*(aC - aCL)
 
@@ -292,11 +305,13 @@ contains
                         end do
                     end do
                 end do
+                $:END_GPU_PARALLEL_LOOP()
             end if
         #:endfor
 
     end subroutine s_interface_compression
 
+    !> @brief Reshapes cell-averaged variable data into direction-local work arrays for MUSCL reconstruction.
     subroutine s_initialize_muscl(v_vf, muscl_dir)
 
         type(scalar_field), dimension(:), intent(in) :: v_vf
@@ -313,62 +328,66 @@ contains
         $:GPU_UPDATE(device='[v_size]')
 
         if (muscl_dir == 1) then
-            $:GPU_PARALLEL_LOOP(collapse=4)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l,q]', collapse=4)
             do j = 1, v_size
                 do q = is3_muscl%beg, is3_muscl%end
                     do l = is2_muscl%beg, is2_muscl%end
                         do k = is1_muscl%beg - muscl_polyn, is1_muscl%end + muscl_polyn
-                            v_rs_ws_x(k, l, q, j) = v_vf(j)%sf(k, l, q)
+                            v_rs_ws_x_muscl(k, l, q, j) = v_vf(j)%sf(k, l, q)
                         end do
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         end if
 
         ! Reshaping/Projecting onto Characteristic Fields in y-direction
         if (n == 0) return
 
         if (muscl_dir == 2) then
-            $:GPU_PARALLEL_LOOP(collapse=4)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l,q]', collapse=4)
             do j = 1, v_size
                 do q = is3_muscl%beg, is3_muscl%end
                     do l = is2_muscl%beg, is2_muscl%end
                         do k = is1_muscl%beg - muscl_polyn, is1_muscl%end + muscl_polyn
-                            v_rs_ws_y(k, l, q, j) = v_vf(j)%sf(l, k, q)
+                            v_rs_ws_y_muscl(k, l, q, j) = v_vf(j)%sf(l, k, q)
                         end do
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         end if
 
         ! Reshaping/Projecting onto Characteristic Fields in z-direction
         if (p == 0) return
         if (muscl_dir == 3) then
-            $:GPU_PARALLEL_LOOP(collapse=4)
+            $:GPU_PARALLEL_LOOP(private='[j,k,l,q]', collapse=4)
             do j = 1, v_size
                 do q = is3_muscl%beg, is3_muscl%end
                     do l = is2_muscl%beg, is2_muscl%end
                         do k = is1_muscl%beg - muscl_polyn, is1_muscl%end + muscl_polyn
-                            v_rs_ws_z(k, l, q, j) = v_vf(j)%sf(q, l, k)
+                            v_rs_ws_z_muscl(k, l, q, j) = v_vf(j)%sf(q, l, k)
                         end do
                     end do
                 end do
             end do
+            $:END_GPU_PARALLEL_LOOP()
         end if
 
     end subroutine s_initialize_muscl
 
+    !> @brief Deallocates the MUSCL direction-local work arrays.
     subroutine s_finalize_muscl_module()
 
-        @:DEALLOCATE(v_rs_ws_x)
+        @:DEALLOCATE(v_rs_ws_x_muscl)
 
         if (n == 0) return
 
-        @:DEALLOCATE(v_rs_ws_y)
+        @:DEALLOCATE(v_rs_ws_y_muscl)
 
         if (p == 0) return
 
-        @:DEALLOCATE(v_rs_ws_z)
+        @:DEALLOCATE(v_rs_ws_z_muscl)
 
     end subroutine s_finalize_muscl_module
 end module m_muscl

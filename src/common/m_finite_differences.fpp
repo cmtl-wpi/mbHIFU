@@ -1,5 +1,10 @@
+!>
+!! @file
+!! @brief Contains module m_finite_differences
+
 #:include 'macros.fpp'
 
+!> @brief Finite difference operators for computing divergence of velocity fields
 module m_finite_differences
 
     use m_global_parameters
@@ -8,7 +13,7 @@ module m_finite_differences
 
 contains
 
-    pure subroutine s_compute_fd_divergence(div, fields, ix_s, iy_s, iz_s)
+    subroutine s_compute_fd_divergence(div, fields, ix_s, iy_s, iz_s)
 
         type(scalar_field), intent(INOUT) :: div
         type(scalar_field), intent(IN) :: fields(1:3)
@@ -18,7 +23,7 @@ contains
 
         real(wp) :: divergence
 
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[divergence]')
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[x,y,z,divergence]')
         do x = ix_s%beg, ix_s%end
             do y = iy_s%beg, iy_s%end
                 do z = iz_s%beg, iz_s%end
@@ -45,7 +50,7 @@ contains
                         if (z == iz_s%beg) then
                             divergence = divergence + (-3._wp*fields(3)%sf(x, y, z) + 4._wp*fields(3)%sf(x, y, z + 1) - fields(3)%sf(x, y, z + 2))/(z_cc(z + 2) - z_cc(z))
                         else if (z == iz_s%end) then
-                            divergence = divergence + (+3._wp*fields(3)%sf(x, y, z) - 4._wp*fields(3)%sf(x, y, z - 1) + fields(2)%sf(x, y, z - 2))/(z_cc(z) - z_cc(z - 2))
+                            divergence = divergence + (+3._wp*fields(3)%sf(x, y, z) - 4._wp*fields(3)%sf(x, y, z - 1) + fields(3)%sf(x, y, z - 2))/(z_cc(z) - z_cc(z - 2))
                         else
                             divergence = divergence + (fields(3)%sf(x, y, z + 1) - fields(3)%sf(x, y, z - 1))/(z_cc(z + 1) - z_cc(z - 1))
                         end if
@@ -56,6 +61,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_compute_fd_divergence
 
@@ -69,8 +75,12 @@ contains
     !!  @param q Number of cells in the s-coordinate direction
     !!  @param s_cc Locations of the cell-centers in the s-coordinate direction
     !!  @param fd_coeff_s Finite-diff. coefficients in the s-coordinate direction
-    pure subroutine s_compute_finite_difference_coefficients(q, s_cc, fd_coeff_s, local_buff_size, &
-                                                             fd_number_in, fd_order_in, offset_s)
+    !!  @param local_buff_size Size of the local buffer
+    !!  @param fd_number_in Finite-difference number
+    !!  @param fd_order_in Finite-difference order of accuracy
+    !!  @param offset_s Optional offset bounds in the s-coordinate direction
+    subroutine s_compute_finite_difference_coefficients(q, s_cc, fd_coeff_s, local_buff_size, &
+                                                        fd_number_in, fd_order_in, offset_s)
 
         integer :: lB, lE !< loop bounds
         integer, intent(IN) :: q

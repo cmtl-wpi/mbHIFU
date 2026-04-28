@@ -20,8 +20,8 @@ class PackEntry:
         return f"{self.filepath} {' '.join([ str(d) for d in self.doubles ])}"
 
 
-# This class maps to the data contained in the entirety of D/: it is tush a list
-# of PackEntry classes.
+# This class maps to the data contained in the entirety of D/: a dictionary
+# of PackEntry instances keyed by filepath.
 class Pack:
     entries: typing.Dict[str, PackEntry]
 
@@ -87,10 +87,10 @@ CPU:
 
         common.file_write(f"{filepath.rstrip('.txt')}-metadata.txt", metadata)
 
-    def has_NaNs(self) -> bool:
+    def has_bad_values(self) -> bool:
         for entry in self.entries.values():
             for double in entry.doubles:
-                if math.isnan(double):
+                if math.isnan(double) or math.isinf(double):
                     return True
 
         return False
@@ -126,17 +126,23 @@ def compile(casepath: str) -> typing.Tuple[Pack, str]:
         short_filepath = str(filepath).replace(f'{case_dir}', '')[1:].replace("\\", "/")
         content        = common.file_read(filepath)
 
-        try:
-            # Takes a string of numbers and returns them as a list of floats.
-            def _extract_doubles(s: str) -> list:
-                return [ float(e) for e in re.sub(r"[\n\t\s]+", " ", s).strip().split(' ') ]
+        # Takes a string of numbers and returns them as a list of floats.
+        def _extract_doubles(s: str) -> list:
+            return [ float(e) for e in re.sub(r"[\n\t\s]+", " ", s).strip().split(' ') ]
 
-            # Every line is <x> <y> <z> <value> (<y> and <z> are optional). So the
-            # number of dimensions is the number of doubles in the first line minus 1.
-            ndims   = len(_extract_doubles(content.split('\n', 1)[0])) - 1
-            # We discard all <x> <y> <z> values and only keep the <value> ones.
-            # This is in an effort to save on storage.
-            doubles = _extract_doubles(content)[ndims::ndims+1]
+
+        try:
+            if "lag_bubble" in short_filepath:
+                lines = content.splitlines()
+                content = "\n".join(lines[1:])  # Skip the first line
+                doubles = _extract_doubles(content)
+            else:
+                # Every line is <x> <y> <z> <value> (<y> and <z> are optional). So the
+                # number of dimensions is the number of doubles in the first line minus 1.
+                ndims   = len(_extract_doubles(content.split('\n', 1)[0])) - 1
+                # We discard all <x> <y> <z> values and only keep the <value> ones.
+                # This is in an effort to save on storage.
+                doubles = _extract_doubles(content)[ndims::ndims+1]
         except ValueError:
             return None, f"Failed to interpret the content of [magenta]{filepath}[/magenta] as a list of floating point numbers."
 
