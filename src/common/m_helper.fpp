@@ -199,9 +199,9 @@ contains
             el_vsc = bub_pp%el_vsc/(rho0*x0*c0*c0)
 
             if (polytropic) then
-              Ca = (p0-pv)/(rho0*c0*c0)
-              gam_m = gam_g
-              if (thermal == 2) gam_m = 1._wp ! Isothermal
+                Ca = (p0 - pv)/(rho0*c0*c0)
+                gam_m = gam_g
+                if (thermal == 2) gam_m = 1._wp ! Isothermal
             end if
 
         end if

@@ -633,9 +633,9 @@ contains
                         disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
                         call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
-                                           'native', mpi_info_int, ierr)
+                                               'native', mpi_info_int, ierr)
                         call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
-                                              mpi_io_p, status, ierr)
+                                               mpi_io_p, status, ierr)
                     end do
                 end if
 
@@ -741,7 +741,7 @@ contains
             end do
             deallocate (q_cons_hifu)
         end if
-        
+
         deallocate (bc_type(1, 1)%sf, bc_type(1, 2)%sf)
         if (n > 0) then
             deallocate (bc_type(2, 1)%sf, bc_type(2, 2)%sf)

@@ -936,7 +936,7 @@ contains
         hifu_params%moments = .false.
         hifu_params%R_cloud = 0._wp
         hifu_params%cloud_center = [0._wp, 0._wp, 0._wp]
-        hifu_params%power_balance =.false.
+        hifu_params%power_balance = .false.
         hifu_params%cv_xb = dflt_real
         hifu_params%cv_xe = dflt_real
         hifu_params%cv_yb = dflt_real
@@ -1310,7 +1310,7 @@ contains
         ! END: Volume Fraction Model
 
         if (hifu) then
-            sys_size_hifu= 11
+            sys_size_hifu = 11
             if (hifu_params%streaming) sys_size_hifu = 14
         end if
 

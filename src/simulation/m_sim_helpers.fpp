@@ -164,7 +164,7 @@ contains
         end if
 
         H = (E + pres)/rho
-        
+
     end subroutine s_compute_enthalpy
 
     !> Computes stability criterion for a specified dt
@@ -234,7 +234,6 @@ contains
         end if
 
     end subroutine s_compute_stability_from_dt
-
 
     !> Computes dt for a specified CFL number
         !! @param vel directional velocities

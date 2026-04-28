@@ -29,7 +29,7 @@ contains
         $:GPU_UPDATE(device='[bcyb, bcye]')
 
         if (p == 0) return
-        
+
         bczb = bc_z%beg
         bcze = bc_z%end
         $:GPU_UPDATE(device='[bczb, bcze]')
@@ -53,7 +53,7 @@ contains
         real(wp), dimension(1:lag_params%nBubs_glb), intent(in), optional :: lbk_qvis, lbk_qth
 
         if (hifu_params%heatSolver) then
-            if (hifu_params%cartesian .or. (p>0 .and. .not. cyl_coord)) then
+            if (hifu_params%cartesian .or. (p > 0 .and. .not. cyl_coord)) then
                 !call s_deltafunc_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
                 call s_gaussian_hifu(nBubs, lbk_rad, lbk_vel, lbk_s, lbk_pos, updatedvar, lbk_qvis, lbk_qth)
             else
@@ -164,7 +164,7 @@ contains
 
                 !Product of two smeared functions
                 !Update void fraction * time derivative of void fraction
-                if (p == 0  .and. lag_params%solver_approach==2) then
+                if (p == 0 .and. lag_params%solver_approach == 2) then
                     addFun3 = (strength_vol*strength_vel)/Vol
                     $:GPU_ATOMIC(atomic='update')
                     updatedvar%vf(5)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(5)%sf(cell(1), cell(2), cell(3)) + addFun3
@@ -273,7 +273,7 @@ contains
 
                         !Product of two smeared functions
                         !Update void fraction * time derivative of void fraction
-                        if (p == 0 .and. .not. lag_params%newModel_2D .and. lag_params%solver_approach==2) then
+                        if (p == 0 .and. .not. lag_params%newModel_2D .and. lag_params%solver_approach == 2) then
                             addFun3 = func2*strength_vol*strength_vel
                             $:GPU_ATOMIC(atomic='update')
                             updatedvar%vf(5)%sf(cellaux(1), cellaux(2), cellaux(3)) = &
@@ -403,8 +403,8 @@ contains
 
                 !> Is the particle in the domain?
                 particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb_hf(m_hf + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb_hf(-1 - buff_size)) .and. &
-                                    (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
-                                    (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
+                                      (lbk_pos(l, 2, 1) < y_cb_hf(n_hf + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb_hf(-1 - buff_size)) .and. &
+                                      (lbk_pos(l, 3, 1) < z_cb_hf(p_hf + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb_hf(-1 - buff_size)))
 
                 if (particle_in_domain) then
 
@@ -514,15 +514,15 @@ contains
             end do
             $:END_GPU_PARALLEL_LOOP()
 
-        elseif (p>0 .and. .not. cyl_coord) then
+        elseif (p > 0 .and. .not. cyl_coord) then
 
             $:GPU_PARALLEL_LOOP(private='[l, cell, scoord, center]', copyin='[smearGrid]')
             do l = 1, nBubs
 
                 !> Is the particle in the domain?
                 particle_in_domain = ((lbk_pos(l, 1, 1) < x_cb(m + buff_size)) .and. (lbk_pos(l, 1, 1) >= x_cb(-1 - buff_size)) .and. &
-                                    (lbk_pos(l, 2, 1) < y_cb(n + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb(-1 - buff_size)) .and. &
-                                    (lbk_pos(l, 3, 1) < z_cb(p + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb(-1 - buff_size)))
+                                      (lbk_pos(l, 2, 1) < y_cb(n + buff_size)) .and. (lbk_pos(l, 2, 1) >= y_cb(-1 - buff_size)) .and. &
+                                      (lbk_pos(l, 3, 1) < z_cb(p + buff_size)) .and. (lbk_pos(l, 3, 1) >= z_cb(-1 - buff_size)))
 
                 if (particle_in_domain) then
 
@@ -560,7 +560,7 @@ contains
                     volpart = 4._wp/3._wp*pi*lbk_rad(l, 1)**3._wp
                     call s_compute_stddsv(cell, volpart, stddsv)
                     center(1:3) = lbk_pos(l, 1:3, 2)
-                    
+
                     ! if (l==1) print*, 'in kernel', lbk_qvis(l), lbk_qth(l)
 
                     !> Smearing

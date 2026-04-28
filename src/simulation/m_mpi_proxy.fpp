@@ -161,16 +161,16 @@ contains
             #:endfor
 
             #:for VAR in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 'dt_stg3', 'dt_stg2', 't_stop_stg1', &
-                & 't_stop_stg2', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud', & 
+                & 't_stop_stg2', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud', &
                 & 'cv_xb', 'cv_xe', 'cv_yb', 'cv_ye', 'cv_zb', 'cv_ze']
                 call MPI_BCAST(hifu_params%${VAR}$, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
             do i = 1, 3
-            #:for VAR in [ 'hifu_params%cloud_center']
-                call MPI_BCAST(${VAR}$ (i), 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
-            #:endfor
-        end do
+                #:for VAR in [ 'hifu_params%cloud_center']
+                    call MPI_BCAST(${VAR}$ (i), 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
+                #:endfor
+            end do
 
         end if
 

@@ -83,16 +83,16 @@ contains
         end if
 
 #ifdef MFC_SIMULATION
-    
-    ! if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_ACOUSTIC_WAVE) .and. &
-    !     acoustic_bc_params%iwave == 3) then
 
-    !     @:ALLOCATE(in_bc_pressure(0:200))
-    !     @:ALLOCATE(in_bc_time(0:200))
+        ! if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_ACOUSTIC_WAVE) .and. &
+        !     acoustic_bc_params%iwave == 3) then
 
-    !     call s_read_txt_input_acoustic
-    ! end if
-    
+        !     @:ALLOCATE(in_bc_pressure(0:200))
+        !     @:ALLOCATE(in_bc_time(0:200))
+
+        !     call s_read_txt_input_acoustic
+        ! end if
+
 #endif
 
     end subroutine s_initialize_boundary_common_module
@@ -1187,10 +1187,10 @@ contains
                             q_prim_vf(momxe + 1)%sf(-j, k, l) = acoustic_bc_params%Pbase
                         end if
 
-                    ! elseif (acoustic_bc_params%iwave == 3) then
-                    !     ! Pressure : Customized planar wave
-                    !     q_prim_vf(momxe + 1)%sf(-j, k, l) = f_interpolate_customized_acoustic_bc(timeNow)
-                    !     q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
+                        ! elseif (acoustic_bc_params%iwave == 3) then
+                        !     ! Pressure : Customized planar wave
+                        !     q_prim_vf(momxe + 1)%sf(-j, k, l) = f_interpolate_customized_acoustic_bc(timeNow)
+                        !     q_prim_vf(1)%sf(-j, k, l) = acoustic_bc_params%rho
                         !if (j == 1 .and. k == 0 .and. l == 0) print*, timeNow, q_prim_vf(momxe + 1)%sf(-j, k, l)
                     end if
                 end do
@@ -1215,10 +1215,10 @@ contains
                         else
                             q_prim_vf(momxe + 1)%sf(k, -j, l) = acoustic_bc_params%Pbase
                         end if
-                    ! elseif (acoustic_bc_params%iwave == 3) then
-                    !     ! Pressure : Customized planar wave
-                    !     q_prim_vf(momxe + 1)%sf(k, -j, l) = f_interpolate_customized_acoustic_bc(timeNow)
-                    !     q_prim_vf(1)%sf(k, -j, l) = acoustic_bc_params%rho
+                        ! elseif (acoustic_bc_params%iwave == 3) then
+                        !     ! Pressure : Customized planar wave
+                        !     q_prim_vf(momxe + 1)%sf(k, -j, l) = f_interpolate_customized_acoustic_bc(timeNow)
+                        !     q_prim_vf(1)%sf(k, -j, l) = acoustic_bc_params%rho
                     end if
                 end do
             end if
@@ -1268,10 +1268,10 @@ contains
                             q_prim_vf(momxe + 1)%sf(k, l, -j) = acoustic_bc_params%Pbase
                         end if
 
-                    ! elseif (acoustic_bc_params%iwave == 3) then
-                    !     ! Pressure : Customized planar wave
-                    !     q_prim_vf(momxe + 1)%sf(k, l, -j) = f_interpolate_customized_acoustic_bc(timeNow)
-                    !     q_prim_vf(1)%sf(k, l, -j) = acoustic_bc_params%rho
+                        ! elseif (acoustic_bc_params%iwave == 3) then
+                        !     ! Pressure : Customized planar wave
+                        !     q_prim_vf(momxe + 1)%sf(k, l, -j) = f_interpolate_customized_acoustic_bc(timeNow)
+                        !     q_prim_vf(1)%sf(k, l, -j) = acoustic_bc_params%rho
 
                     end if
                 end do
@@ -1324,11 +1324,11 @@ contains
 
         ! Linear search for t in [time(i), time(i+1)]
         do i = 1, in_bc_samples - 1
-            if (timeNow >= in_bc_time(i) .and. timeNow <= in_bc_time(i+1)) then
+            if (timeNow >= in_bc_time(i) .and. timeNow <= in_bc_time(i + 1)) then
                 f_interpolate_customized_acoustic_bc = &
-                    f_interpolate_customized_acoustic_bc + (&
-                    in_bc_pressure(i) + (in_bc_pressure(i+1) - in_bc_pressure(i)) * &
-                    (timeNow - in_bc_time(i)) / (in_bc_time(i+1) - in_bc_time(i)))
+                    f_interpolate_customized_acoustic_bc + ( &
+                    in_bc_pressure(i) + (in_bc_pressure(i + 1) - in_bc_pressure(i))* &
+                    (timeNow - in_bc_time(i))/(in_bc_time(i + 1) - in_bc_time(i)))
                 return
             end if
         end do
@@ -1349,7 +1349,7 @@ contains
         end do
 
     end subroutine s_axis_cylindrical_sector_hifu
-    
+
     !> @brief Extrapolates QBMM bubble pressure and mass-vapor variables into ghost cells by copying boundary values.
     subroutine s_qbmm_extrapolation(bc_dir, bc_loc, k, l, pb_in, mv_in)
         $:GPU_ROUTINE(parallelism='[seq]')
@@ -1434,18 +1434,18 @@ contains
 
         el_mpi = 1
         if (hifu_EL_flag) el_mpi = 2
-        
+
         !< x-direction
         if (bc_x%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 1, -1, q_beta_size, &
-                      el_id = el_mpi)
+                q_beta%vf, 1, -1, q_beta_size, &
+                el_id=el_mpi)
         end if
 
         if (bc_x%end >= 0) then
-          call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 1, 1, q_beta_size, &
-                      el_id = el_mpi)
+            call s_mpi_sendrecv_variables_buffers( &
+                q_beta%vf, 1, 1, q_beta_size, &
+                el_id=el_mpi)
         end if
 
         if (n == 0) return
@@ -1453,14 +1453,14 @@ contains
         !< y-direction
         if (bc_y%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 2, -1, q_beta_size, &
-                      el_id = el_mpi)
+                q_beta%vf, 2, -1, q_beta_size, &
+                el_id=el_mpi)
         end if
 
         if (bc_y%end >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 2, 1, q_beta_size, &
-                      el_id = el_mpi)
+                q_beta%vf, 2, 1, q_beta_size, &
+                el_id=el_mpi)
         end if
 
         if (p == 0) return
@@ -1468,18 +1468,18 @@ contains
         !< z-direction
         if (bc_z%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 3, -1, q_beta_size, &
-                      el_id = el_mpi)
+                q_beta%vf, 3, -1, q_beta_size, &
+                el_id=el_mpi)
         end if
 
         if (bc_z%end >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 3, 1, q_beta_size, &
-                      el_id = el_mpi)
+                q_beta%vf, 3, 1, q_beta_size, &
+                el_id=el_mpi)
         end if
 
     end subroutine s_populate_EL_buffers
-    
+
     !> @brief Populates ghost cell buffers for the color function and its divergence used in capillary surface tension.
     impure subroutine s_populate_capillary_buffers(c_divs, bc_type)
 

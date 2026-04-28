@@ -108,7 +108,7 @@ contains
         type(scalar_field), &
             dimension(sys_size), &
             intent(inout) :: q_cons_vf
-        
+
         type(scalar_field), &
             dimension(sys_size_hifu), &
             intent(inout), optional :: q_hifu_vf
@@ -261,7 +261,6 @@ contains
 
         ! HIFU vars (ONLY IMPLEMENTED IN PARALLEL)
         type(scalar_field), dimension(sys_size_hifu), intent(INOUT), optional :: q_hifu_vf
-
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the starting time-step directory
@@ -546,7 +545,6 @@ contains
 
             end if
         end if
-
 
         if (file_per_process) then
             if (cfl_dt) then
@@ -894,7 +892,7 @@ contains
                 call s_initialize_from_2d_to_3d(bc_type)
                 call s_initialize_derived_variables_module()
                 call s_initialize_derived_variables()
-            elseif (p>0 .and. .not. cyl_coord) then
+            elseif (p > 0 .and. .not. cyl_coord) then
                 call s_initialize_pure_3D(bc_type)
             end if
         end if
@@ -915,12 +913,11 @@ contains
 
         end if
 
-
         mytime = mytime + dt
 
         if (hifu_params%heatSolver) then ! Solve heat eqn HIFU solver
             call s_time_stepper_heatEqn(t_step)
-        ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
+            ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
         elseif (any(time_stepper == (/1, 2, 3/))) then
             call s_tvd_rk(t_step, time_avg, time_stepper)
         end if
@@ -950,7 +947,7 @@ contains
         exitFlag = .true.
 
         if (hifu .and. hifu_params%automatic_stages) then ! stg1 -> stg2 -> stg3
-            call s_HIFU_stages(t_step, hifu_write_output, exitFlag) 
+            call s_HIFU_stages(t_step, hifu_write_output, exitFlag)
             if (hifu_write_output) then
                 do i = 1, sys_size_hifu
                     $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
@@ -963,7 +960,7 @@ contains
                 end if
 
                 call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
-                                                            bc_type, q_hifu_vf=q_hifu%vf)
+                                        bc_type, q_hifu_vf=q_hifu%vf)
             end if
 
             if (.not. exitFlag) return
@@ -1113,17 +1110,17 @@ contains
                 end do
                 if (hifu_params%cartesian) then
                     if (proc_rank == 0) call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
-                                                                                  bc_type, q_hifu_vf=q_hifu_3d%vf)
+                                                                bc_type, q_hifu_vf=q_hifu_3d%vf)
                 else
                     call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
-                                                              bc_type, q_hifu_vf=q_hifu_3d%vf)
+                                            bc_type, q_hifu_vf=q_hifu_3d%vf)
                 end if
             else
                 do i = 1, sys_size_hifu
                     $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
                 end do
                 call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
-                                                              bc_type, q_hifu_vf=q_hifu%vf)
+                                        bc_type, q_hifu_vf=q_hifu%vf)
             end if
         elseif (hifu_params%sampling) then
             do i = 1, sys_size_hifu
@@ -1131,7 +1128,7 @@ contains
             end do
             call s_write_Pmax(save_count)
             call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, &
-                                                        bc_type, q_hifu_vf=q_hifu%vf)
+                                    bc_type, q_hifu_vf=q_hifu%vf)
             ! call s_write_heat_stats(q_hifu%vf(3)%sf(0,0,0))
             ! if (bubbles_lagrange) call s_write_heat_stats_bubbles(q_hifu%vf(3)%sf(0,0,0))
         end if
@@ -1208,7 +1205,7 @@ contains
                 allocate (q_cons_temp(i)%sf(-1:m_ds + 1, -1:n_ds + 1, -1:p_ds + 1))
             end do
         end if
-        
+
         ! Reading in the user provided initial condition and grid data
         if (down_sample) then
             call s_read_data_files(q_cons_temp)

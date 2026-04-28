@@ -549,11 +549,11 @@ contains
             call s_compute_rhs(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_ts(1)%sf, rhs_pb, mv_ts(1)%sf, rhs_mv, t_step, time_avg, s)
 
             if (s == 1) then
-            
+
                 if (hifu_params%sampling .and. .not. adap_dt) then !HIFU sampling vars
                     call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
                 end if
-                
+
                 if (run_time_info) then
                     if (igr .or. dummy) then
                         call s_write_run_time_information(q_cons_ts(1)%vf, t_step)
@@ -716,7 +716,7 @@ contains
                 call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
                     $:GPU_UPDATE(host='[gas_p,gas_mv,intfc_rad,intfc_vel]')
-                    call s_write_lag_particles(mytime, replace = .false.)
+                    call s_write_lag_particles(mytime, replace=.false.)
                 end if
                 call s_write_void_evol(mytime, .false.)
             end if
@@ -1052,7 +1052,7 @@ contains
                         do j = 0, m
                             !Forward euler time scheme, explicit
                             q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) &
-                                                                    + dt*q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+                                                                       + dt*q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)
                             ! Max and min
                             temp_max = max(temp_max, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
                             temp_min = min(temp_min, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))

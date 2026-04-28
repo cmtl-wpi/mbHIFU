@@ -229,7 +229,7 @@ contains
 
             ! Populating the grid and conservative variables
             call s_read_data_files(t_step)
-            
+
             ! Populating the buffer regions of the grid and conservative variables
             if (buff_size > 0) then
                 call s_populate_grid_variables_buffers()

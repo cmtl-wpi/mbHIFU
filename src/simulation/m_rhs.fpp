@@ -1095,9 +1095,6 @@ contains
 
     ! end subroutine s_compute_rhs
 
-
-
-
     !> @brief Computes the right-hand side of the semi-discrete governing equations for a single time stage.
     impure subroutine s_compute_rhs(q_cons_vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg, stage)
 

@@ -764,10 +764,10 @@ contains
         if (proc_rank == 0) print *, '=========== x-dir'
         call s_print_direction(m)
 
-	if (n > 0) then
-       	    if (proc_rank == 0) print *, '=========== y-dir'
+        if (n > 0) then
+            if (proc_rank == 0) print *, '=========== y-dir'
             call s_print_direction(n)
-	end if
+        end if
 
         if (p > 0) then
             if (proc_rank == 0) print *, '=========== z-dir'

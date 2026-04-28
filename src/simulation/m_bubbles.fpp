@@ -272,11 +272,11 @@ contains
 
         if (polytropic) then
             if (bubbles_lagrange) then
-                f_cpbw_KM = pv + (fpb-pv)*((fR0/fR)**(3._wp*gam_m))
+                f_cpbw_KM = pv + (fpb - pv)*((fR0/fR)**(3._wp*gam_m))
             else
                 f_cpbw_KM = Ca*((fR0/fR)**(3._wp*gam)) - Ca + Eu
                 if (.not. f_is_default(Web)) f_cpbw_KM = f_cpbw_KM + &
-                                                     (2._wp/(Web*fR0))*((fR0/fR)**(3._wp*gam))
+                                                         (2._wp/(Web*fR0))*((fR0/fR)**(3._wp*gam))
             end if
         else
             f_cpbw_KM = fpb
@@ -313,11 +313,11 @@ contains
         real(wp) :: f_rddot_KM
         if (polytropic) then
             if (bubbles_lagrange) then
-                cdot_star = -(3._wp*gam_m/fR)*fV*(fpb-pv)*((fR0/fR)**(3._wp*gam_m))
+                cdot_star = -(3._wp*gam_m/fR)*fV*(fpb - pv)*((fR0/fR)**(3._wp*gam_m))
             else
                 cdot_star = -3._wp*gam*Ca*((fR0/fR)**(3._wp*gam))*fV/fR
                 if (.not. f_is_default(Web)) cdot_star = cdot_star - &
-                                                     3._wp*gam*(2._wp/(Web*fR0))*((fR0/fR)**(3._wp*gam))*fV/fR
+                                                         3._wp*gam*(2._wp/(Web*fR0))*((fR0/fR)**(3._wp*gam))*fV/fR
             end if
         else
             cdot_star = fpbdot
@@ -638,8 +638,8 @@ contains
                               fntait, fBtait, f_bub_adv_src, f_divu, &
                               bub_id, fmass_v, fmass_g, fbeta_c, &
                               fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
-                                   fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
-                                   fQvis, fQth, fRmean, adap_dt_stop)
+                              fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
+                              fQvis, fQth, fRmean, adap_dt_stop)
         $:GPU_ROUTINE(function_name='s_advance_step',parallelism='[seq]', &
             & cray_inline=True)
 
@@ -667,7 +667,7 @@ contains
 
         call s_initial_substep_h(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, &
                                  fntait, fBtait, f_bub_adv_src, f_divu, fCson, fInt, fshell, fRbuck, fRcell, h0)
-        
+
         if (h0 /= h0) then
             ! print *, 'Altering initial h (from/to)', bub_id, h, 0.1_wp*0.5_wp*dt
             ! print *, fRho, fP, fR, fV, fR0, fpb, fpbdot, fCson, fInt, fshell, fRbuck, fRcell
@@ -764,8 +764,8 @@ contains
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
                         fpb = myPb_tmp1(4)
-                        if (polytropic) then 
-                          fpb = pv + (fpb - pv)*(fR0/fR)**(3._wp*gam_m)
+                        if (polytropic) then
+                            fpb = pv + (fpb - pv)*(fR0/fR)**(3._wp*gam_m)
                         end if
                         fmass_v = myMv_tmp1(4)
                         if (fR > fRrupt) fshell = 0._wp
@@ -792,9 +792,9 @@ contains
                                     heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR
                                 end if
                             else
-                                T_bar_h = Tw * (fR0/fR)**(3._wp*(gam_m-1._wp)) ! Polytropic temp
-                                heatflux_h = conc_v_h*k_vl + (1._wp - conc_v_h)*k_gl 
-                                heatflux_h = 3._wp*heatflux_h*(1._wp-gam_m)*T_bar_h/fR
+                                T_bar_h = Tw*(fR0/fR)**(3._wp*(gam_m - 1._wp)) ! Polytropic temp
+                                heatflux_h = conc_v_h*k_vl + (1._wp - conc_v_h)*k_gl
+                                heatflux_h = 3._wp*heatflux_h*(1._wp - gam_m)*T_bar_h/fR
                             end if
                             fth_inst = heatflux_h*4._wp*pi*fR**2._wp
                             fQth = fQth + h*fth_inst
@@ -842,7 +842,7 @@ contains
 
         if (iter_count >= adap_dt_max_iters) adap_dt_stop = 1
 
-        if (adap_dt_stop == 1) print*, iter_count, fR, fV, fR0, fP, fpb, gam_m, err(1), err(2), err(3), err(4), err(5), h
+        if (adap_dt_stop == 1) print *, iter_count, fR, fV, fR0, fP, fpb, gam_m, err(1), err(2), err(3), err(4), err(5), h
 
     end subroutine s_advance_step
 
@@ -981,7 +981,7 @@ contains
         myR_tmp(1) = fR
         myV_tmp(1) = fV
         if (bubbles_lagrange) then
-            
+
             myPb_tmp(1) = fpb
             myMv_tmp(1) = fmass_v
             call s_advance_EL(myR_tmp(1), myV_tmp(1), myPb_tmp(1), myMv_tmp(1), bub_id, &

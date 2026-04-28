@@ -305,7 +305,7 @@ contains
                     else
                         call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf)
                     end if
-                    
+
                 end do
             end do
         end do
@@ -1854,19 +1854,19 @@ contains
                 else
                     if (hifu) then
                         #:if not MFC_CASE_OPTIMIZATION or num_dims > 2
-                        write (i + 30, '(6X,6E24.8)') &
-                            nondim_time, &
-                            rho, &
-                            vel(1), &
-                            vel(2), &
-                            pres, &
-                            Temp_hifu
+                            write (i + 30, '(6X,6E24.8)') &
+                                nondim_time, &
+                                rho, &
+                                vel(1), &
+                                vel(2), &
+                                pres, &
+                                Temp_hifu
                         #:endif
                     else
                         #:if not MFC_CASE_OPTIMIZATION or num_dims > 2
                             write (i + 30, '(6X,F12.6,F24.8,F24.8,F24.8,F24.8,'// &
-                                  'F24.8,F24.8,F24.8,F24.8,F24.8,'// &
-                                  'F24.8)') &
+                                   'F24.8,F24.8,F24.8,F24.8,F24.8,'// &
+                                   'F24.8)') &
                                 nondim_time, &
                                 rho, &
                                 vel(1), &
