@@ -2762,7 +2762,7 @@ contains
 
         if (.not. file_exist .or. replace) then
             open (11, FILE=trim(file_loc), FORM='formatted', position='rewind')
-            write (11, '(A)') 'mytime,dt,id,x,y,z,adius,intfc_vel,intfc_acc,p_inf,vap_mass,vap_conc,p_bub,mrmtnt_shell,mrmtnt_Rrupt'
+            write (11, '(A)') 'mytime,dt,id,x,y,z,radius,intfc_vel,intfc_acc,p_inf,vap_mass,vap_conc,p_bub,mrmtnt_shell,mrmtnt_Rrupt'
         else
             open (11, FILE=trim(file_loc), FORM='formatted', position='append')
         end if
