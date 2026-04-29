@@ -520,10 +520,7 @@ contains
         real(wp) :: varA, varB
         real(wp) :: duxdx, duxdr, durdx, durdr, ep11, ep22, ep33, ep12, ep13, ep23
         real(wp), dimension(3) :: duxdn, duydn, duzdn
-        real(wp) :: intensity_ac, sumIntensity_ac, tmp, focalIntensity_ac, intensity_ac_prms
-        real(wp) :: focalIntensity_th, sumIntensity_th
-        real(wp) :: sumIntensity_vis, focalIntensity_vis, focalIntensity_ac_prms
-        real(wp) :: focal_u, focal_v
+        real(wp) :: intensity_ac, sum_qac, tmp, intensity_ac_prms, sum_qac_prms
 
         integer :: i, j, k, l, s, mtd_idx
         integer :: abortFlag, abortFlag_max
@@ -532,16 +529,18 @@ contains
         real(wp) :: dist_radial, vol_cell, xb_Rc
 
         integer :: n_sgn
-        real(wp) :: acPw , acPw_qac
-        real(wp), dimension(6) :: acPw_in_dt, acPw_out_dt
+        real(wp) :: acPw , acPw_qac, acPw_cmprssv, acPw_kntc
+        real(wp), dimension(1:6) :: acPw_in_dt, acPw_out_dt
         logical :: flg_cell_in_cv
 
-        if (hifu_params%moments) mom_qac = 0._wp
+        if (hifu_params%moments) mom_qac(1:4) = 0._wp
 
-        focalIntensity_ac = 0._wp; focalIntensity_ac_prms = 0._wp
-        sumIntensity_ac = 0._wp
+        sum_qac = 0._wp; sum_qac_prms = 0._wp
 
-        acPw_in_dt(:) = 0._wp; acPw_out_dt(:) = 0._wp; acPw_qac = 0._wp
+        if (hifu_params%power_balance) then
+            acPw_in_dt(1:6) = 0._wp; acPw_out_dt(1:6) = 0._wp; acPw_qac = 0._wp
+            acPw_cmprssv = 0._wp; acPw_kntc = 0._wp
+        end if
 
         if (bubbles_lagrange .and. .not. adap_dt) call s_compute_bubble_heat_sources_HIFU(hdid)
 
@@ -554,10 +553,10 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max], [sumIntensity_ac]]', &
+              & reduction='[[abortFlag_max], [sum_qac,sum_qac_prms]]', &
               & reductionOp='[MAX,+]', &
               & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h]', &
-              & copy='[sumIntensity_ac, focalIntensity_ac, focalIntensity_ac_prms, abortFlag_max]')
+              & copy='[sum_qac, sum_qac_prms, abortFlag_max]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -671,17 +670,9 @@ contains
                             q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
                         end if
 
-                        !Get focal intensity and velocities
-                        axialCondition = (dy(k) > y_cc(k) .and. y_cc(k) > 0._wp)
-                        radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
-                        condition = (axialCondition .and. radialCondition)
-                        if (condition) then
-                            focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
-                            focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l))
-                        end if
-
                         !Intensity summation through the domain
-                        sumIntensity_ac = sumIntensity_ac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                        sum_qac = sum_qac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                        sum_qac_prms = sum_qac_prms + q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l)
 
                     end do
                 end do
@@ -691,24 +682,20 @@ contains
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity (prms)"
 
             if (num_procs > 1) then
-                tmp = sumIntensity_ac
-                call s_mpi_allreduce_sum(tmp, sumIntensity_ac)
+                tmp = sum_qac
+                call s_mpi_allreduce_sum(tmp, sum_qac)
 
-                tmp = focalIntensity_ac
-                call s_mpi_allreduce_max(tmp, focalIntensity_ac)
-
-                tmp = focalIntensity_ac_prms
-                call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
+                tmp = sum_qac_prms
+                call s_mpi_allreduce_sum(tmp, sum_qac_prms)
             end if
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(6x,5E24.8)') &
+            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') &
                                         mytime, &
                                         q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
-                                        focalIntensity_ac, &
-                                        focalIntensity_ac_prms, &
-                                        sumIntensity_ac
+                                        sum_qac, &
+                                        sum_qac_prms
 
         else if (.not. cyl_coord .and. p > 0) then !Cartesian 3D
 
@@ -717,10 +704,10 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, &
-              & reduction='[[focalIntensity_ac, focalIntensity_ac_prms],[sumIntensity_ac,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac]]', &
-              & reductionOp='[MAX,+]', &
-              & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h, duxdn, duydn, duzdn]', &
-              & copy='[sumIntensity_ac,focalIntensity_ac,focalIntensity_ac_prms,mom_qac,acPw_in_dt,acPw_out_dt,acPw_qac]')
+              & reduction='[[abortFlag_max],[sum_qac,sum_qac_prms,acPw_qac,acPw_cmprssv,acPw_kntc],[mom_qac(1:4),acPw_in_dt(1:6),acPw_out_dt(1:6)]]', &
+              & reductionOp='[MAX,+,+]', &
+              & private='[i,j,k,l,myalpha_rho,myalpha,vel_h,Re_h,rhoYks_h,duxdn,duydn,duzdn,xb_Rc,vol_cell]', &
+              & copy='[abortFlag_max,sum_qac,sum_qac_prms,acPw_qac,acPw_cmprssv,acPw_kntc,mom_qac(1:4),acPw_in_dt(1:6),acPw_out_dt(1:6)]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -809,11 +796,10 @@ contains
                         ep13 = 0.5_wp*(duxdn(3) + duzdn(1))
                         ep23 = 0.5_wp*(duydn(3) + duzdn(2))
 
-                        varA = ep11**2._wp + ep22**2._wp + ep33**2._wp
-                        varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + &
-                                                           6._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
+                        varA = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep11*ep22 + ep11*ep33 + ep22*ep33)
+                        varB = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
 
-                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB
+                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB - (2._wp/3._wp)*shearVisc*varA !intensity is "q_us_ac"
 
                         q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) &
                                                                                                         + hdid      ! Update total sampling time
@@ -845,26 +831,17 @@ contains
                             q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) + vel_h(1)*hdid ! Sampling x-vel
                             q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) + vel_h(2)*hdid ! Sampling y-vel
                         end if
-                        !Get focal intensity and velocities
-                        axialCondition = (dy(k) > abs(y_cc(k)) .and. abs(y_cc(k)) >= 0._wp)
-                        if (p>0) axialCondition = axialCondition .and. (dz(l) > abs(z_cc(l)) .and. abs(z_cc(l)) >= 0._wp)
-                        radialCondition = (x_cb(j - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < x_cb(j))
-                        !if (p>0) radialCondition = (z_cb(l - 1) < acoustic_bc_params%focLen .and. acoustic_bc_params%focLen < z_cb(l))
-                        condition = (axialCondition .and. radialCondition)
-                        if (condition) then
-                            focalIntensity_ac = max(focalIntensity_ac, q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l))
-                            focalIntensity_ac_prms = max(focalIntensity_ac_prms, q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l))
-                        end if
 
                         !Intensity summation through the domain
-                        sumIntensity_ac = sumIntensity_ac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                        sum_qac = sum_qac + q_hifu%vf(hifu_params%qus_idx)%sf(j, k, l)
+                        sum_qac_prms = sum_qac_prms + q_hifu%vf(hifu_params%qus_prms_idx)%sf(j, k, l)
 
+                        vol_cell = dx(j)*dy(k)*dz(l)
                         ! Calculate heat source moments inside the bubble cloud
                         if (hifu_params%moments) then
                             if (dist_radial <= hifu_params%R_cloud) then
                                 xb_Rc = (x_cc(j)-hifu_params%cloud_center(1))/hifu_params%R_cloud
-                                vol_cell = dx(j)*dy(k)*dz(l)
-                                
+
                                 $:GPU_LOOP(parallelism='[seq]')
                                 do i = 1, 4
                                     mom_qac(i) = mom_qac(i) + intensity_ac*hdid*vol_cell*(xb_Rc)**(i-1)
@@ -873,11 +850,19 @@ contains
                         end if
 
                          if (hifu_params%power_balance) then
+                            
+                            flg_cell_in_cv = f_cell_in_cv(j, k, l)
+                            if (flg_cell_in_cv) then
+                                ! print*, 'Cell in CV for power balance:', proc_rank, j, k, l
+                                acPw_qac = acPw_qac + intensity_ac*vol_cell
+                                acPw_cmprssv = acPw_cmprssv + ((pres_h - hifu_params%atmPres)**2._wp/(2._wp*rho_h*cson_h**2._wp))*vol_cell
+                                acPw_kntc = acPw_kntc + (0.5_wp*rho_h*dot_product(vel_h, vel_h))*vol_cell
+                            end if
+
                             $:GPU_LOOP(parallelism='[seq]')
                             do i = 1, num_dims
                                 n_sgn = f_is_on_cv_border(j, k, l, i)
                                 if (n_sgn /= 0) then
-                                    !print*, ' Computing acoustic power for CV face:', proc_rank, j, k, l, i, n_sgn
                                     call s_compute_cv_acoustic_power(q_prim_vf, j, k, l, &
                                                               i, n_sgn, pres_h, vel_h, acPw)
                                     
@@ -891,12 +876,6 @@ contains
                                 end if
                             end do
 
-                            flg_cell_in_cv = f_cell_in_cv(j, k, l)
-                            if (flg_cell_in_cv) then
-                                !print*, 'Cell in CV for power balance:', proc_rank, j, k, l
-                                acPw_qac = acPw_qac + intensity_ac*dx(j)*dy(k)*dz(l)
-                            end if
-
                          end if
 
                     end do
@@ -904,27 +883,26 @@ contains
             end do
             $:END_GPU_PARALLEL_LOOP()
 
+
             if (abortFlag_max > 0) stop "NaNs in Acoustic intensity"
 
-            call s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, hdid)
+            call s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, acPw_cmprssv, acPw_kntc, hdid)
 
             if (num_procs > 1) then
-                tmp = sumIntensity_ac
-                call s_mpi_allreduce_sum(tmp, sumIntensity_ac)
-                tmp = focalIntensity_ac
-                call s_mpi_allreduce_max(tmp, focalIntensity_ac)
-                tmp = focalIntensity_ac_prms
-                call s_mpi_allreduce_max(tmp, focalIntensity_ac_prms)
+                tmp = sum_qac
+                call s_mpi_allreduce_sum(tmp, sum_qac)
+                tmp = sum_qac_prms
+                call s_mpi_allreduce_sum(tmp, sum_qac_prms)
+
             end if
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(4x,5E24.8)') &
+            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') &
                                         mytime, &
                                         q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
-                                        focalIntensity_ac, &
-                                        focalIntensity_ac_prms, &
-                                        sumIntensity_ac
+                                        sum_qac, &
+                                        sum_qac_prms
 
             if (hifu_params%moments) call s_write_moments(mom_qac, idx=0)
 
@@ -948,9 +926,9 @@ contains
 
     end function f_cell_in_cv
 
-    subroutine s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, hdid)
+    subroutine s_write_power_balance(acPw_in_dt, acPw_out_dt, acPw_qac, acPw_cmprssv, acPw_kntc, hdid)
         real(wp), dimension(6), intent(inout) :: acPw_in_dt, acPw_out_dt
-        real(wp), intent(inout) :: acPw_qac
+        real(wp), intent(inout) :: acPw_qac, acPw_cmprssv, acPw_kntc
         real(wp), intent(in) :: hdid
         real(wp) :: var_glb
         integer :: i
@@ -966,26 +944,32 @@ contains
 
             call s_mpi_allreduce_sum(acPw_qac, var_glb)
             acPw_qac = var_glb
+
+            call s_mpi_allreduce_sum(acPw_cmprssv, var_glb)
+            acPw_cmprssv = var_glb
+
+            call s_mpi_allreduce_sum(acPw_kntc, var_glb)
+            acPw_kntc = var_glb
         end if
 
         if (proc_rank == 0) then 
           
-          write (92, '(*(E24.8,:,","))') &
-                mytime, hdid, &
-                acPw_in_dt(1), acPw_in_dt(2), &
-                acPw_in_dt(3), acPw_in_dt(4), &
-                acPw_in_dt(5), acPw_in_dt(6)
+            write (92, '(*(ES0.12,:,","))') &
+                    mytime, hdid, &
+                    acPw_in_dt(1), acPw_in_dt(2), &
+                    acPw_in_dt(3), acPw_in_dt(4), &
+                    acPw_in_dt(5), acPw_in_dt(6)
 
-          write (91, '(*(E24.8,:,","))') &
-                mytime, hdid, &
-                acPw_out_dt(1), acPw_out_dt(2), &
-                acPw_out_dt(3), acPw_out_dt(4), &
-                acPw_out_dt(5), acPw_out_dt(6)
+            write (91, '(*(ES0.12,:,","))') &
+                    mytime, hdid, &
+                    acPw_out_dt(1), acPw_out_dt(2), &
+                    acPw_out_dt(3), acPw_out_dt(4), &
+                    acPw_out_dt(5), acPw_out_dt(6)
 
-          write (90, '(*(E24.8,:,","))') &
-                mytime, hdid, &
-                acPw_qac
-
+            write (90, '(*(ES0.12,:,","))') &
+                    mytime, hdid, &
+                    acPw_qac, acPw_cmprssv, acPw_kntc
+            
         end if
 
     end subroutine s_write_power_balance
@@ -1021,11 +1005,11 @@ contains
             end if
         end if
 
-        ! print*, j, k, l, idx_dir, n_sgn, aux_j, aux_k, aux_l
-        
+        $:GPU_LOOP(parallelism='[seq]')
         do i = 1, num_dims
             vel(i) = (vel(i) + q_prim_vf(i + contxe)%sf(aux_j, aux_k, aux_l)) * 0.5_wp
         end do
+
         pres = (pres + q_prim_vf(E_idx)%sf(aux_j, aux_k, aux_l)) * 0.5_wp
         pres = pres - hifu_params%atmPres
 
@@ -1166,7 +1150,7 @@ contains
                     condition = (axialCondition .or. radialCondition)
                     if (condition) then
                         if (p>0) then
-                            write (100, '(6x,6E24.8)') &
+                            write (100, '(*(ES0.12,:,","))') &
                                 mytime, &
                                 x_cc(j), &
                                 y_cc(k), &
@@ -1175,7 +1159,7 @@ contains
                                 q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
 
                         else
-                            write (100, '(6x,5E24.8)') &
+                            write (100, '(*(ES0.12,:,","))') &
                                 mytime, &
                                 x_cc(j), &
                                 y_cc(k), &
@@ -1285,7 +1269,7 @@ contains
                 call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                                 mtn_s, mtn_posPrev, q_hifu_3d, bub_qvis, bub_qth)
                 ! Add effect of bubbles across processors
-                if (num_procs > 0) call s_populate_EL_buffers(q_hifu_3d, bc_type, hifu_params%qth_idx, .true.)
+                if (num_procs > 0) call s_populate_EL_buffers(q_hifu_3d, bc_type, hifu_params%qvis_idx, .true.)
             end if
 
             !> Unify into a general domain
@@ -1443,7 +1427,7 @@ contains
                 call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                                         mtn_s, mtn_pos, q_hifu_3d, bub_qvis, bub_qth)
                 ! Add effect of bubbles across processors
-                if (num_procs > 0) call s_populate_EL_buffers(q_hifu_3d, bc_type, hifu_params%qth_idx, .true.)
+                if (num_procs > 0) call s_populate_EL_buffers(q_hifu_3d, bc_type, hifu_params%qvis_idx, .true.)
             end if
 
             ! Add 3rd component of probe points (if any)
@@ -1969,7 +1953,7 @@ contains
         write (13, *) 'bub_id, xPos, rPos, thetaPos, R0, avg_qvis, avg_qth'
 
         do k = 1, nBubs
-            write (13, '(6X,I24.8,6e24.8)') &
+            write (13, '(*(ES0.12,:,","))') &
                 lag_id(k, 1), &
                 mtn_pos(k, 1, 1), &
                 mtn_pos(k, 2, 1), &
@@ -2047,9 +2031,10 @@ contains
     subroutine s_initialize_pure_3D(bc_type)
 
         type(integer_field), dimension(1:num_dims, -1:1), intent(in) :: bc_type
-        real(wp) :: t_sampled
+        real(wp) :: t_sampled, sum_val_qac, sum_val_qth, sum_val_qvis, sampledTime
+        integer :: j, k, l
 
-        call s_print_hifu_source_stats(hifu_params%qus_idx)
+        call s_print_hifu_source_stats(hifu_params%qus_idx, sum_val_qac, sampledTime)
 
         if (bubbles_lagrange) then
             if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
@@ -2058,32 +2043,47 @@ contains
             call s_smoothfunction(nBubs, bub_hifu_rad, intfc_vel, &
                                     mtn_s, mtn_posPrev, q_hifu, bub_qvis, bub_qth)
             ! Add effect of bubbles across processors
-            if (num_procs > 1) call s_populate_EL_buffers(q_hifu, bc_type, hifu_params%qth_idx, .true.)
-            call s_print_hifu_source_stats(hifu_params%qvis_idx)
-            call s_print_hifu_source_stats(hifu_params%qth_idx)
+            if (num_procs > 0) call s_populate_EL_buffers(q_hifu, bc_type, hifu_params%qvis_idx, .true.)
+            call s_print_hifu_source_stats(hifu_params%qvis_idx, sum_val_qvis, sampledTime)
+            call s_print_hifu_source_stats(hifu_params%qth_idx, sum_val_qth, sampledTime)
+
+            if (proc_rank == 0) then
+                write (98, '(*(ES0.12,:,","))') &
+                    sampledTime, 0._wp, &
+                    0._wp, &
+                    0._wp, &
+                    0._wp, sum_val_qvis, sum_val_qth
+                close (98)
+            end if
+            
         end if
 
     end subroutine s_initialize_pure_3D
 
-    subroutine s_print_hifu_source_stats(idx)
+    subroutine s_print_hifu_source_stats(idx, sum_val, sampledTime)
 
         integer, intent(in) :: idx
+        real(wp), intent(out) :: sum_val, sampledTime
 
-        real(wp) :: max_val, min_val, tmp_local, tmp_global, val_test
+        real(wp) :: max_val, min_val, tmp_local, tmp_global, val_test, vol_cell
         integer :: j, k, l
 
         max_val = -abs(dflt_real)
         min_val = abs(dflt_real)
+        sum_val = 0._wp
+        sampledTime = 0._wp
 
-        $:GPU_PARALLEL_LOOP(collapse=3, copyin='[idx]', reduction='[[max_val], [min_val]]', &
-        & reductionOp='[MAX, MIN]', copy='[max_val, min_val]')
+        $:GPU_PARALLEL_LOOP(collapse=3, copyin='[idx]', reduction='[[max_val], [min_val], [sum_val]]', &
+        & reductionOp='[MAX, MIN, +]', copy='[max_val, min_val, sum_val, sampledTime]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
-                    val_test = q_hifu%vf(idx)%sf(j, k, l)/&
-                                           q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l)
-                    max_val = max(max_val, val_test)
-                    min_val = min(min_val, val_test)
+                    val_test = q_hifu%vf(idx)%sf(j, k, l)
+                    vol_cell = dx(j)*dy(k)*dz(l)
+                    sum_val = sum_val + val_test*vol_cell   ! W
+                    max_val = max(max_val, val_test)        ! W/m^3
+                    min_val = min(min_val, val_test)        ! W/m^3
+                    sampledTime = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l)
                 end do
             end do
         end do
@@ -2097,6 +2097,10 @@ contains
             tmp_local = min_val
             call s_mpi_allreduce_min(tmp_local, tmp_global)
             min_val = tmp_global
+
+            tmp_local = sum_val
+            call s_mpi_allreduce_sum(tmp_local, tmp_global)
+            sum_val = tmp_global
         end if
 
         if (proc_rank == 0) then
@@ -2178,7 +2182,7 @@ contains
                 open (11, FILE=trim(file_loc), FORM='formatted', position='append')
             end if
 
-            write (11, '(4X,I24.8,4e24.8)') &
+            write (11, '(*(ES0.12,:,","))') &
                 sampledTime, &
                 heat_moment1/total_heat, &
                 heat_moment2/total_heat, &
@@ -2787,68 +2791,74 @@ contains
         write (file_path, '(A,I0,A)') '/D/Pmax_', proc_rank, '.dat'
         file_path = trim(case_dir)//trim(file_path)
         open (100, FILE=trim(file_path), FORM='formatted', STATUS='unknown')
-        write (100, *) 'mytime, x_cc, y_cc, Pmax, Pmin'
+        if (p > 0) then
+            write (100, '(A)') 'mytime,x_cc,y_cc,z_cc,Pmax,Pmin'
+        else
+            write (100, '(A)') 'mytime,x_cc,y_cc,Pmax,Pmin'
+        end if
 
         if (proc_rank == 0) then
 
             !Open files to save intensity sampling information at focus
-            write (file_path, '(A)') '/D/sumIntensity-HIFU.dat'
+            write (file_path, '(A)') '/D/hifu_qac.dat'
             file_path = trim(case_dir)//trim(file_path)
-            open (99, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
-            write (99, *) 'mytime, numSamples, acousticFocalIntensity, acousticFocalIntensityPRMS, sumAcousticIntensity'
+            open (99, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
+            write (99, '(A)') 'mytime,sampling,sum_qac,sum_qac_prms'
 
             !Open files to save viscous and thermal intensity sampling information for a single bubble
-            write (file_path, '(A,I0,A)') '/D/viscous_thermal_kernel-HIFU.dat'
+            write (file_path, '(A,I0,A)') '/D/hifu_qbubs.dat'
             file_path = trim(case_dir)//trim(file_path)
-            open (98, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='unknown')
-            write (98, *) 'Recommended to use only with one particle to test and compare the performance of the smootheing function'
-            write (98, *) 'Requires to uncomment some command lines in s_update_RK (m_particle.fpp)'
-            write (98, *) 'dt_did, totalSamplingTime, viscousIntensity_beforeKernel, viscousIntensity_afterKernel, ', &
-                'thermalIntensity_beforeKernel, thermalIntensity_afterKernel, radius, velocity'
+            open (98, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
+            write (98, '(A)') 'mytime,dt,sum_qvis,sum_qth,nbubs,sum_smear_qvis,sum_smear_qth'
 
             if (hifu_params%moments) then
                 !Open files to save heat sources and volume moments
                 write (file_path, '(A,I0,A)') '/D/moments_qus.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (97, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (97, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (97, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_qvis.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (96, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (96, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (96, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_qth_pos.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (95, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (95, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (95, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_qth_neg.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (94, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (94, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalHeat (Watt)'
+                write (94, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
 
                 write (file_path, '(A,I0,A)') '/D/moments_vol.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (93, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (93, *) 'mytime, normMomment_1, normMomment_2, normMomment_3, totalVolume'
+                write (93, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalVolume'
             end if
 
             if (hifu_params%power_balance) then
                 write (file_path, '(A,I0,A)') '/D/power_balance_in.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (92, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (92, *) 'mytime, hdid, acPw_in_xb, acPw_in_xe, acPw_in_yb, acPw_in_ye, acPw_in_zb, acPw_in_ze'
+                write (92, '(A)') 'mytime,hdid,acPw_in_xb,acPw_in_xe,acPw_in_yb,acPw_in_ye,acPw_in_zb,acPw_in_ze'
 
                 write (file_path, '(A,I0,A)') '/D/power_balance_out.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (91, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (91, *) 'mytime, hdid, acPw_out_xb, acPw_out_xe, acPw_out_yb, acPw_out_ye, acPw_out_zb, acPw_out_ze'
+                write (91, '(A)') 'mytime,hdid,acPw_out_xb,acPw_out_xe,acPw_out_yb,acPw_out_ye,acPw_out_zb,acPw_out_ze'
 
                 write (file_path, '(A,I0,A)') '/D/power_balance_qac.dat'
                 file_path = trim(case_dir)//trim(file_path)
                 open (90, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
-                write (90, *) 'mytime, hdid, qac'
+                write (90, '(A)') 'mytime,hdid,qac,acPw_cmprssv,acPw_kntc'
+
+                write (file_path, '(A,I0,A)') '/D/power_balance_qbub.dat'
+                file_path = trim(case_dir)//trim(file_path)
+                open (89, FILE=trim(file_path), FORM='formatted', POSITION='append', STATUS='replace')
+                write (89, '(A)') 'mytime,hdid,nbubs,qvis,qth,ke'
             end if
 
         end if
@@ -2865,7 +2875,7 @@ contains
              close (99)
 
             !Close file to save viscous and thermal intensity sampling information for a single bubble
-            close (98)
+            ! close (98)
 
             !Close file to save heat sources and volume moments
             close (97)
@@ -2876,6 +2886,7 @@ contains
             close (92)
             close (91)
             close (90)
+            close (89)
         end if
 
     end subroutine s_close_run_time_information_samplingHIFU

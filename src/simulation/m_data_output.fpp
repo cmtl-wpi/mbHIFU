@@ -329,14 +329,13 @@ contains
             Rc_min_loc = minval(Rc_sf)
         end if
 #else
-        #:call GPU_PARALLEL(copyout='[icfl_max_loc]', copyin='[icfl_sf]')
-            icfl_max_loc = maxval(icfl_sf)
-        #:endcall GPU_PARALLEL
-        if (viscous .or. dummy) then
-            #:call GPU_PARALLEL(copyout='[vcfl_max_loc, Rc_min_loc]', copyin='[vcfl_sf,Rc_sf]')
-                vcfl_max_loc = maxval(vcfl_sf)
-                Rc_min_loc = minval(Rc_sf)
-            #:endcall GPU_PARALLEL
+        $:GPU_UPDATE(host='[icfl_sf]')
+        icfl_max_loc = maxval(icfl_sf)
+
+        if (viscous) then
+            $:GPU_UPDATE(host='[vcfl_sf,Rc_sf]')
+            vcfl_max_loc = maxval(vcfl_sf)
+            Rc_min_loc = minval(Rc_sf)
         end if
 #endif
 
@@ -2036,7 +2035,7 @@ contains
 
         write (3, '(A,F9.6)') 'ICFL Max: ', icfl_max
         if (viscous) write (3, '(A,F9.6)') 'VCFL Max: ', vcfl_max
-        if (viscous) write (3, '(A,F10.6)') 'Rc Min: ', Rc_min
+        if (viscous) write (3, '(A,E15.8)') 'Rc Min: ', Rc_min
 
         call cpu_time(run_time)
 
@@ -2085,7 +2084,7 @@ contains
                 @:ALLOCATE(Rc_sf  (0:m, 0:n, 0:p))
 
                 vcfl_max = 0._wp
-                Rc_min = 1.e3_wp
+                Rc_min = verysmall**(-1._wp)
             end if
         end if
 

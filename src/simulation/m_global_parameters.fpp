@@ -1309,15 +1309,15 @@ contains
 
         ! END: Volume Fraction Model
 
-        if (hifu) then
-            sys_size_hifu = 11
-            if (hifu_params%streaming) sys_size_hifu = 14
-        end if
-
         if (chemistry) then
             species_idx%beg = sys_size + 1
             species_idx%end = sys_size + num_species
             sys_size = species_idx%end
+        end if
+
+        if (hifu) then
+            sys_size_hifu= 11
+            if (hifu_params%streaming) sys_size_hifu = 14
         end if
 
         if (bubbles_euler .and. qbmm .and. .not. polytropic) then

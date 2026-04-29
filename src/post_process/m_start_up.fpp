@@ -402,7 +402,6 @@ contains
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
             end if
-
             !------- Max Pressure --------------------
 
             do i = -offset_x%beg, m + offset_x%end

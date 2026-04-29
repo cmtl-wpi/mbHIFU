@@ -289,11 +289,6 @@ contains
                         end if
 
                         gaussian_sum = gaussian_sum + func*strength_vol*addFun1
-
-                        ! if (i==3 .and. j==3) then ! shows error in the standard deviation
-                        !     print*, l, addFun1, strength_vol, stddsv, func, strength_vel
-                        ! end if
-
                     end do
                 end do
             end do
@@ -603,6 +598,49 @@ contains
 
                                 !Summation of the normalized gaussian function
                                 normGaussSum = normGaussSum + func*(dx(cellaux(1))*dy(cellaux(2))*dz(cellaux(3)))
+                            end do
+                        end do
+                    end do
+
+                    !> Smearing
+                    $:GPU_LOOP(collapse=3,private='[cellaux, nodecoord]')
+                    do i = 0, smearGrid
+                        do j = 0, smearGrid
+                            do k = 0, smearGrid
+
+                                cellaux(1) = cell(1) + i - mapCells
+                                cellaux(2) = cell(2) + j - mapCells
+                                cellaux(3) = cell(3) + k - mapCells
+
+                                !> Check if the cells intended to smear the bubbles in are in the computational domain (heat solver)
+                                celloutside = .false.
+                                if ((cellaux(3) < -buff_size) .or. (cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then
+                                    celloutside = .true.
+                                end if
+                                if ((cellaux(3) > p + buff_size) .or. (cellaux(2) > n + buff_size) .or. (cellaux(1) > m + buff_size)) then
+                                    celloutside = .true.
+                                end if
+
+                                if (.not. celloutside) then
+                                    nodecoord(1) = x_cc(cellaux(1))
+                                    nodecoord(2) = y_cc(cellaux(2))
+                                    nodecoord(3) = z_cc(cellaux(3))
+                                    call s_applygaussian(center, cellaux, nodecoord, stddsv, 0._wp, func)
+
+                                    ! Relocate cells for bubbles intersecting symmetric boundaries
+                                    if (any((/bcxb, bcxe, bcyb, bcye, bczb, bcze/) == BC_REFLECTIVE)) then
+                                        call s_shift_cell_symmetric_bc(cellaux, cell)
+                                    end if
+
+                                else
+                                    func = 0._wp
+                                    cellaux(1) = cell(1)
+                                    cellaux(2) = cell(2)
+                                    cellaux(3) = cell(3)
+                                end if
+
+                                !Summation of the normalized gaussian function
+                                func = func/normGaussSum !Adjusted Kernel
 
                                 !Update qvis field
                                 addFun1 = func*lbk_qvis(l)

@@ -639,7 +639,7 @@ contains
                               bub_id, fmass_v, fmass_g, fbeta_c, &
                               fbeta_t, fCson, fInt, fshell, fRbuck, fRrupt, fRcell, &
                               fnoise_constant, flambda_c, fdk, floc, ftime, fAc, &!fPhase_rn, &
-                              fQvis, fQth, fRmean, adap_dt_stop)
+                              fQvis, fQth, fke, fRmean, adap_dt_stop)
         $:GPU_ROUTINE(function_name='s_advance_step',parallelism='[seq]', &
             & cray_inline=True)
 
@@ -651,7 +651,7 @@ contains
         real(wp), intent(in) :: fmass_g, fbeta_c, fbeta_t, fCson, fInt, fRbuck, fRrupt, fRcell
         real(wp), intent(in) :: fnoise_constant, flambda_c, fdk, floc, ftime
         !real(wp), dimension(num_noise), intent(in) :: fPhase_rn
-        real(wp), intent(out) :: fQvis, fQth, fRmean
+        real(wp), intent(out) :: fQvis, fQth, fRmean, fke
         integer, intent(inout) :: adap_dt_stop
 
         real(wp), dimension(5) :: err !< Error estimates for adaptive time stepping
@@ -660,7 +660,7 @@ contains
         real(wp), dimension(4) :: myR_tmp1, myV_tmp1, myR_tmp2, myV_tmp2 !< Bubble radius, radial velocity, and radial acceleration for the inner loop
         real(wp), dimension(4) :: myPb_tmp1, myMv_tmp1, myPb_tmp2, myMv_tmp2 !< Gas pressure and vapor mass for the inner loop (EL)
 
-        real(wp) :: fR2, fV2, fpb2, fmass_v2
+        real(wp) :: fR2, fV2, fpb2, fmass_v2, fpb_updt
         integer :: iter_count
         real(wp) :: conc_v_h, R_m_h, gamma_m_h, T_bar_h, grad_T_h, heatflux_h
         real(wp) :: fAc1, fAc21, fAc22, fvis_inst, fth_inst
@@ -680,6 +680,7 @@ contains
         t_new = 0._wp
         fQvis = 0._wp
         fQth = 0._wp
+        fke = 0._wp
         fRmean = 0._wp
         fAc = 0._wp
         iter_count = 0
@@ -763,9 +764,11 @@ contains
 
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
-                        fpb = myPb_tmp1(4)
-                        if (polytropic) then
-                            fpb = pv + (fpb - pv)*(fR0/fR)**(3._wp*gam_m)
+                        if (polytropic) then 
+                          fpb_updt = pv + (fpb - pv)*(fR0/fR)**(3._wp*gam_m)
+                        else
+                          fpb = myPb_tmp1(4)
+                          fpb_updt = fpb
                         end if
                         fmass_v = myMv_tmp1(4)
                         if (fR > fRrupt) fshell = 0._wp
@@ -775,7 +778,7 @@ contains
                             !> Mixture properties in the bubble
                             conc_v_h = 0._wp
                             if (lag_params%massTransfer_model .and. (fshell == 0._wp)) then
-                                conc_v_h = 1._wp/(1._wp + (R_v/R_g)*(fpb/pv - 1._wp))
+                                conc_v_h = 1._wp/(1._wp + (R_v/R_g)*(fpb_updt/pv - 1._wp))
                             end if
                             R_m_h = fmass_g*R_g + fmass_v*R_v
                             gamma_m_h = conc_v_h*gam_v + (1._wp - conc_v_h)*gam_g
@@ -786,7 +789,7 @@ contains
 
                             !> Thermal damping of the bubble (Watts)
                             if (.not. polytropic) then
-                                T_bar_h = fpb*(4._wp/3._wp*pi*fR**3._wp)/R_m_h
+                                T_bar_h = fpb_updt*(4._wp/3._wp*pi*fR**3._wp)/R_m_h
                                 grad_T_h = -fbeta_t*(T_bar_h - Tw)
                                 if (lag_params%heatTransfer_model .and. (fshell == 0._wp)) then
                                     heatflux_h = (gamma_m_h - 1._wp)/gamma_m_h*grad_T_h/fR
@@ -801,6 +804,9 @@ contains
 
                             !> Mean radius
                             fRmean = fRmean + h*fR
+
+                            !> Kinetic Energy
+                            fke = fke +  h*(2._wp*pi*fRho*fR**3._wp*fV**2._wp)
 
                             ! Checking for NaNs and negative qvis
                             if (fQvis /= fQvis .or. fQth /= fQth .or. fQvis < 0._wp) then

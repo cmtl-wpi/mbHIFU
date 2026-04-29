@@ -8,11 +8,21 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --job-name="${name}"
 ##SBATCH --time=${walltime}
-#SBATCH --time=0-01:00:00
-#SBATCH --mail-user=dgvacarevelo@wpi.edu
-#SBATCH --mail-type=BEGIN
 % if partition:
-#SBATCH --partition=${partition}
+##SBATCH --partition=${partition}
+#SBATCH --time=1-00:00:00
+% if gpu:
+#SBATCH --partition=gpuA100x4
+% else:
+#SBATCH --partition=cpu
+% endif
+% else:
+#SBATCH --time=0-01:00:00
+% if gpu:
+#SBATCH --partition=gpuA40x4-interactive
+% else:
+#SBATCH --partition=cpu-interactive
+% endif
 % endif
 % if account:
 #SBATCH --account="${account}"
@@ -22,17 +32,15 @@
 #SBATCH --mem=208G
 #SBATCH --gpu-bind=closest
 #SBATCH --account=bgko-delta-gpu
-#SBATCH --partition=gpuA100x4-interactive
 % else:
 #SBATCH --account=bgko-delta-cpu
-#SBATCH --partition=cpu-interactive
 % endif
 #SBATCH --output="${name}.out"
 #SBATCH --error="${name}.err"
 #SBATCH --export=ALL
 % if email:
-#SBATCH --mail-user=${email}
-#SBATCH --mail-type="BEGIN, END, FAIL"
+#SBATCH --mail-user=dgvacarevelo@wpi.edu
+#SBATCH --mail-type=BEGIN
 % endif
 % endif
 
@@ -46,6 +54,7 @@ echo
 
 % if gpu_enabled:
     export MPICH_GPU_SUPPORT_ENABLED=0 # Disable GPU-Direct MPI
+    export SLURM_MPI_TYPE=cray_shasta
 % endif
 
 % for target in targets:
@@ -54,20 +63,41 @@ echo
     % if not mpi:
         (set -x; ${profiler} "${target.get_install_binpath(case)}")
     % else:
-    	% if gpu_enabled:
-        	(set -x; ${profiler}                          \
-            srun  --account=bgko-delta-gpu              \
-                  --partition=gpuA100x4-interactive     \
-                  --ntasks=${nodes*tasks_per_node}      \
-                  --gpus-per-node=4 --gpu-bind=closest  \ 
-                  --mem=208G "${target.get_install_binpath(case)}")
+    	% if gpu:
+            % if partition:
+                (set -x; ${profiler}                            \
+                    srun    --account=bgko-delta-gpu            \
+                            --partition=gpuA100x4               \
+                            --gpus-per-node=4                   \
+                            --mem=208G                          \
+                            --gpu-bind=closest                  \
+                            --ntasks=${nodes*tasks_per_node}    \
+                            "${target.get_install_binpath(case)}")
+            % else:
+                (set -x; ${profiler}                            \
+                    srun    --account=bgko-delta-gpu            \
+                            --partition=gpuA40x4-interactive   \
+                            --gpus-per-node=4                   \
+                            --mem=208G                          \
+                            --gpu-bind=closest                  \
+                            --ntasks=${nodes*tasks_per_node}    \
+                            "${target.get_install_binpath(case)}")
+            % endif
 	    % else:
-		      (set -x; ${profiler}                      \
-            srun  --account=bgko-delta-cpu          \
-                  --partition=cpu-interactive       \
-                  --ntasks=${nodes*tasks_per_node}  \
-                  "${target.get_install_binpath(case)}")
-	% endif
+            % if partition:
+                (set -x; ${profiler}                            \
+                    srun    --account=bgko-delta-cpu            \
+                            --partition=cpu                     \
+                            --ntasks=${nodes*tasks_per_node}    \
+                            "${target.get_install_binpath(case)}")
+            % else:
+                (set -x; ${profiler}                            \
+                    srun    --account=bgko-delta-cpu            \
+                            --partition=cpu-interactive         \
+                            --ntasks=${nodes*tasks_per_node}    \
+                            "${target.get_install_binpath(case)}")
+            % endif
+	    % endif
     % endif
 
     ${helpers.run_epilogue(target)}

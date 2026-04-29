@@ -740,12 +740,12 @@ contains
             v_size = nVar
             if (present(el_id)) then
                 el_comm = .true.
-                if (el_id > 1) hifu_comm = .true.
+                if (el_id > 1) hifu_comm =.true.
                 buffer_counts = (/ &
-                                (1 + 2*mapCells)*v_size*(n + 2*buff_size + 1)*(p + 2*buff_size + 1), &
-                                (1 + 2*mapCells)*v_size*(m + 2*buff_size + 1)*(p + 2*buff_size + 1), &
-                                (1 + 2*mapCells)*v_size*(m + 2*buff_size + 1)*(n + 2*buff_size + 1) &
-                                /)
+                            (1+2*mapCells)*v_size*(n + 2*buff_size + 1)*(p + 2*buff_size + 1), &
+                            (1+2*mapCells)*v_size*(m + 2*buff_size + 1)*(p + 2*buff_size + 1), &
+                            (1+2*mapCells)*v_size*(m + 2*buff_size + 1)*(n + 2*buff_size + 1) &
+                            /)
             else
                 buffer_counts = (/ &
                                 buff_size*v_size*(n + 1)*(p + 1), &
@@ -788,7 +788,7 @@ contains
         end if
 
         if (el_comm) then
-            pack_offset = -mapCells
+            pack_offset = - mapCells
             if (f_xor(pbc_loc == 1, beg_end_geq_0)) then
                 pack_offset = grid_dims(mpi_dir) - mapCells
             end if
@@ -805,24 +805,41 @@ contains
                 #:if mpi_dir == 1
 
                     if (el_comm) then
-                        $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                        do l = -buff_size, p + buff_size
-                            do k = -buff_size, n + buff_size
-                                do j = 0, 2*mapCells
-                                    do i = 1, nVar
-                                        r = (i - 1) + v_size* &
-                                            ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                             ((k + buff_size) + (n + 2*buff_size + 1)*j))
-                                        buff_send(r) = real(q_comm(i)%sf(j + pack_offset, k, l), kind=wp)
-                                        ! if (proc_rank == 0 .and. k==35 .and. l==35 .and. i==1) then
-                                        !     print*, 'packed data >>', j + pack_offset, k, l, buff_send(r), r
-                                        ! end if
+                        if (hifu_comm) then
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do l = -buff_size, p + buff_size
+                                do k = -buff_size, n + buff_size
+                                    do j = 0, 2*mapCells
+                                        do i = 1, nVar
+                                            r = (i - 1) + v_size*(j + (2*mapCells + 1)*(&
+                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
+                                                                l+buff_size)))
+                                            buff_send(r) = real(q_comm(v_size+i-1)%sf(j + pack_offset, k, l), kind=wp)
+                                            if (i==v_size+1) buff_send(r) = real(0._wp, kind=wp)
+                                        end do
                                     end do
                                 end do
                             end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
-                    else
+                            $:END_GPU_PARALLEL_LOOP()
+                        else
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do l = -buff_size, p + buff_size
+                                do k = -buff_size, n + buff_size
+                                    do j = 0, 2*mapCells
+                                        do i = 1, nVar
+                                            r = (i - 1) + v_size*(j + (2*mapCells + 1)*(&
+                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
+                                                                l+buff_size)))
+                                            buff_send(r) = real(q_comm(i)%sf(j + pack_offset, k, l), kind=wp)
+                                            if (i > 2) buff_send(r) = real(q_comm(2*v_size - 1)%sf(j + pack_offset, k, l), kind=wp)
+                                            ! if (buff_send(r)>0.03_wp) print*, 'send:', buff_send(r), proc_rank, j + pack_offset, k, l, r, i
+                                        end do
+                                    end do
+                                end do
+                            end do
+                            $:END_GPU_PARALLEL_LOOP()
+                        end if
+                    else 
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do l = 0, p
                             do k = 0, n
@@ -873,20 +890,39 @@ contains
                 #:elif mpi_dir == 2
 
                     if (el_comm) then
-                        $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                        do i = 1, nVar
-                            do l = -buff_size, p + buff_size
-                                do k = 0, 2*mapCells
-                                    do j = -buff_size, m + buff_size
-                                        r = (i - 1) + v_size* &
-                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                             ((l + buff_size) + (p + 2*buff_size + 1)*k))
-                                        buff_send(r) = real(q_comm(i)%sf(j, k + pack_offset, l), kind=wp)
+                        if (hifu_comm) then
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = -buff_size, p + buff_size
+                                    do k = 0, 2*mapCells
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size * ( &
+                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
+                                                (l + buff_size) + (p + 2*buff_size + 1) * k ) )
+                                            buff_send(r) = real(q_comm(v_size+i-1)%sf(j, k + pack_offset, l), kind=wp)
+                                            if (i==v_size+1) buff_send(r) = real(0._wp, kind=wp)
+                                        end do
                                     end do
                                 end do
                             end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
+                            $:END_GPU_PARALLEL_LOOP()
+                        else
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = -buff_size, p + buff_size
+                                    do k = 0, 2*mapCells
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size * ( &
+                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
+                                                (l + buff_size) + (p + 2*buff_size + 1) * k ) )
+                                            buff_send(r) = real(q_comm(i)%sf(j, k + pack_offset, l), kind=wp)
+                                            if (i > 2) buff_send(r) = real(q_comm(2*v_size - 1)%sf(j, k + pack_offset, l), kind=wp)
+                                        end do
+                                    end do
+                                end do
+                            end do
+                            $:END_GPU_PARALLEL_LOOP()
+                        end if
                     else
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do i = 1, nVar
@@ -941,20 +977,41 @@ contains
                     end if
                 #:else
                     if (el_comm) then
-                        $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                        do i = 1, nVar
-                            do l = 0, 2*mapCells
-                                do k = -buff_size, n + buff_size
-                                    do j = -buff_size, m + buff_size
-                                        r = (i - 1) + v_size* &
-                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                             ((k + buff_size) + (n + 2*buff_size + 1)*l))
-                                        buff_send(r) = real(q_comm(i)%sf(j, k, l + pack_offset), kind=wp)
+                        if (hifu_comm) then
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = 0, 2*mapCells
+                                    do k = -buff_size, n + buff_size
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size * ( &
+                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
+                                                (k + buff_size) + (n + 2*buff_size + 1) * ( &
+                                                l ) ) )
+                                            buff_send(r) = real(q_comm(v_size+i-1)%sf(j, k, l + pack_offset), kind=wp)
+                                            if (i==v_size+1) buff_send(r) = real(0._wp, kind=wp)
+                                        end do
                                     end do
                                 end do
                             end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
+                            $:END_GPU_PARALLEL_LOOP()
+                        else
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = 0, 2*mapCells
+                                    do k = -buff_size, n + buff_size
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size * ( &
+                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
+                                                (k + buff_size) + (n + 2*buff_size + 1) * ( &
+                                                l ) ) )
+                                            buff_send(r) = real(q_comm(i)%sf(j, k, l + pack_offset), kind=wp)
+                                            if (i > 2) buff_send(r) = real(q_comm(2*v_size - 1)%sf(j, k, l + pack_offset), kind=wp)
+                                        end do
+                                    end do
+                                end do
+                            end do
+                            $:END_GPU_PARALLEL_LOOP()
+                        end if
                     else
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do i = 1, nVar
@@ -1012,12 +1069,6 @@ contains
         #:endfor
         call nvtxEndRange ! Packbuf
 
-        ! if (proc_rank == 0) then
-        !     do j=0,6
-        !         print*, 'proc:0, send buffer >>', 65, 35-mapCells+j, 35, q_beta%vf(1)%sf(65, 35-mapCells+j, 35)
-        !     end do
-        ! end if
-
         ! Send/Recv
 #ifdef MFC_SIMULATION
         #:for rdma_mpi in [False, True]
@@ -1067,34 +1118,57 @@ contains
             if (mpi_dir == ${mpi_dir}$) then
                 #:if mpi_dir == 1
                     if (el_comm) then
-                        $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                        do l = -buff_size, p + buff_size
-                            do k = -buff_size, n + buff_size
-                                do j = -2*mapCells, 0
-                                    do i = 1, nVar
-                                        r = (i - 1) + v_size* &
-                                            ((k + buff_size) + (n + 2*buff_size + 1)* &
-                                             ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                              (j + 2*mapCells)))
-                                        if (hifu_comm) then
-                                            if (i == v_size - 2 .or. i == v_size) then
-                                                q_comm(i)%sf(j + unpack_offset, k, l) = &
-                                                    q_comm(i)%sf(j + unpack_offset, k, l) + &
-                                                    real(buff_recv(r), kind=stp)
-                                            end if
-                                        else
-                                            q_comm(i)%sf(j + unpack_offset, k, l) = &
-                                                q_comm(i)%sf(j + unpack_offset, k, l) + &
-                                                real(buff_recv(r), kind=stp)
-                                        end if
-                                        ! if (proc_rank == 1 .and. k==35 .and. l==35 .and. i==1) then
-                                        !     print*, 'recv data >>', j + unpack_offset, k, l, buff_recv(r), r
-                                        ! end if
+                        if (hifu_comm) then
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do l = -buff_size, p + buff_size
+                                do k = -buff_size, n + buff_size
+                                    do j = -2*mapCells, 0
+                                        do i = 1, nVar
+                                            r = (i - 1) + v_size*((j + 2*mapCells) + (2*mapCells + 1)*(&
+                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
+                                                                l+buff_size)))
+                                            if (i == 1) then
+                                                q_comm(v_size+1)%sf(j + unpack_offset, k, l) = &
+                                                q_comm(v_size+1)%sf(j + unpack_offset, k, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            else if (i == 3) then
+                                                q_comm(v_size+3)%sf(j + unpack_offset, k, l) = &
+                                                q_comm(v_size+3)%sf(j + unpack_offset, k, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            end if             
+                                        end do
                                     end do
                                 end do
-                            end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
+                            end do 
+                            $:END_GPU_PARALLEL_LOOP()
+                        else
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do l = -buff_size, p + buff_size
+                                do k = -buff_size, n + buff_size
+                                    do j = -2*mapCells, 0
+                                        do i = 1, nVar
+                                            r = (i - 1) + v_size*((j + 2*mapCells) + (2*mapCells + 1)*(&
+                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
+                                                                l+buff_size)))
+                                            ! if (buff_recv(r)>0.03_wp) then
+                                            !     print *, "Recv:", buff_recv(r), q_comm(i)%sf(j + unpack_offset, k, l), &
+                                            !                         q_comm(i)%sf(j + unpack_offset, k, l) + buff_recv(r), proc_rank, j + unpack_offset, k, l, r, i
+                                            ! end if
+                                            if (i > 2) then
+                                                q_comm(2*i)%sf(j + unpack_offset, k, l) = &
+                                                q_comm(2*i)%sf(j + unpack_offset, k, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            else
+                                                q_comm(v_size + i)%sf(j + unpack_offset, k, l) = &
+                                                q_comm(v_size + i)%sf(j + unpack_offset, k, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            end if             
+                                        end do
+                                    end do
+                                end do
+                            end do 
+                            $:END_GPU_PARALLEL_LOOP()
+                        end if
                     else
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do l = 0, p
@@ -1152,31 +1226,68 @@ contains
                     end if
                 #:elif mpi_dir == 2
                     if (el_comm) then
-                        $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                        do i = 1, nVar
-                            do l = -buff_size, p + buff_size
-                                do k = -2*mapCells, 0
-                                    do j = -buff_size, m + buff_size
-                                        r = (i - 1) + v_size* &
-                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                             ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                              (k + 2*mapCells)))
-                                        if (hifu_comm) then
-                                            if (i == v_size - 2 .or. i == v_size) then
-                                                q_comm(i)%sf(j, k + unpack_offset, l) = &
-                                                    q_comm(i)%sf(j, k + unpack_offset, l) + &
-                                                    real(buff_recv(r), kind=stp)
-                                            end if
-                                        else
-                                            q_comm(i)%sf(j, k + unpack_offset, l) = &
-                                                q_comm(i)%sf(j, k + unpack_offset, l) + &
-                                                real(buff_recv(r), kind=stp)
-                                        end if
+                        if (hifu_comm) then
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = -buff_size, p + buff_size
+                                    do k = -2*mapCells, 0
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size* &
+                                                ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                                ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                                (k + 2*mapCells)))
+
+                                            if (i == 1) then
+                                                q_comm(v_size+1)%sf(j, k + unpack_offset, l) = &
+                                                q_comm(v_size+1)%sf(j, k + unpack_offset, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            else if (i == 3) then
+                                                q_comm(v_size+3)%sf(j, k + unpack_offset, l) = &
+                                                q_comm(v_size+3)%sf(j, k + unpack_offset, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            end if             
+                                        end do
                                     end do
                                 end do
                             end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
+                            $:END_GPU_PARALLEL_LOOP()
+                        else
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = -buff_size, p + buff_size
+                                    do k = -2*mapCells, 0
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size* &
+                                                ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                                ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                                (k + 2*mapCells)))
+                                            if (i > 2) then
+                                                q_comm(2*i)%sf(j, k + unpack_offset, l) = &
+                                                q_comm(2*i)%sf(j, k + unpack_offset, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            else
+                                                q_comm(v_size + i)%sf(j, k + unpack_offset, l) = &
+                                                q_comm(v_size + i)%sf(j, k + unpack_offset, l) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            end if  
+
+                                            ! if (hifu_comm) then
+                                            !     if (i == v_size-2 .or. i == v_size) then
+                                            !         q_comm(i)%sf(j, k + unpack_offset, l) = &
+                                            !         q_comm(i)%sf(j, k + unpack_offset, l) + &
+                                            !                                         buff_recv(r)
+                                            !     end if
+                                            ! else
+                                            !     q_comm(i)%sf(j, k + unpack_offset, l) = &
+                                            !     q_comm(i)%sf(j, k + unpack_offset, l) + &
+                                            !                                     buff_recv(r)
+                                            ! end if
+                                        end do
+                                    end do
+                                end do
+                            end do
+                            $:END_GPU_PARALLEL_LOOP()
+                        end if
                     else
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do i = 1, nVar
@@ -1237,31 +1348,69 @@ contains
                     end if
                 #:else
                     if (el_comm) then
-                        $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
-                        do i = 1, nVar
-                            do l = -2*mapCells, 0
-                                do k = -buff_size, n + buff_size
-                                    do j = -buff_size, m + buff_size
-                                        r = (i - 1) + v_size* &
-                                            ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                             ((k + buff_size) + (n + 2*buff_size + 1)* &
-                                              (l + 2*mapCells)))
-                                        if (hifu_comm) then
-                                            if (i == v_size - 2 .or. i == v_size) then
-                                                q_comm(i)%sf(j, k, l + unpack_offset) = &
-                                                    q_comm(i)%sf(j, k, l + unpack_offset) + &
-                                                    real(buff_recv(r), kind=stp)
-                                            end if
-                                        else
-                                            q_comm(i)%sf(j, k, l + unpack_offset) = &
-                                                q_comm(i)%sf(j, k, l + unpack_offset) + &
-                                                real(buff_recv(r), kind=stp)
-                                        end if
+                        if (hifu_comm) then
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = -2*mapCells, 0
+                                    do k = -buff_size, n + buff_size
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size* &
+                                                ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                                ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                                (l + 2*mapCells)))
+                                                
+                                            if (i == 1) then
+                                                q_comm(v_size+1)%sf(j, k, l + unpack_offset) = &
+                                                q_comm(v_size+1)%sf(j, k, l + unpack_offset) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            else if (i == 3) then
+                                                q_comm(v_size+3)%sf(j, k, l + unpack_offset) = &
+                                                q_comm(v_size+3)%sf(j, k, l + unpack_offset) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            end if  
+
+                                        end do
                                     end do
                                 end do
                             end do
-                        end do
-                        $:END_GPU_PARALLEL_LOOP()
+                            $:END_GPU_PARALLEL_LOOP()
+                        else
+                            $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
+                            do i = 1, nVar
+                                do l = -2*mapCells, 0
+                                    do k = -buff_size, n + buff_size
+                                        do j = -buff_size, m + buff_size
+                                            r = (i - 1) + v_size* &
+                                                ((j + buff_size) + (m + 2*buff_size + 1)* &
+                                                ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                                (l + 2*mapCells)))
+                                            if (i > 2) then
+                                                q_comm(2*i)%sf(j, k, l + unpack_offset) = &
+                                                q_comm(2*i)%sf(j, k, l + unpack_offset) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            else
+                                                q_comm(v_size + i)%sf(j, k, l + unpack_offset) = &
+                                                q_comm(v_size + i)%sf(j, k, l + unpack_offset) + &
+                                                                            real(buff_recv(r), kind=stp)
+                                            end if  
+
+                                            ! if (hifu_comm) then
+                                            !     if (i == v_size-2 .or. i == v_size) then
+                                            !         q_comm(i)%sf(j, k, l + unpack_offset) = &
+                                            !         q_comm(i)%sf(j, k, l + unpack_offset) + &
+                                            !                                         buff_recv(r)
+                                            !     end if
+                                            ! else
+                                            !     q_comm(i)%sf(j, k, l + unpack_offset) = &
+                                            !     q_comm(i)%sf(j, k, l + unpack_offset) + &
+                                            !                                     buff_recv(r)
+                                            ! end if
+                                        end do
+                                    end do
+                                end do
+                            end do
+                            $:END_GPU_PARALLEL_LOOP()
+                        end if
                     else
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do i = 1, nVar
@@ -1328,12 +1477,6 @@ contains
         #:endfor
         call nvtxEndRange
 #endif
-
-        ! if (proc_rank == 2) then
-        !     do j=0,8
-        !         print*, 'proc:2, send buffer >>', 65, -1-mapCells+j, 35, q_beta%vf(1)%sf(65, -1-mapCells+j, 35)
-        !     end do
-        ! end if
 
     end subroutine s_mpi_sendrecv_variables_buffers
 
@@ -2155,7 +2298,6 @@ contains
             end if
 #endif
         end if
-#endif
 
 #ifdef MFC_PRE_PROCESS
         if (p > 0) then
@@ -2166,7 +2308,7 @@ contains
             if (proc_rank == 0) print *, 'num_procs_x', num_procs_x
         end if
 #endif
-
+#endif
     end subroutine s_mpi_decompose_computational_domain
 
     !>  The goal of this procedure is to populate the buffers of
