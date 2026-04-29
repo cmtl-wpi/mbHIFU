@@ -1438,14 +1438,14 @@ contains
         !< x-direction
         if (bc_x%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 1, -1, nVar, &
-                      el_id = el_mpi)
+                q_beta%vf, 1, -1, nVar, &
+                el_id=el_mpi)
         end if
 
         if (bc_x%end >= 0) then
-          call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 1, 1, nVar, &
-                      el_id = el_mpi)
+            call s_mpi_sendrecv_variables_buffers( &
+                q_beta%vf, 1, 1, nVar, &
+                el_id=el_mpi)
         end if
 
         call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
@@ -1455,14 +1455,14 @@ contains
         !< y-direction
         if (bc_y%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 2, -1, nVar, &
-                      el_id = el_mpi)
+                q_beta%vf, 2, -1, nVar, &
+                el_id=el_mpi)
         end if
 
         if (bc_y%end >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 2, 1, nVar, &
-                      el_id = el_mpi)
+                q_beta%vf, 2, 1, nVar, &
+                el_id=el_mpi)
         end if
 
         call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
@@ -1472,14 +1472,14 @@ contains
         !< z-direction
         if (bc_z%beg >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 3, -1, nVar, &
-                      el_id = el_mpi)
+                q_beta%vf, 3, -1, nVar, &
+                el_id=el_mpi)
         end if
 
         if (bc_z%end >= 0) then
             call s_mpi_sendrecv_variables_buffers( &
-                      q_beta%vf, 3, 1, nVar, &
-                      el_id = el_mpi)
+                q_beta%vf, 3, 1, nVar, &
+                el_id=el_mpi)
         end if
 
         call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
@@ -1500,16 +1500,16 @@ contains
             do l = idwbuff(3)%beg, idwbuff(3)%end
                 do k = idwbuff(2)%beg, idwbuff(2)%end
                     do j = idwbuff(1)%beg, idwbuff(1)%end
-                        q_comm%vf(nVar)%sf(j,k,l) = &
-                            q_comm%vf(nVar)%sf(j,k,l) + &
-                            q_comm%vf(nVar+1)%sf(j,k,l)
+                        q_comm%vf(nVar)%sf(j, k, l) = &
+                            q_comm%vf(nVar)%sf(j, k, l) + &
+                            q_comm%vf(nVar + 1)%sf(j, k, l)
 
-                        q_comm%vf(nVar+2)%sf(j,k,l) = &
-                            q_comm%vf(nVar+2)%sf(j,k,l) + &
-                            q_comm%vf(nVar+3)%sf(j,k,l)
-                            
-                        q_comm%vf(nVar+1)%sf(j,k,l) = 0._wp
-                        q_comm%vf(nVar+3)%sf(j,k,l) = 0._wp
+                        q_comm%vf(nVar + 2)%sf(j, k, l) = &
+                            q_comm%vf(nVar + 2)%sf(j, k, l) + &
+                            q_comm%vf(nVar + 3)%sf(j, k, l)
+
+                        q_comm%vf(nVar + 1)%sf(j, k, l) = 0._wp
+                        q_comm%vf(nVar + 3)%sf(j, k, l) = 0._wp
                     end do
                 end do
             end do
@@ -1519,14 +1519,14 @@ contains
                 do k = idwbuff(2)%beg, idwbuff(2)%end
                     do j = idwbuff(1)%beg, idwbuff(1)%end
                         do i = 1, nVar
-                            if (i == 3) then 
+                            if (i == 3) then
                                 q_comm%vf(2*i - 1)%sf(j, k, l) = q_comm%vf(2*i - 1)%sf(j, k, l) + &
-                                                        q_comm%vf(2*i)%sf(j, k, l)
+                                                                 q_comm%vf(2*i)%sf(j, k, l)
                                 q_comm%vf(2*i)%sf(j, k, l) = 0._wp
                             else
                                 q_comm%vf(i)%sf(j, k, l) = q_comm%vf(i)%sf(j, k, l) + &
-                                                        q_comm%vf(nVar+i)%sf(j, k, l)
-                                q_comm%vf(nVar+i)%sf(j, k, l) = 0._wp
+                                                           q_comm%vf(nVar + i)%sf(j, k, l)
+                                q_comm%vf(nVar + i)%sf(j, k, l) = 0._wp
                             end if
                         end do
                     end do

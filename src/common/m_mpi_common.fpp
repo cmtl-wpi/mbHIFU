@@ -740,12 +740,12 @@ contains
             v_size = nVar
             if (present(el_id)) then
                 el_comm = .true.
-                if (el_id > 1) hifu_comm =.true.
+                if (el_id > 1) hifu_comm = .true.
                 buffer_counts = (/ &
-                            (1+2*mapCells)*v_size*(n + 2*buff_size + 1)*(p + 2*buff_size + 1), &
-                            (1+2*mapCells)*v_size*(m + 2*buff_size + 1)*(p + 2*buff_size + 1), &
-                            (1+2*mapCells)*v_size*(m + 2*buff_size + 1)*(n + 2*buff_size + 1) &
-                            /)
+                                (1 + 2*mapCells)*v_size*(n + 2*buff_size + 1)*(p + 2*buff_size + 1), &
+                                (1 + 2*mapCells)*v_size*(m + 2*buff_size + 1)*(p + 2*buff_size + 1), &
+                                (1 + 2*mapCells)*v_size*(m + 2*buff_size + 1)*(n + 2*buff_size + 1) &
+                                /)
             else
                 buffer_counts = (/ &
                                 buff_size*v_size*(n + 1)*(p + 1), &
@@ -788,7 +788,7 @@ contains
         end if
 
         if (el_comm) then
-            pack_offset = - mapCells
+            pack_offset = -mapCells
             if (f_xor(pbc_loc == 1, beg_end_geq_0)) then
                 pack_offset = grid_dims(mpi_dir) - mapCells
             end if
@@ -811,11 +811,11 @@ contains
                                 do k = -buff_size, n + buff_size
                                     do j = 0, 2*mapCells
                                         do i = 1, nVar
-                                            r = (i - 1) + v_size*(j + (2*mapCells + 1)*(&
-                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
-                                                                l+buff_size)))
-                                            buff_send(r) = real(q_comm(v_size+i-1)%sf(j + pack_offset, k, l), kind=wp)
-                                            if (i==v_size+1) buff_send(r) = real(0._wp, kind=wp)
+                                            r = (i - 1) + v_size*(j + (2*mapCells + 1)*( &
+                                                                  (k + buff_size) + (n + 2*buff_size + 1)*( &
+                                                                  l + buff_size)))
+                                            buff_send(r) = real(q_comm(v_size + i - 1)%sf(j + pack_offset, k, l), kind=wp)
+                                            if (i == v_size + 1) buff_send(r) = real(0._wp, kind=wp)
                                         end do
                                     end do
                                 end do
@@ -827,9 +827,9 @@ contains
                                 do k = -buff_size, n + buff_size
                                     do j = 0, 2*mapCells
                                         do i = 1, nVar
-                                            r = (i - 1) + v_size*(j + (2*mapCells + 1)*(&
-                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
-                                                                l+buff_size)))
+                                            r = (i - 1) + v_size*(j + (2*mapCells + 1)*( &
+                                                                  (k + buff_size) + (n + 2*buff_size + 1)*( &
+                                                                  l + buff_size)))
                                             buff_send(r) = real(q_comm(i)%sf(j + pack_offset, k, l), kind=wp)
                                             if (i > 2) buff_send(r) = real(q_comm(2*v_size - 1)%sf(j + pack_offset, k, l), kind=wp)
                                             ! if (buff_send(r)>0.03_wp) print*, 'send:', buff_send(r), proc_rank, j + pack_offset, k, l, r, i
@@ -839,7 +839,7 @@ contains
                             end do
                             $:END_GPU_PARALLEL_LOOP()
                         end if
-                    else 
+                    else
                         $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
                         do l = 0, p
                             do k = 0, n
@@ -896,11 +896,11 @@ contains
                                 do l = -buff_size, p + buff_size
                                     do k = 0, 2*mapCells
                                         do j = -buff_size, m + buff_size
-                                            r = (i - 1) + v_size * ( &
-                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
-                                                (l + buff_size) + (p + 2*buff_size + 1) * k ) )
-                                            buff_send(r) = real(q_comm(v_size+i-1)%sf(j, k + pack_offset, l), kind=wp)
-                                            if (i==v_size+1) buff_send(r) = real(0._wp, kind=wp)
+                                            r = (i - 1) + v_size*( &
+                                                (j + buff_size) + (m + 2*buff_size + 1)*( &
+                                                (l + buff_size) + (p + 2*buff_size + 1)*k))
+                                            buff_send(r) = real(q_comm(v_size + i - 1)%sf(j, k + pack_offset, l), kind=wp)
+                                            if (i == v_size + 1) buff_send(r) = real(0._wp, kind=wp)
                                         end do
                                     end do
                                 end do
@@ -912,9 +912,9 @@ contains
                                 do l = -buff_size, p + buff_size
                                     do k = 0, 2*mapCells
                                         do j = -buff_size, m + buff_size
-                                            r = (i - 1) + v_size * ( &
-                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
-                                                (l + buff_size) + (p + 2*buff_size + 1) * k ) )
+                                            r = (i - 1) + v_size*( &
+                                                (j + buff_size) + (m + 2*buff_size + 1)*( &
+                                                (l + buff_size) + (p + 2*buff_size + 1)*k))
                                             buff_send(r) = real(q_comm(i)%sf(j, k + pack_offset, l), kind=wp)
                                             if (i > 2) buff_send(r) = real(q_comm(2*v_size - 1)%sf(j, k + pack_offset, l), kind=wp)
                                         end do
@@ -983,12 +983,12 @@ contains
                                 do l = 0, 2*mapCells
                                     do k = -buff_size, n + buff_size
                                         do j = -buff_size, m + buff_size
-                                            r = (i - 1) + v_size * ( &
-                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
-                                                (k + buff_size) + (n + 2*buff_size + 1) * ( &
-                                                l ) ) )
-                                            buff_send(r) = real(q_comm(v_size+i-1)%sf(j, k, l + pack_offset), kind=wp)
-                                            if (i==v_size+1) buff_send(r) = real(0._wp, kind=wp)
+                                            r = (i - 1) + v_size*( &
+                                                (j + buff_size) + (m + 2*buff_size + 1)*( &
+                                                (k + buff_size) + (n + 2*buff_size + 1)*( &
+                                                l)))
+                                            buff_send(r) = real(q_comm(v_size + i - 1)%sf(j, k, l + pack_offset), kind=wp)
+                                            if (i == v_size + 1) buff_send(r) = real(0._wp, kind=wp)
                                         end do
                                     end do
                                 end do
@@ -1000,10 +1000,10 @@ contains
                                 do l = 0, 2*mapCells
                                     do k = -buff_size, n + buff_size
                                         do j = -buff_size, m + buff_size
-                                            r = (i - 1) + v_size * ( &
-                                                (j + buff_size) + (m + 2*buff_size + 1) * ( &
-                                                (k + buff_size) + (n + 2*buff_size + 1) * ( &
-                                                l ) ) )
+                                            r = (i - 1) + v_size*( &
+                                                (j + buff_size) + (m + 2*buff_size + 1)*( &
+                                                (k + buff_size) + (n + 2*buff_size + 1)*( &
+                                                l)))
                                             buff_send(r) = real(q_comm(i)%sf(j, k, l + pack_offset), kind=wp)
                                             if (i > 2) buff_send(r) = real(q_comm(2*v_size - 1)%sf(j, k, l + pack_offset), kind=wp)
                                         end do
@@ -1124,22 +1124,22 @@ contains
                                 do k = -buff_size, n + buff_size
                                     do j = -2*mapCells, 0
                                         do i = 1, nVar
-                                            r = (i - 1) + v_size*((j + 2*mapCells) + (2*mapCells + 1)*(&
-                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
-                                                                l+buff_size)))
+                                            r = (i - 1) + v_size*((j + 2*mapCells) + (2*mapCells + 1)*( &
+                                                                  (k + buff_size) + (n + 2*buff_size + 1)*( &
+                                                                  l + buff_size)))
                                             if (i == 1) then
-                                                q_comm(v_size+1)%sf(j + unpack_offset, k, l) = &
-                                                q_comm(v_size+1)%sf(j + unpack_offset, k, l) + &
-                                                                            real(buff_recv(r), kind=stp)
+                                                q_comm(v_size + 1)%sf(j + unpack_offset, k, l) = &
+                                                    q_comm(v_size + 1)%sf(j + unpack_offset, k, l) + &
+                                                    real(buff_recv(r), kind=stp)
                                             else if (i == 3) then
-                                                q_comm(v_size+3)%sf(j + unpack_offset, k, l) = &
-                                                q_comm(v_size+3)%sf(j + unpack_offset, k, l) + &
-                                                                            real(buff_recv(r), kind=stp)
-                                            end if             
+                                                q_comm(v_size + 3)%sf(j + unpack_offset, k, l) = &
+                                                    q_comm(v_size + 3)%sf(j + unpack_offset, k, l) + &
+                                                    real(buff_recv(r), kind=stp)
+                                            end if
                                         end do
                                     end do
                                 end do
-                            end do 
+                            end do
                             $:END_GPU_PARALLEL_LOOP()
                         else
                             $:GPU_PARALLEL_LOOP(collapse=4,private='[r]')
@@ -1147,26 +1147,26 @@ contains
                                 do k = -buff_size, n + buff_size
                                     do j = -2*mapCells, 0
                                         do i = 1, nVar
-                                            r = (i - 1) + v_size*((j + 2*mapCells) + (2*mapCells + 1)*(&
-                                                                (k + buff_size) + (n + 2*buff_size + 1)*(&
-                                                                l+buff_size)))
+                                            r = (i - 1) + v_size*((j + 2*mapCells) + (2*mapCells + 1)*( &
+                                                                  (k + buff_size) + (n + 2*buff_size + 1)*( &
+                                                                  l + buff_size)))
                                             ! if (buff_recv(r)>0.03_wp) then
                                             !     print *, "Recv:", buff_recv(r), q_comm(i)%sf(j + unpack_offset, k, l), &
                                             !                         q_comm(i)%sf(j + unpack_offset, k, l) + buff_recv(r), proc_rank, j + unpack_offset, k, l, r, i
                                             ! end if
                                             if (i > 2) then
                                                 q_comm(2*i)%sf(j + unpack_offset, k, l) = &
-                                                q_comm(2*i)%sf(j + unpack_offset, k, l) + &
-                                                                            real(buff_recv(r), kind=stp)
+                                                    q_comm(2*i)%sf(j + unpack_offset, k, l) + &
+                                                    real(buff_recv(r), kind=stp)
                                             else
                                                 q_comm(v_size + i)%sf(j + unpack_offset, k, l) = &
-                                                q_comm(v_size + i)%sf(j + unpack_offset, k, l) + &
-                                                                            real(buff_recv(r), kind=stp)
-                                            end if             
+                                                    q_comm(v_size + i)%sf(j + unpack_offset, k, l) + &
+                                                    real(buff_recv(r), kind=stp)
+                                            end if
                                         end do
                                     end do
                                 end do
-                            end do 
+                            end do
                             $:END_GPU_PARALLEL_LOOP()
                         end if
                     else
@@ -1234,18 +1234,18 @@ contains
                                         do j = -buff_size, m + buff_size
                                             r = (i - 1) + v_size* &
                                                 ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                                ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                                (k + 2*mapCells)))
+                                                 ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                                  (k + 2*mapCells)))
 
                                             if (i == 1) then
-                                                q_comm(v_size+1)%sf(j, k + unpack_offset, l) = &
-                                                q_comm(v_size+1)%sf(j, k + unpack_offset, l) + &
-                                                                            real(buff_recv(r), kind=stp)
+                                                q_comm(v_size + 1)%sf(j, k + unpack_offset, l) = &
+                                                    q_comm(v_size + 1)%sf(j, k + unpack_offset, l) + &
+                                                    real(buff_recv(r), kind=stp)
                                             else if (i == 3) then
-                                                q_comm(v_size+3)%sf(j, k + unpack_offset, l) = &
-                                                q_comm(v_size+3)%sf(j, k + unpack_offset, l) + &
-                                                                            real(buff_recv(r), kind=stp)
-                                            end if             
+                                                q_comm(v_size + 3)%sf(j, k + unpack_offset, l) = &
+                                                    q_comm(v_size + 3)%sf(j, k + unpack_offset, l) + &
+                                                    real(buff_recv(r), kind=stp)
+                                            end if
                                         end do
                                     end do
                                 end do
@@ -1259,17 +1259,17 @@ contains
                                         do j = -buff_size, m + buff_size
                                             r = (i - 1) + v_size* &
                                                 ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                                ((l + buff_size) + (p + 2*buff_size + 1)* &
-                                                (k + 2*mapCells)))
+                                                 ((l + buff_size) + (p + 2*buff_size + 1)* &
+                                                  (k + 2*mapCells)))
                                             if (i > 2) then
                                                 q_comm(2*i)%sf(j, k + unpack_offset, l) = &
-                                                q_comm(2*i)%sf(j, k + unpack_offset, l) + &
-                                                                            real(buff_recv(r), kind=stp)
+                                                    q_comm(2*i)%sf(j, k + unpack_offset, l) + &
+                                                    real(buff_recv(r), kind=stp)
                                             else
                                                 q_comm(v_size + i)%sf(j, k + unpack_offset, l) = &
-                                                q_comm(v_size + i)%sf(j, k + unpack_offset, l) + &
-                                                                            real(buff_recv(r), kind=stp)
-                                            end if  
+                                                    q_comm(v_size + i)%sf(j, k + unpack_offset, l) + &
+                                                    real(buff_recv(r), kind=stp)
+                                            end if
 
                                             ! if (hifu_comm) then
                                             !     if (i == v_size-2 .or. i == v_size) then
@@ -1356,18 +1356,18 @@ contains
                                         do j = -buff_size, m + buff_size
                                             r = (i - 1) + v_size* &
                                                 ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                                ((k + buff_size) + (n + 2*buff_size + 1)* &
-                                                (l + 2*mapCells)))
-                                                
+                                                 ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                                  (l + 2*mapCells)))
+
                                             if (i == 1) then
-                                                q_comm(v_size+1)%sf(j, k, l + unpack_offset) = &
-                                                q_comm(v_size+1)%sf(j, k, l + unpack_offset) + &
-                                                                            real(buff_recv(r), kind=stp)
+                                                q_comm(v_size + 1)%sf(j, k, l + unpack_offset) = &
+                                                    q_comm(v_size + 1)%sf(j, k, l + unpack_offset) + &
+                                                    real(buff_recv(r), kind=stp)
                                             else if (i == 3) then
-                                                q_comm(v_size+3)%sf(j, k, l + unpack_offset) = &
-                                                q_comm(v_size+3)%sf(j, k, l + unpack_offset) + &
-                                                                            real(buff_recv(r), kind=stp)
-                                            end if  
+                                                q_comm(v_size + 3)%sf(j, k, l + unpack_offset) = &
+                                                    q_comm(v_size + 3)%sf(j, k, l + unpack_offset) + &
+                                                    real(buff_recv(r), kind=stp)
+                                            end if
 
                                         end do
                                     end do
@@ -1382,17 +1382,17 @@ contains
                                         do j = -buff_size, m + buff_size
                                             r = (i - 1) + v_size* &
                                                 ((j + buff_size) + (m + 2*buff_size + 1)* &
-                                                ((k + buff_size) + (n + 2*buff_size + 1)* &
-                                                (l + 2*mapCells)))
+                                                 ((k + buff_size) + (n + 2*buff_size + 1)* &
+                                                  (l + 2*mapCells)))
                                             if (i > 2) then
                                                 q_comm(2*i)%sf(j, k, l + unpack_offset) = &
-                                                q_comm(2*i)%sf(j, k, l + unpack_offset) + &
-                                                                            real(buff_recv(r), kind=stp)
+                                                    q_comm(2*i)%sf(j, k, l + unpack_offset) + &
+                                                    real(buff_recv(r), kind=stp)
                                             else
                                                 q_comm(v_size + i)%sf(j, k, l + unpack_offset) = &
-                                                q_comm(v_size + i)%sf(j, k, l + unpack_offset) + &
-                                                                            real(buff_recv(r), kind=stp)
-                                            end if  
+                                                    q_comm(v_size + i)%sf(j, k, l + unpack_offset) + &
+                                                    real(buff_recv(r), kind=stp)
+                                            end if
 
                                             ! if (hifu_comm) then
                                             !     if (i == v_size-2 .or. i == v_size) then

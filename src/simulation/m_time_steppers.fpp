@@ -715,7 +715,7 @@ contains
                 if (hifu_params%sampling) call s_update_HIFU_vars_sampling(q_cons_ts(1)%vf, q_prim_vf, t_step, dt)
                 call s_calculate_lag_bubble_stats()
                 if (lag_params%write_bubbles) then
-                    call s_write_lag_particles(mytime, replace = .false.)
+                    call s_write_lag_particles(mytime, replace=.false.)
                 end if
                 call s_write_void_evol(mytime, .false.)
             end if

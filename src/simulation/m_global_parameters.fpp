@@ -1316,7 +1316,7 @@ contains
         end if
 
         if (hifu) then
-            sys_size_hifu= 11
+            sys_size_hifu = 11
             if (hifu_params%streaming) sys_size_hifu = 14
         end if
 

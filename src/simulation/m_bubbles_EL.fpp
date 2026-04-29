@@ -79,7 +79,7 @@ module m_bubbles_EL
     integer :: q_beta_idx               !< Size of the q_beta vector field
     $:GPU_DECLARE(create='[nBubs,lag_num_ts,Rmax_glb,Rmin_glb,Rmean_glb,lag_vol_glb,q_beta,q_beta_idx]')
 
-    real(wp), allocatable, dimension(:,:) :: moments_bubs   !< Moments of volume, qac, qvis, qth_pos, qth_neg
+    real(wp), allocatable, dimension(:, :) :: moments_bubs   !< Moments of volume, qac, qvis, qth_pos, qth_neg
     real(wp), allocatable, dimension(:) :: acPw_bubs         !< Acoustic power of the bubbles (HIFU)
     real(wp), allocatable, dimension(:, :) :: mrmtnt_shell  !< Lipid shell indicator (Marmotant model)
     real(wp), allocatable, dimension(:) :: mrmtnt_Rbuck     !< Buckling radius (Marmotant model)
@@ -619,8 +619,8 @@ contains
                 & gas_betaT,gas_betaC,bub_dphidt,gas_p,gas_mv, &
                 & intfc_rad,intfc_vel,mtn_pos,mtn_posPrev,mtn_vel, &
                 & mtn_s,intfc_draddt,intfc_dveldt,gas_dpdt,gas_dmvdt, nBubs]')
-                ! & mtn_dposdt,mtn_dveldt]')
-            
+            ! & mtn_dposdt,mtn_dveldt]')
+
             $:GPU_UPDATE(device='[intfc_ac, bub_interact, mrmtnt_shell, mrmtnt_Rbuck, &
                 & mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
 
@@ -1221,12 +1221,12 @@ contains
 
                         $:GPU_LOOP(parallelism='[seq]')
                         do i = 1, 4
-                            mom_vol(i) = mom_vol(i) + fVol*(fxb_Rc)**(i-1)
-                            mom_qvis(i) = mom_qvis(i) + (myQvis/(0.5_wp*dt))*(fxb_Rc)**(i-1)
+                            mom_vol(i) = mom_vol(i) + fVol*(fxb_Rc)**(i - 1)
+                            mom_qvis(i) = mom_qvis(i) + (myQvis/(0.5_wp*dt))*(fxb_Rc)**(i - 1)
                             if (myQth < 0._wp) then
-                                mom_qth_p(i) = mom_qth_p(i) + (myQth/(0.5_wp*dt))*(fxb_Rc)**(i-1)
+                                mom_qth_p(i) = mom_qth_p(i) + (myQth/(0.5_wp*dt))*(fxb_Rc)**(i - 1)
                             else
-                                mom_qth_n(i) = mom_qth_n(i) + (myQth*(0.5_wp*dt))*(fxb_Rc)**(i-1)
+                                mom_qth_n(i) = mom_qth_n(i) + (myQth*(0.5_wp*dt))*(fxb_Rc)**(i - 1)
                             end if
                         end do
                     end if
@@ -1269,7 +1269,7 @@ contains
         if (hifu_params%sampling .and. adap_dt) then
             if (hifu_params%moments) then
                 if (stage == 3) then
-                    do i=1,4
+                    do i = 1, 4
                         moments_bubs(1, i) = moments_bubs(1, i) + mom_qvis(i)
                         moments_bubs(2, i) = moments_bubs(2, i) + mom_qth_p(i)
                         moments_bubs(3, i) = moments_bubs(3, i) + mom_qth_n(i)
@@ -1281,7 +1281,7 @@ contains
                     end do
 
                 else
-                    do i=1,4
+                    do i = 1, 4
                         moments_bubs(1, i) = mom_qvis(i)
                         moments_bubs(2, i) = mom_qth_p(i)
                         moments_bubs(3, i) = mom_qth_n(i)
@@ -1291,9 +1291,9 @@ contains
             end if
             if (hifu_params%power_balance) then
                 if (stage == 3) then
-                    acPw_bubs(1) = 0.5_wp * acPw_bubs(1) + 0.5_wp * acPw_qvis
-                    acPw_bubs(2) = 0.5_wp * acPw_bubs(2) + 0.5_wp * acPw_qth
-                    acPw_bubs(3) = 0.5_wp * acPw_bubs(3) + 0.5_wp * acPw_ke
+                    acPw_bubs(1) = 0.5_wp*acPw_bubs(1) + 0.5_wp*acPw_qvis
+                    acPw_bubs(2) = 0.5_wp*acPw_bubs(2) + 0.5_wp*acPw_qth
+                    acPw_bubs(3) = 0.5_wp*acPw_bubs(3) + 0.5_wp*acPw_ke
                     call s_write_power_balance_bubs(acPw_bubs(1), acPw_bubs(2), acPw_bubs(3), acPW_nbubs, dt)
                 else
                     acPw_bubs(1) = acPw_qvis
@@ -1340,9 +1340,9 @@ contains
         real(wp), dimension(3), intent(in) :: pos_part
         logical :: f_bub_in_cv
 
-        f_bub_in_cv =  ((pos_part(1) < hifu_params%cv_xe) .and. (pos_part(1) >= hifu_params%cv_xb) .and. &
-                        (pos_part(2) < hifu_params%cv_ye) .and. (pos_part(2) >= hifu_params%cv_yb) .and. &
-                        (pos_part(3) < hifu_params%cv_ze) .and. (pos_part(3) >= hifu_params%cv_zb))
+        f_bub_in_cv = ((pos_part(1) < hifu_params%cv_xe) .and. (pos_part(1) >= hifu_params%cv_xb) .and. &
+                       (pos_part(2) < hifu_params%cv_ye) .and. (pos_part(2) >= hifu_params%cv_yb) .and. &
+                       (pos_part(3) < hifu_params%cv_ze) .and. (pos_part(3) >= hifu_params%cv_zb))
 
     end function f_bub_in_cv
 
@@ -1366,15 +1366,15 @@ contains
             acPW_nbubs = var_glb
         end if
 
-        if (proc_rank == 0) then 
-          
-          write (89, '(*(ES0.12,:,","))') &
+        if (proc_rank == 0) then
+
+            write (89, '(*(ES0.12,:,","))') &
                 mytime, hdid, &
                 acPW_nbubs, &
                 acPw_qvis, &
                 acPw_qth, &
                 acPw_ke
-                
+
         end if
 
     end subroutine s_write_power_balance_bubs
@@ -1552,11 +1552,11 @@ contains
         end if
 
         ! Add effect of bubbles across processors
-        if (num_procs > 1) then 
+        if (num_procs > 1) then
             nVar = 1
             if (lag_params%solver_approach == 2) then
                 nVar = 2
-                if (p==0) nVar = 3
+                if (p == 0) nVar = 3
             end if
 
             call s_populate_EL_buffers(q_beta, bc_type, nVar, .false.)
@@ -2146,8 +2146,8 @@ contains
         real(wp) :: acPw_qvis, acPw_qth, acPW_nbubs, acPw_ke
 
         real(wp) :: sum_qvis, sum_qth
-        
-        sum_qvis=0._wp; sum_qth=0._wp
+
+        sum_qvis = 0._wp; sum_qth = 0._wp
 
         if (hifu_params%moments) then
             mom_vol(1:4) = 0._wp; mom_qvis(1:4) = 0._wp
@@ -2227,16 +2227,16 @@ contains
             abortFlag_max = max(abortFlag_max, abortFlag)
 
             if (hifu_params%moments) then
-                fxb_Rc = (mtn_pos(k, 1, 1)-hifu_params%cloud_center(1))/hifu_params%R_cloud
+                fxb_Rc = (mtn_pos(k, 1, 1) - hifu_params%cloud_center(1))/hifu_params%R_cloud
 
                 $:GPU_LOOP(parallelism='[seq]')
                 do i = 1, 4
-                    mom_vol(i) = mom_vol(i) + fVol*(fxb_Rc)**(i-1)
-                    mom_qvis(i) = mom_qvis(i) + (fqvis/hdid)*(fxb_Rc)**(i-1)
+                    mom_vol(i) = mom_vol(i) + fVol*(fxb_Rc)**(i - 1)
+                    mom_qvis(i) = mom_qvis(i) + (fqvis/hdid)*(fxb_Rc)**(i - 1)
                     if (fqth < 0._wp) then
-                        mom_qth_p(i) = mom_qth_p(i) + fqth*(fxb_Rc)**(i-1)
+                        mom_qth_p(i) = mom_qth_p(i) + fqth*(fxb_Rc)**(i - 1)
                     else
-                        mom_qth_n(i) = mom_qth_n(i) + fqth*(fxb_Rc)**(i-1)
+                        mom_qth_n(i) = mom_qth_n(i) + fqth*(fxb_Rc)**(i - 1)
                     end if
                 end do
             end if
@@ -2292,14 +2292,14 @@ contains
 
         ! Write the heat statistics to file
         if (proc_rank == 0) then
-            write (97-idx, '(*(ES0.12,:,","))') &
-                    mytime, &
-                    moment1/total, &
-                    moment2/total, &
-                    moment3/total, &
-                    total
-        end if      
-        
+            write (97 - idx, '(*(ES0.12,:,","))') &
+                mytime, &
+                moment1/total, &
+                moment2/total, &
+                moment3/total, &
+                total
+        end if
+
     end subroutine s_write_moments
 
     subroutine s_mean_radius_hifu(t_sampled)
@@ -2911,17 +2911,17 @@ contains
 
         ! Cycle through list
         do k = 1, nBubs
-                write (11, FMT) &
-                      qtime, &
-                      lag_id(k, 1), &
-                      mtn_pos(k, 1, 1), &
-                      mtn_pos(k, 2, 1), &
-                      mtn_pos(k, 3, 1), &
-                      gas_mv(k, 1), &
-                      gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
-                      intfc_rad(k, 1), &
-                      intfc_vel(k, 1), &
-                      gas_p(k, 1)
+            write (11, FMT) &
+                qtime, &
+                lag_id(k, 1), &
+                mtn_pos(k, 1, 1), &
+                mtn_pos(k, 2, 1), &
+                mtn_pos(k, 3, 1), &
+                gas_mv(k, 1), &
+                gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), &
+                intfc_rad(k, 1), &
+                intfc_vel(k, 1), &
+                gas_p(k, 1)
         end do
 
         close (11)
@@ -2986,7 +2986,7 @@ contains
         nBubs_all = real(nBubs, wp)
 
         $:GPU_UPDATE(host='[Rmax_glb, Rmin_glb, Rmean_glb,lag_vol_glb]')
-        
+
 #ifdef MFC_MPI
         if (num_procs > 1) then
             call s_mpi_allreduce_max(lag_void_max, void_max_glb)
@@ -3017,23 +3017,23 @@ contains
 
             if (hifu) then
                 write (12, '(*(ES0.12,:,","))') &
-                      qtime, &
-                      dt, &
-                      nBubs_all, &
-                      Rmean_glb/nBubs_all, &
-                      Rmax_glb, &
-                      Rmin_glb, &
-                      lag_vol_glb, &
-                      lag_void_avg, &
-                      lag_void_max, &
-                      voltot
+                    qtime, &
+                    dt, &
+                    nBubs_all, &
+                    Rmean_glb/nBubs_all, &
+                    Rmax_glb, &
+                    Rmin_glb, &
+                    lag_vol_glb, &
+                    lag_void_avg, &
+                    lag_void_max, &
+                    voltot
 
             else
                 write (12, '(6X,4e24.8)') &
-                      qtime, &
-                      lag_void_avg, &
-                      lag_void_max, &
-                      voltot
+                    qtime, &
+                    lag_void_avg, &
+                    lag_void_max, &
+                    voltot
             end if
             close (12)
         end if

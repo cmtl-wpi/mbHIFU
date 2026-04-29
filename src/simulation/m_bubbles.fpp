@@ -764,11 +764,11 @@ contains
 
                     if (bubbles_lagrange) then
                         ! Update pb and mass_v
-                        if (polytropic) then 
-                          fpb_updt = pv + (fpb - pv)*(fR0/fR)**(3._wp*gam_m)
+                        if (polytropic) then
+                            fpb_updt = pv + (fpb - pv)*(fR0/fR)**(3._wp*gam_m)
                         else
-                          fpb = myPb_tmp1(4)
-                          fpb_updt = fpb
+                            fpb = myPb_tmp1(4)
+                            fpb_updt = fpb
                         end if
                         fmass_v = myMv_tmp1(4)
                         if (fR > fRrupt) fshell = 0._wp
@@ -806,7 +806,7 @@ contains
                             fRmean = fRmean + h*fR
 
                             !> Kinetic Energy
-                            fke = fke +  h*(2._wp*pi*fRho*fR**3._wp*fV**2._wp)
+                            fke = fke + h*(2._wp*pi*fRho*fR**3._wp*fV**2._wp)
 
                             ! Checking for NaNs and negative qvis
                             if (fQvis /= fQvis .or. fQth /= fQth .or. fQvis < 0._wp) then

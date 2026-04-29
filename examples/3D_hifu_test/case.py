@@ -41,8 +41,8 @@ T0 = 298            # temperature - K
 patm = 101325.          # Atmospheric pressure - Pa
 pamplitude = 2.0e6   # Amplitud of the acoustic source - Pa
 freq = 600.e+03         # Source frequency - Hz
-focLen  = 46.0e-03      # Focal length - m
-aperture= 41.5e-03      # Transducer aperture - m
+focLen = 46.0e-03      # Focal length - m
+aperture = 41.5e-03      # Transducer aperture - m
 waveLen = c0/freq       # wave length - m
 
 # Define water properties (ok)
@@ -122,8 +122,8 @@ Nz = 59        # number of elements into z direction
 T = 1/freq
 factorTime = 0.05
 dt_hyd = T/(100)    # time-step - sec
-t_save_hyd  = factorTime*T      # save time - sec0
-t_stop_stg1 = factorTime*3*T       # stop time stg1 - sec 
+t_save_hyd = factorTime*T      # save time - sec0
+t_stop_stg1 = factorTime*3*T       # stop time stg1 - sec
 t_stop_stg2 = factorTime*5*T       # stop time stg2 - sec
 
 # Heat solver
@@ -148,68 +148,68 @@ print(json.dumps({
     # ==========================================================
 
     # Computational Domain Parameters ==========================
-    'cyl_coord'                    : 'F',
-    'x_domain%beg'                 : xb/x0,
-    'x_domain%end'                 : xe/x0,
-    'y_domain%beg'                 : yb/x0,
-    'y_domain%end'                 : ye/x0,
-    'z_domain%beg'                 : zb/x0,
-    'z_domain%end'                 : ze/x0,
-    'stretch_x'                    : 'F',
-    'a_x'                          : 40,
-    'x_a'                          : -65e-03/x0,
-    'x_b'                          : 65e-03/x0,
-    'stretch_y'                    : 'F',
-    'stretch_z'                    : 'F',
-    'm'                            : Nx,
-    'n'                            : Ny,
-    'p'                            : Nz,
-    'adap_dt'                      : 'T',       #Strang splitting
-    'cfl_adap_dt'                  : 'F',
-    'cfl_target'                   : 0.5,
-    'dt'                           : round(dt_hyd*c0/x0,6),
-    't_step_start'                 : 0,     ############### also modify stg1, stg2 or stg3 flags
-    't_step_save'                  : t_step_save_hyd,       # Always stg1
-    't_step_stop'                  : t_step_stop_stg1,      # Always stg1
-    'n_start'                      : 0,     ## ADAPTIVE ### also modify stg1, stg2 or stg3 flags
-    't_save'                       : t_save_hyd*(c0/x0),    # Always stg1
-    't_stop'                       : t_stop_stg1*(c0/x0),   # Always stg1
+    'cyl_coord': 'F',
+    'x_domain%beg': xb/x0,
+    'x_domain%end': xe/x0,
+    'y_domain%beg': yb/x0,
+    'y_domain%end': ye/x0,
+    'z_domain%beg': zb/x0,
+    'z_domain%end': ze/x0,
+    'stretch_x': 'F',
+    'a_x': 40,
+    'x_a': -65e-03/x0,
+    'x_b': 65e-03/x0,
+    'stretch_y': 'F',
+    'stretch_z': 'F',
+    'm': Nx,
+    'n': Ny,
+    'p': Nz,
+    'adap_dt': 'T',  # Strang splitting
+    'cfl_adap_dt': 'F',
+    'cfl_target': 0.5,
+    'dt': round(dt_hyd*c0/x0, 6),
+    't_step_start': 0,  # also modify stg1, stg2 or stg3 flags
+    't_step_save': t_step_save_hyd,       # Always stg1
+    't_step_stop': t_step_stop_stg1,      # Always stg1
+    'n_start': 0,  # ADAPTIVE ### also modify stg1, stg2 or stg3 flags
+    't_save': t_save_hyd*(c0/x0),    # Always stg1
+    't_stop': t_stop_stg1*(c0/x0),   # Always stg1
     # ==========================================================
 
     # Simulation Algorithm Parameters ==========================
-    'num_fluids'                   : 1,         # Water/Phantom/BubbleGas
-    'num_patches'                  : 1,
-    'viscous'                      : 'T',
-    'model_eqns'                   : 2,         # 5 model eqns
-    'alt_soundspeed'               : 'F',       # Alternate sound speed (5 eqn model only)
+    'num_fluids': 1,         # Water/Phantom/BubbleGas
+    'num_patches': 1,
+    'viscous': 'T',
+    'model_eqns': 2,         # 5 model eqns
+    'alt_soundspeed': 'F',       # Alternate sound speed (5 eqn model only)
     # 'mpp_lim'                      : 'T',       # Mixture physical parameters limits
     # 'mixture_err'                  : 'T',       # Mixture properties correction
-    'time_stepper'                 : 3,         # O(3) TVD RK
-    'weno_order'                   : 5,
-    'weno_eps'                     : 1.0e-16,
-    'mapped_weno'                  :'T',
-    'riemann_solver'               : 2,
-    'wave_speeds'                  : 1,
-    'avg_state'                    : 2,
-    'bc_x%beg'                     :-20,        # Acoustic input BC
-    'bc_x%end'                     :-6,
-    'bc_y%beg'                     :-6,
-    'bc_y%end'                     :-6,
-    'bc_z%beg'                     :-6,
-    'bc_z%end'                     :-6,
+    'time_stepper': 3,         # O(3) TVD RK
+    'weno_order': 5,
+    'weno_eps': 1.0e-16,
+    'mapped_weno': 'T',
+    'riemann_solver': 2,
+    'wave_speeds': 1,
+    'avg_state': 2,
+    'bc_x%beg': -20,        # Acoustic input BC
+    'bc_x%end': -6,
+    'bc_y%beg': -6,
+    'bc_y%end': -6,
+    'bc_z%beg': -6,
+    'bc_z%end': -6,
     # ==========================================================
 
     # Acoustic source (bc == -20)===============================
-    'acoustic_bc_params%iwave'      : 2, # transducer
-    'acoustic_bc_params%ncycles'    : int(1e+6),
-    'acoustic_bc_params%Pbase'      : patm/p0,
-    'acoustic_bc_params%rho'        : rho_host/rho0,
-    'acoustic_bc_params%cson'       : c_host/c0,
-    'acoustic_bc_params%Pamp'       : pamplitude/p0,
-    'acoustic_bc_params%freq'       : freq*x0/c0,
-    'acoustic_bc_params%focLen'     : focLen/x0, 
-    'acoustic_bc_params%focCal'     : 3.3e-3/x0,    # add calibration parameter bulb1: 3.3 mm -> focLen + focCal
-    'acoustic_bc_params%apert'      : aperture/x0,
+    'acoustic_bc_params%iwave': 2,  # transducer
+    'acoustic_bc_params%ncycles': int(1e+6),
+    'acoustic_bc_params%Pbase': patm/p0,
+    'acoustic_bc_params%rho': rho_host/rho0,
+    'acoustic_bc_params%cson': c_host/c0,
+    'acoustic_bc_params%Pamp': pamplitude/p0,
+    'acoustic_bc_params%freq': freq*x0/c0,
+    'acoustic_bc_params%focLen': focLen/x0,
+    'acoustic_bc_params%focCal': 3.3e-3/x0,    # add calibration parameter bulb1: 3.3 mm -> focLen + focCal
+    'acoustic_bc_params%apert': aperture/x0,
     # ==========================================================
 
     # HIFU parameters ==========================================
@@ -228,19 +228,19 @@ print(json.dumps({
     'hifu_params%t_stop_stg2': t_stop_stg2*(c0/x0),
     'hifu_params%t_step_stop_stg2': t_step_stop_stg2,
     # moments
-    'hifu_params%moments'           : 'T',
-    'hifu_params%R_cloud'           : 1.e-03/x0,
-    'hifu_params%cloud_center(1)'   : 0.0,
-    'hifu_params%cloud_center(2)'   : 0.0,
-    'hifu_params%cloud_center(3)'   : 0.0,
+    'hifu_params%moments': 'T',
+    'hifu_params%R_cloud': 1.e-03/x0,
+    'hifu_params%cloud_center(1)': 0.0,
+    'hifu_params%cloud_center(2)': 0.0,
+    'hifu_params%cloud_center(3)': 0.0,
     # power balance
-    'hifu_params%power_balance'     : 'T',
-    'hifu_params%cv_xb'             : -2.e-03/x0,
-    'hifu_params%cv_xe'             : 2.e-03/x0,
-    'hifu_params%cv_yb'             : -2.e-03/x0,
-    'hifu_params%cv_ye'             : 2.e-03/x0,
-    'hifu_params%cv_zb'             : -2.e-03/x0,
-    'hifu_params%cv_ze'             : 2.e-03/x0,
+    'hifu_params%power_balance': 'T',
+    'hifu_params%cv_xb': -2.e-03/x0,
+    'hifu_params%cv_xe': 2.e-03/x0,
+    'hifu_params%cv_yb': -2.e-03/x0,
+    'hifu_params%cv_ye': 2.e-03/x0,
+    'hifu_params%cv_zb': -2.e-03/x0,
+    'hifu_params%cv_ze': 2.e-03/x0,
     # STG3: Solving heat equation
     'hifu_params%stg3': 'T',
     'hifu_params%intPrms': 'F',  # True: Utilize qus from Prms
@@ -264,15 +264,15 @@ print(json.dumps({
     # ==========================================================
 
     # Lagrangian Bubbles ===========================
-     'bubbles_lagrange'                 : 'T',
-     'bubble_model'                     : 2,    # Keller-Miksis model
-     'thermal'                          : 3,
-     'polytropic'                       :'F',
-     'lag_params%nBubs_glb'             : 10,  # Number of bubbles
-     'lag_params%solver_approach'       : 2,    # Two-way coupled
-     'lag_params%cluster_type'          : 2,    # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
-     'lag_params%pressure_corrector'    : 'T',
-     'lag_params%interaction_model'     : 1, # Interaction model: 1 -> kazuki & 2 -> Aditya's model
+    'bubbles_lagrange': 'T',
+    'bubble_model': 2,    # Keller-Miksis model
+    'thermal': 3,
+    'polytropic': 'F',
+    'lag_params%nBubs_glb': 10,  # Number of bubbles
+    'lag_params%solver_approach': 2,    # Two-way coupled
+    'lag_params%cluster_type': 2,    # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
+    'lag_params%pressure_corrector': 'T',
+    'lag_params%interaction_model': 1,  # Interaction model: 1 -> kazuki & 2 -> Aditya's model
     #  'lag_params%influence'             : 3, # Number of surrounding cells to define influence volume
     'lag_params%smooth_type': 1,
     'lag_params%coatedBub_model': 'F',  # Marmmotant model
@@ -325,20 +325,20 @@ print(json.dumps({
     # ==========================================================
 
     # Patch 2: EMP (only) ====================================
-    'patch_icpp(1)%geometry'       : 9,
-    'patch_icpp(1)%x_centroid'     : 0.5*(xe+xb)/x0,
-    'patch_icpp(1)%y_centroid'     : 0.5*(ye+yb)/x0,
-    'patch_icpp(1)%z_centroid'     : 0.5*(ze+zb)/x0,
-    'patch_icpp(1)%length_x'       : 4*(xe-xb)/x0,
-    'patch_icpp(1)%length_y'       : 4*(ye-yb)/x0,
-    'patch_icpp(1)%length_z'       : 4*(ze-zb)/x0,
-    'patch_icpp(1)%vel(1)'         : 0.,
-    'patch_icpp(1)%vel(2)'         : 0.,
-    'patch_icpp(1)%vel(3)'         : 0.,
-    'patch_icpp(1)%pres'           : patm/p0,
-    'patch_icpp(1)%alpha_rho(1)'   : rho_host/rho0,
+    'patch_icpp(1)%geometry': 9,
+    'patch_icpp(1)%x_centroid': 0.5*(xe+xb)/x0,
+    'patch_icpp(1)%y_centroid': 0.5*(ye+yb)/x0,
+    'patch_icpp(1)%z_centroid': 0.5*(ze+zb)/x0,
+    'patch_icpp(1)%length_x': 4*(xe-xb)/x0,
+    'patch_icpp(1)%length_y': 4*(ye-yb)/x0,
+    'patch_icpp(1)%length_z': 4*(ze-zb)/x0,
+    'patch_icpp(1)%vel(1)': 0.,
+    'patch_icpp(1)%vel(2)': 0.,
+    'patch_icpp(1)%vel(3)': 0.,
+    'patch_icpp(1)%pres': patm/p0,
+    'patch_icpp(1)%alpha_rho(1)': rho_host/rho0,
     # 'patch_icpp(1)%alpha_rho(2)'   : 0.,
-    'patch_icpp(1)%alpha(1)'       : 1.,
+    'patch_icpp(1)%alpha(1)': 1.,
     # 'patch_icpp(1)%alpha(2)'       : 0.,
     # ==========================================================
 
@@ -397,13 +397,13 @@ print(json.dumps({
     # 'fluid_pp(1)%absCoef'          : abs_coef_water*x0,
 
     # EMP (host medium)
-    'fluid_pp(1)%gamma'            : 1.0/(gamma_host-1.0),
-    'fluid_pp(1)%pi_inf'           : gamma_host*(pi_inf_host/p0)/(gamma_host-1.0),
-    'fluid_pp(1)%Re(1)'            : 1.0/(mu_host/(rho0*c0*x0)),
-    'fluid_pp(1)%Re(2)'            : 1.0/(3*mu_host/(rho0*c0*x0)),
-    'fluid_pp(1)%rho_cp'           : (rho_host/rho0)*(cp_host*(T0/(c0*c0))),
-    'fluid_pp(1)%tdiff'            : tdiff_host/(x0*c0),
-    'fluid_pp(1)%absCoef'          : abs_coef_host*x0,
+    'fluid_pp(1)%gamma': 1.0/(gamma_host-1.0),
+    'fluid_pp(1)%pi_inf': gamma_host*(pi_inf_host/p0)/(gamma_host-1.0),
+    'fluid_pp(1)%Re(1)': 1.0/(mu_host/(rho0*c0*x0)),
+    'fluid_pp(1)%Re(2)': 1.0/(3*mu_host/(rho0*c0*x0)),
+    'fluid_pp(1)%rho_cp': (rho_host/rho0)*(cp_host*(T0/(c0*c0))),
+    'fluid_pp(1)%tdiff': tdiff_host/(x0*c0),
+    'fluid_pp(1)%absCoef': abs_coef_host*x0,
     # 'fluid_pp(1)%mul0'             : mu_host,
     # 'fluid_pp(1)%ss'               : sigBubble,
     # 'fluid_pp(1)%pv'               : pv,
