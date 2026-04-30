@@ -13,7 +13,7 @@ import math
 # specific heat ratio and stiffness - Pa
 
 
-def calculat_eos_param(rhoFun, cFun, cpFun, pFun, tFun):
+def calculate_eos_param(rhoFun, cFun, cpFun, pFun, tFun):
     gammaFun = cFun**2 / (cpFun * tFun) + 1
     pi_infFun = rhoFun * cpFun * tFun * (gammaFun - 1) / gammaFun - pFun
     return gammaFun, pi_infFun
@@ -40,7 +40,7 @@ T0 = 298  # temperature - K
 # Define acoustic source properties (ok)
 # (Gain = 23.2817 and Pfocus = 1.99 MPa 'assume pure water')
 patm = 101325.0  # Atmospheric pressure - Pa
-pamplitude = 2.0e6  # Amplitud of the acoustic source - Pa
+pamplitude = 2.0e6  # Amplitude of the acoustic source - Pa
 freq = 600.0e03  # Source frequency - Hz
 focLen = 46.0e-03  # Focal length - m
 aperture = 41.5e-03  # Transducer aperture - m
@@ -55,7 +55,7 @@ waveLen = c0 / freq  # wave length - m
 # abs_coef_water = 0.025          # attenuation of water -  Np/m at 1MHz
 # abs_coef_water = abs_coef_water * ((freq / 1.0e6)**2)                    # power 1 linear, 2 quadratic
 # mu_water = absCoef_to_mu(abs_coef_water, freq, rho_water, c_water)    # Dynamic viscosity - Pa.s
-# [gamma_water, pi_inf_water]  = calculat_eos_param(rho_water, c_water, cp_water, 1e5, T_water)   # specific heat ratio and stiffness - Pa
+# [gamma_water, pi_inf_water]  = calculate_eos_param(rho_water, c_water, cp_water, 1e5, T_water)   # specific heat ratio and stiffness - Pa
 
 # Define host properties (EMP) (ok)
 c_host = 1570.0  # speed of sound - m/s
@@ -66,7 +66,7 @@ tdiff_host = 1.32e-7  # thermal diffusivity - m2/s
 abs_coef_host = 4.20  # attenuation of water -  Np/m at 1MHz
 abs_coef_host = abs_coef_host * ((freq / 1.0e6) ** 1)  # power 1 linear, 2 quadratic
 mu_host = absCoef_to_mu(abs_coef_host, freq, rho_host, c_host)  # Dynamic viscosity - Pa.s
-[gamma_host, pi_inf_host] = calculat_eos_param(rho_host, c_host, cp_host, 1e5, T_host)  # specific heat ratio and stiffness - Pa
+[gamma_host, pi_inf_host] = calculate_eos_param(rho_host, c_host, cp_host, 1e5, T_host)  # specific heat ratio and stiffness - Pa
 
 # Lagrangian bubble's properties (ok)
 # Sonazoid contrast agent:
@@ -74,8 +74,8 @@ mu_host = absCoef_to_mu(abs_coef_host, freq, rho_host, c_host)  # Dynamic viscos
 # shell: monomolecular membrane of hydrogenated egg phosphatidylserine
 # vapor addition through the interface (if mass transfer is TRUE) is considered to be water vapor only (NIST properties)
 R_uni = 8314  # Universal gas constant - J/kmol/K
-MW_g = 238.027  # Molar weigth of the gas - kg/kmol (https://pubs.acs.org/doi/10.1021/acs.iecr.1c02969)
-MW_v = 18.0  # Molar weigth of the vapor - kg/kmol
+MW_g = 238.027  # Molar weight of the gas - kg/kmol (https://pubs.acs.org/doi/10.1021/acs.iecr.1c02969)
+MW_v = 18.0  # Molar weight of the vapor - kg/kmol
 gam_g = 1.0699  # Specific heat ratio of the gas (https://doi.org/10.3390/pharmaceutics14010098)
 gam_v = 1.333  # Specific heat ratio of the vapor
 pv = 0.0  # Vapor pressure of the host - Pa
@@ -266,7 +266,7 @@ print(
             "polytropic": "F",
             "lag_params%nBubs_glb": 10,  # Number of bubbles
             "lag_params%solver_approach": 2,  # Two-way coupled
-            "lag_params%cluster_type": 2,  # 1: p_inf from intepolation, 2: p_inf avg surrounding cells
+            "lag_params%cluster_type": 2,  # 1: p_inf from interpolation, 2: p_inf avg surrounding cells
             "lag_params%pressure_corrector": "T",
             "lag_params%interaction_model": 1,  # Interaction model: 1 -> kazuki & 2 -> Aditya's model
             #  'lag_params%influence'             : 3, # Number of surrounding cells to define influence volume

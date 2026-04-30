@@ -1420,7 +1420,7 @@ contains
     ! == 0) read (94, *, iostat=ios) (txt_line(i), i=1, 2) if (ios /= 0) cycle in_bc_samples = in_bc_samples + 1
     ! in_bc_pressure(in_bc_samples) = txt_line(2) in_bc_time(in_bc_samples) = txt_line(1) print*, in_bc_samples,
     ! in_bc_time(in_bc_samples), in_bc_pressure(in_bc_samples) end do close (94) else call s_mpi_abort("Customizes pressure acoustic
-    ! BC requieres input/pressureProfile.txt") end if
+    ! BC requires input/pressureProfile.txt") end if
 
     !     !$acc update device(in_bc_pressure, in_bc_time, in_bc_samples)
 

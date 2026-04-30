@@ -2099,12 +2099,7 @@ contains
             file_loc = trim(case_dir) // '/D/' // trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
-            if (.not. file_exist) then
-                open (11, FILE=trim(file_loc), form='formatted', position='rewind')
-                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalHeat_qvis'
-            else
-                open (11, FILE=trim(file_loc), form='formatted', position='append')
-            end if
+            open (11, FILE=trim(file_loc), form='formatted', position='append')
 
             write (11, '(4X,I24.8,4e24.8)') sampledTime, heat_moment1_vis/total_heat_vis, heat_moment2_vis/total_heat_vis, &
                    & heat_moment3_vis/total_heat_vis, total_heat_vis
@@ -2115,12 +2110,7 @@ contains
             file_loc = trim(case_dir) // '/D/' // trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
-            if (.not. file_exist) then
-                open (11, FILE=trim(file_loc), form='formatted', position='rewind')
-                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalHeat_qth'
-            else
-                open (11, FILE=trim(file_loc), form='formatted', position='append')
-            end if
+            open (11, FILE=trim(file_loc), form='formatted', position='append')
 
             write (11, '(4X,I24.8,4e24.8)') sampledTime, heat_moment1_th/total_heat_th, heat_moment2_th/total_heat_th, &
                    & heat_moment3_th/total_heat_th, total_heat_th
@@ -2131,12 +2121,7 @@ contains
             file_loc = trim(case_dir) // '/D/' // trim(file_loc)
             inquire (FILE=trim(file_loc), EXIST=file_exist)
 
-            if (.not. file_exist) then
-                open (11, FILE=trim(file_loc), form='formatted', position='rewind')
-                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalVolume'
-            else
-                open (11, FILE=trim(file_loc), form='formatted', position='append')
-            end if
+            open (11, FILE=trim(file_loc), form='formatted', position='append')
 
             write (11, '(4X,I24.8,4e24.8)') sampledTime, moment1_vol/total_vol, moment2_vol/total_vol, moment3_vol/total_vol, &
                    & total_vol

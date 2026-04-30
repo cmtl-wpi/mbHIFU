@@ -284,13 +284,13 @@ contains
             if (hifu_params%stg3 .and. hifu_params%cartesian) return
 
             if (hifu_params%streaming) then
-                ! ------- Avg streming velocity x-dir---------------------------
+                ! ------- Avg streaming velocity x-dir---------------------------
                 q_sf(:,:,:) = q_cons_hifu(hifu_params%u_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
                 write (varname, '(A)') 'avg_vel_x'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
-                ! ------- Avg streming velocity y-dir---------------------------
+                ! ------- Avg streaming velocity y-dir---------------------------
                 q_sf(:,:,:) = q_cons_hifu(hifu_params%v_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
                 write (varname, '(A)') 'avg_vel_y'
                 call s_write_variable_to_formatted_database_file(varname, t_step)

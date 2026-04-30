@@ -1308,7 +1308,8 @@ def _load():
         _r(f"hifu_params%{a}", LOG, {"hifu"})
     for a in ["stepStopSource", "t_step_stop_stg1", "t_step_stop_stg2", "t_step_stop_stg3", "t_step_save_stg3", "p_cyl", "m", "n", "p"]:
         _r(f"hifu_params%{a}", INT, {"hifu"})
-    for a in ["Tref", "K", "alpha", "atmPres", "absCoef", "t_stop_stg1", "t_stop_stg2", "dt_stg2", "dt_stg3", "z_max", "xb", "xe", "ye", "cfl_stg3", "R_cloud", "cv_xb", "cv_xe", "cv_yb", "cv_ye", "cv_zb", "cv_ze"]:
+    for a in ["Tref", "K", "alpha", "atmPres", "absCoef", "t_stop_stg1", "t_stop_stg2", "dt_stg2", "dt_stg3", "z_max", "xb", "xe", "ye", "cfl_stg3", "R_cloud",
+              "cv_xb", "cv_xe", "cv_yb", "cv_ye", "cv_zb", "cv_ze"]:
         _r(f"hifu_params%{a}", REAL, {"hifu"})
     for d in range(1, 4):
         _r(f"hifu_params%cloud_center({d})", REAL, {"hifu"})

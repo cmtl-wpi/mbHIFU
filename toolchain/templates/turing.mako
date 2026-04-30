@@ -14,7 +14,7 @@
 % if account:
 #SBATCH --account="${account}"
 % endif
-% if gpu:
+% if gpu_enabled:
 #SBATCH --gres=gpu:1
 #SBATCH -C "A30|A100"
 #SBATCH --mem=208G
@@ -32,11 +32,11 @@ ${helpers.template_prologue()}
 
 ok ":) Loading modules:\n"
 cd "${MFC_ROOT_DIR}"
-. ./mfc.sh load -c t -m ${'g' if gpu else 'c'}
+. ./mfc.sh load -c t -m ${'g' if gpu_enabled else 'c'}
 cd - > /dev/null
 echo
 
-% if gpu:
+% if gpu_enabled:
 export LD_LIBRARY_PATH=/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-13.2.0/cuda-12.3.0-vuydybqum6mloi2vvov7yn2juaurmtao/lib64:$LD_LIBRARY_PATH 
 % endif
 
@@ -46,7 +46,7 @@ export LD_LIBRARY_PATH=/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-1
     % if not mpi:
         (set -x; ${profiler} "${target.get_install_binpath(case)}")
     % else:
-        % if gpu:
+        % if gpu_enabled:
             (set -x; ${profiler} \
                 srun --gres=gpu:1 -C "A30|A100" \
                 $MPI_HOME/bin/mpirun --np ${nodes*tasks_per_node} \

@@ -485,6 +485,14 @@ TEST_COMMAND = Command(
             default="master",
             dest="changes_branch",
         ),
+        Argument(
+            name="computer",
+            short="c",
+            help="(Batch) Path to a custom submission file template or one of the built-in templates.",
+            default="default",
+            metavar="COMPUTER",
+            completion=Completion(type=CompletionType.CHOICES, choices=TEMPLATE_NAMES),
+        ),
     ],
     mutually_exclusive=[
         MutuallyExclusiveGroup(

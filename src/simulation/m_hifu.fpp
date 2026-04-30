@@ -2055,12 +2055,7 @@ contains
         inquire (FILE=trim(file_loc), EXIST=file_exist)
 
         if (proc_rank == 0) then
-            if (.not. file_exist) then
-                open (11, FILE=trim(file_loc), form='formatted', position='rewind')
-                write (11, *) 'sampledTime, normMomment_1, normMomment_2, normMomment_3, totalHeat'
-            else
-                open (11, FILE=trim(file_loc), form='formatted', position='append')
-            end if
+            open (11, FILE=trim(file_loc), form='formatted', position='append')
 
             write (11, '(*(ES0.12,:,","))') sampledTime, heat_moment1/total_heat, heat_moment2/total_heat, &
                    & heat_moment3/total_heat, total_heat

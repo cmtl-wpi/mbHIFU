@@ -63,7 +63,7 @@ module m_constants
     integer, parameter  :: mapCells = 3      !< Number of cells around the bubble where the smoothening function will have effect
     real(wp), parameter :: R_uni = 8314._wp  !< Universal gas constant - J/kmol/K
     integer, parameter  :: lag_io_vars = 28  !< Number of variables per particle for MPI_IO
-    !> Number of fluctuations in the stochastic clousure to find the corrected Pinf (2D model reduction)
+    !> Number of fluctuations in the stochastic closure to find the corrected Pinf (2D model reduction)
     integer, parameter :: num_noise = 100
     integer, parameter :: max_bub_int = 2500  !< Limits the maximum number of interacting bubbles
 

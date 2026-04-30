@@ -288,8 +288,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     if (NOT MFC_GCov)
         CHECK_FORTRAN_COMPILER_FLAG("-march=native" SUPPORTS_MARCH_NATIVE)
         if (SUPPORTS_MARCH_NATIVE)
-            add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-march=native>)
-            #add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-march=haswell>) #Turing fix
+	    add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-march=native>)
+	    #add_compile_options($<$<COMPILE_LANGUAGE:Fortran>:-march=haswell>) #Turing fix
             # Disable AVX-512 FP16: gfortran >=12 emits vmovw instructions on
             # Granite Rapids CPUs, but binutils <2.38 cannot assemble them.
             # FP16 is unused in MFC's double-precision computations.
