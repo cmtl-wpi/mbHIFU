@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import math
 import json
+import math
 
 # Bubble screen
 # Description: A planar acoustic wave interacts with a bubble cloud
@@ -160,7 +160,7 @@ print(
             "bub_pp%p0ref": 1.0,
             "bub_pp%rho0ref": 1.0,
             "bub_pp%T0ref": 1.0,
-            "bub_pp%Thost": T0/T0,
+            "bub_pp%Thost": T0 / T0,
             "bub_pp%ss": sigBubble / (rho0 * x0 * c0 * c0),
             "bub_pp%pv": pv / p0,
             "bub_pp%vd": diffVapor / (x0 * c0),

@@ -5,46 +5,76 @@ This module provides exports from the central parameter registry (mfc.params).
 All parameter definitions are sourced from the registry.
 
 Exports:
-    ALL: Dict of all parameters {name: ParamType}
+    ALL: Family-aware mapping of all parameters {name: ParamType}
     IGNORE: Parameters to skip during certain operations
     CASE_OPTIMIZATION: Parameters that can be hard-coded for GPU builds
     SCHEMA: JSON schema for fastjsonschema validation
     get_validator(): Returns compiled JSON schema validator
-    get_input_dict_keys(): Get parameter keys for a target
+    get_input_dict_keys(): Get set-like object for target parameter checking
 """
-# pylint: disable=import-outside-toplevel
 
 import re
+from collections.abc import Mapping
+
 from ..state import ARG
 
-def _load_all_params():
-    """Load all parameters as {name: ParamType} dict."""
-    from ..params import REGISTRY
-    return {name: param.param_type for name, param in REGISTRY.all_params.items()}
+
+class _ParamTypeMapping(Mapping):
+    """
+    Read-only mapping wrapping REGISTRY's all_params for {name: ParamType} access.
+
+    Delegates containment checks and lookup to the registry's family-aware
+    mapping, so indexed families like ``patch_ib(500000)%geometry`` resolve
+    in O(1) without enumerating all possible indices.
+
+    For iteration, yields scalar params plus one example per family attr.
+    """
+
+    def __init__(self):
+        from ..params import REGISTRY
+
+        self._view = REGISTRY.all_params
+
+    def __contains__(self, key):
+        return key in self._view
+
+    def __getitem__(self, key):
+        return self._view[key].param_type
+
+    def __iter__(self):
+        return iter(self._view)
+
+    def __len__(self):
+        return len(self._view)
 
 
 def _load_case_optimization_params():
     """Get params that can be hard-coded for GPU optimization."""
     from ..params import REGISTRY
+
     return [name for name, param in REGISTRY.all_params.items() if param.case_optimization]
 
 
 def _build_schema():
     """Build JSON schema from registry."""
     from ..params import REGISTRY
+
     return REGISTRY.get_json_schema()
 
 
 def _get_validator_func():
     """Get the cached validator from registry."""
     from ..params import REGISTRY
+
     return REGISTRY.get_validator()
 
 
 def _get_target_params():
     """Get valid params for each target by parsing Fortran namelists."""
     from ..params.namelist_parser import get_target_params
+
     return get_target_params()
+
 
 #     for real_attr_stl, ty_stl in [("filepath", ParamType.STR), ("spc", ParamType.INT),
 #                           ("threshold", ParamType.REAL)]:
@@ -224,7 +254,7 @@ def _get_target_params():
 #     'surface_tension': ParamType.LOG,
 #     'viscous': ParamType.LOG,
 #     'bubbles_lagrange': ParamType.LOG,
-#     'hifu': ParamType.LOG, 
+#     'hifu': ParamType.LOG,
 #     'num_bc_patches': ParamType.INT,
 #     'powell': ParamType.LOG,
 #     'tau_star': ParamType.REAL,
@@ -250,7 +280,7 @@ def _get_target_params():
 #              'write_bubbles', 'write_bubbles_stats', 'coatedBub_model', 'newModel_2D']:
 #     SIMULATION[f'lag_params%{var}'] = ParamType.LOG
 
-# for var in [ 'solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb', 'write_only_bub_id', 
+# for var in [ 'solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb', 'write_only_bub_id',
 #             'interaction_model', 'influence']:
 #     SIMULATION[f'lag_params%{var}'] = ParamType.INT
 
@@ -342,7 +372,7 @@ def _get_target_params():
 
 # for f_id in range(1,10+1):
 #     for real_attr in ["gamma", "pi_inf", "mul0", "ss", "pv", "gamma_v", "M_v",
-#                       "mu_v", "k_v", "cp_v", "G", "cv", "qv", "qvp", "rho_cp", 
+#                       "mu_v", "k_v", "cp_v", "G", "cv", "qv", "qvp", "rho_cp",
 #                       "tdiff", "absCoef" ]:
 #         SIMULATION[f"fluid_pp({f_id})%{real_attr}"] = ParamType.REAL
 
@@ -459,14 +489,17 @@ def _get_target_params():
 # Parameters to ignore during certain operations
 IGNORE = ["cantera_file", "chemistry"]
 
-# Combined dict of all parameters
-ALL = _load_all_params()
+# Family-aware mapping of all parameters — supports O(1) lookup for indexed families
+ALL = _ParamTypeMapping()
 
 # Parameters that can be hard-coded for GPU case optimization
 CASE_OPTIMIZATION = _load_case_optimization_params()
 
 # JSON schema for validation
 SCHEMA = _build_schema()
+
+# Regex to extract the base name from indexed params
+_BASE_NAME_RE = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_]*)")
 
 
 def _is_param_valid_for_target(param_name: str, target_name: str) -> bool:
@@ -488,7 +521,7 @@ def _is_param_valid_for_target(param_name: str, target_name: str) -> bool:
     # e.g., "patch_icpp(1)%geometry" -> "patch_icpp"
     # e.g., "fluid_pp(2)%gamma" -> "fluid_pp"
     # e.g., "acoustic(1)%loc(1)" -> "acoustic"
-    match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)', param_name)
+    match = _BASE_NAME_RE.match(param_name)
     if match:
         base_name = match.group(1)
         return base_name in target_params
@@ -496,26 +529,42 @@ def _is_param_valid_for_target(param_name: str, target_name: str) -> bool:
     return param_name in target_params
 
 
-def get_input_dict_keys(target_name: str) -> list:
+class _TargetKeySet:
     """
-    Get parameter keys for a given target.
+    Set-like object for checking if a param is valid for a specific target.
 
-    Uses the Fortran namelist definitions as the source of truth.
-    Only returns params whose base name is in the target's namelist.
+    Supports ``key in target_key_set`` via base-name matching against the
+    Fortran namelist, plus optionally filtering out case-optimization params.
+    Does not enumerate all possible indexed family members.
+    """
+
+    def __init__(self, target_name: str, filter_case_opt: bool = False):
+        self._target_name = target_name
+        self._filter_case_opt = filter_case_opt
+        self._case_opt = set(CASE_OPTIMIZATION) if filter_case_opt else set()
+
+    def __contains__(self, key):
+        if self._filter_case_opt and key in self._case_opt:
+            return False
+        return _is_param_valid_for_target(key, self._target_name)
+
+
+def get_input_dict_keys(target_name: str):
+    """
+    Get a set-like object for checking parameter validity for a target.
+
+    Returns an object that supports ``key in result`` for O(1) checks.
+    For indexed families, this does NOT enumerate all possible indices —
+    it checks the base name against the Fortran namelist.
 
     Args:
         target_name: One of 'pre_process', 'simulation', 'post_process'
 
     Returns:
-        List of parameter names valid for that target
+        Set-like object supporting ``in`` operator
     """
-    keys = [k for k in ALL.keys() if _is_param_valid_for_target(k, target_name)]
-
-    # Case optimization filtering for simulation
-    if ARG("case_optimization", dflt=False) and target_name == "simulation":
-        keys = [k for k in keys if k not in CASE_OPTIMIZATION]
-
-    return keys
+    filter_case_opt = ARG("case_optimization", dflt=False) and target_name == "simulation"
+    return _TargetKeySet(target_name, filter_case_opt)
 
 
 def get_validator():
