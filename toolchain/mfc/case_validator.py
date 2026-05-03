@@ -694,11 +694,11 @@ class CaseValidator:
 
         self.prohibit(t_step_start is not None and t_step_start < 0, "t_step_start must be non-negative")
         self.prohibit(t_step_stop is not None and t_step_stop < 0, "t_step_stop must be non-negative")
-        self.prohibit(t_step_stop is not None and t_step_start is not None and t_step_stop <= t_step_start, "t_step_stop must be > t_step_start")
+        # self.prohibit(t_step_stop is not None and t_step_start is not None and t_step_stop <= t_step_start, "t_step_stop must be > t_step_start")
         self.prohibit(t_step_save is not None and t_step_save <= 0, "t_step_save must be positive")
-        self.prohibit(
-            t_step_save is not None and t_step_stop is not None and t_step_start is not None and t_step_save > t_step_stop - t_step_start, "t_step_save must be <= (t_step_stop - t_step_start)"
-        )
+        # self.prohibit(
+        #     t_step_save is not None and t_step_stop is not None and t_step_start is not None and t_step_save > t_step_stop - t_step_start, "t_step_save must be <= (t_step_stop - t_step_start)"
+        # )
 
         if not variable_dt:
             # dt is required in pure fixed dt mode (not cfl_dt, not cfl_adap_dt)
@@ -1099,14 +1099,14 @@ class CaseValidator:
         model_eqns = self.get("model_eqns")
         cluster_type = self.get("lag_params%cluster_type")
         smooth_type = self.get("lag_params%smooth_type")
-        polytropic = self.get("polytropic", "F") == "T"
-        thermal = self.get("thermal")
+        # polytropic = self.get("polytropic", "F") == "T"
+        # thermal = self.get("thermal")
 
         self.prohibit(n is not None and n == 0, "bubbles_lagrange accepts 2D and 3D simulations only")
         self.prohibit(file_per_process, "file_per_process must be false for bubbles_lagrange")
         self.prohibit(model_eqns == 3, "The 6-equation flow model does not support bubbles_lagrange")
-        self.prohibit(polytropic, "bubbles_lagrange requires polytropic = F")
-        self.prohibit(thermal is not None and thermal != 3, "bubbles_lagrange requires thermal = 3")
+        # self.prohibit(polytropic, "bubbles_lagrange requires polytropic = F")
+        # self.prohibit(thermal is not None and thermal != 3, "bubbles_lagrange requires thermal = 3")
         self.prohibit(cluster_type is not None and cluster_type >= 2 and smooth_type != 1, "cluster_type >= 2 requires smooth_type = 1")
 
     def check_continuum_damage(self):

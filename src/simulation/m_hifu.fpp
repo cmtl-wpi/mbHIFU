@@ -864,8 +864,8 @@ contains
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') mytime, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), sum_qac, &
-                & sum_qac_prms
+            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') mytime + dt, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
+                & sum_qac, sum_qac_prms
 
             if (hifu_params%moments) call s_write_moments(mom_qac, idx=0)
         else
@@ -917,13 +917,13 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (92, '(*(ES0.12,:,","))') mytime, hdid, acPw_in_dt(1), acPw_in_dt(2), acPw_in_dt(3), acPw_in_dt(4), &
+            write (92, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPw_in_dt(1), acPw_in_dt(2), acPw_in_dt(3), acPw_in_dt(4), &
                    & acPw_in_dt(5), acPw_in_dt(6)
 
-            write (91, '(*(ES0.12,:,","))') mytime, hdid, acPw_out_dt(1), acPw_out_dt(2), acPw_out_dt(3), acPw_out_dt(4), &
+            write (91, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPw_out_dt(1), acPw_out_dt(2), acPw_out_dt(3), acPw_out_dt(4), &
                    & acPw_out_dt(5), acPw_out_dt(6)
 
-            write (90, '(*(ES0.12,:,","))') mytime, hdid, acPw_qac, acPw_cmprssv, acPw_kntc
+            write (90, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPw_qac, acPw_cmprssv, acPw_kntc
         end if
 
     end subroutine s_write_power_balance
@@ -2565,6 +2565,13 @@ contains
                                 end if
 
                                 abortFlag_max = max(abortFlag_max, abortFlag)
+
+                                ! if (j==40 .and. k==40 .and. l==40) then print*, 'NaNs in q hifu rhs', q_hifu%vf(hifu_params%T_idx
+                                ! + 1)%sf(j, k, l), j, k, l print*, 'dx, dy, dz', dx(j), dy(k), dz(l) print*, 'x, y, z', x_cc(j),
+                                ! y_cc(k), z_cc(l) print*, 'Heat sources: ', q_hifu%vf(qus_hifu_idx_ht)%sf(j, k, l), & &
+                                ! q_hifu%vf(hifu_params%qvis_idx)%sf(j, k, l), & & q_hifu%vf(hifu_params%qth_idx)%sf(j, k, l), & &
+                                ! q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) print *, 'alpha, rho_cp, tdiff', alpha, rho_cp, tdiff
+                                ! abortFlag_max = 1._wp end if
                             end do
                         end do
                     end do

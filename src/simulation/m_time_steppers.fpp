@@ -879,10 +879,17 @@ contains
 
         call s_rhs_heatEqn(q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf, t_step, bc_type)
 
+        if (probe_wrt) then
+            if (hifu_params%stg3_3d) then
+                call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu_3d%vf)
+            else
+                call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu%vf)
+            end if
+        end if
+
         if (t_step == t_step_stop) return
 
-        temp_max = -abs(dflt_real)
-        temp_min = abs(dflt_real)
+        temp_max = -abs(dflt_real); temp_min = abs(dflt_real)
 
         if (hifu_params%cartesian) then
             if (proc_rank == 0) then

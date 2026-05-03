@@ -1005,7 +1005,7 @@ contains
         ! Radial motion
         adap_dt_stop_max = 0
         $:GPU_PARALLEL_LOOP(private='[k, i, myalpha_rho, myalpha, Re, cell, myVapFlux, preterm1, term2, paux, pint, Romega, &
-                            & term1_fac, myR_m, mygamma_m, myPb, myMass_n, myMass_v, myR, myV, myBeta_c, myBeta_t, myR0, myPbdot, &
+                            & term1_fac, myR_m, mygamma_m, myPb, myMass_g, myMass_v, myR, myV, myBeta_c, myBeta_t, myR0, myPbdot, &
                             & myMvdot, myPinf, aux1, aux2, myCson, myRho, gamma, pi_inf, qv, dmalf, dmntait, dmBtait, &
                             & dm_bub_adv_src, dm_divu, adap_dt_stop, fxb_Rc, fVol]', &
                             & reduction='[[adap_dt_stop_max], [mom_vol(1:4), mom_qvis(1:4), mom_qth_p(1:4), &
@@ -1207,7 +1207,7 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (98, '(*(ES0.12,:,","))') mytime, dt, sum_qvis, sum_qth, sum_nBubs, 0._wp, 0._wp
+            write (98, '(*(ES0.12,:,","))') mytime + dt, dt, sum_qvis, sum_qth, sum_nBubs, 0._wp, 0._wp
         end if
 
     end subroutine s_sum_qbub
@@ -1246,7 +1246,7 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (89, '(*(ES0.12,:,","))') mytime, hdid, acPW_nbubs, acPw_qvis, acPw_qth, acPw_ke
+            write (89, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPW_nbubs, acPw_qvis, acPw_qth, acPw_ke
         end if
 
     end subroutine s_write_power_balance_bubs
@@ -1996,7 +1996,7 @@ contains
 
         ! Write the heat statistics to file
         if (proc_rank == 0) then
-            write (97 - idx, '(*(ES0.12,:,","))') mytime, moment1/total, moment2/total, moment3/total, total
+            write (97 - idx, '(*(ES0.12,:,","))') mytime + dt, moment1/total, moment2/total, moment3/total, total
         end if
 
     end subroutine s_write_moments

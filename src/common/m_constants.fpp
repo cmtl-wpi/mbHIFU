@@ -68,8 +68,8 @@ module m_constants
     integer, parameter :: max_bub_int = 2500  !< Limits the maximum number of interacting bubbles
 
     ! Strang Splitting constants
-    real(wp), parameter :: dflt_adap_dt_tol = 1.e-4_wp   !< Default tolerance for adaptive step size
-    integer, parameter  :: dflt_adap_dt_max_iters = 100  !< Default max iteration for adaptive step size
+    real(wp), parameter :: dflt_adap_dt_tol = 1.e-4_wp      !< Default tolerance for adaptive step size
+    integer, parameter  :: dflt_adap_dt_max_iters = 100000  !< Default max iteration for adaptive step size
     ! Constants of the algorithm described by Heirer, E. Hairer, S. P.Norsett, G. Wanner, Solving Ordinary Differential Equations I,
     ! Chapter II.4 to choose the initial time step size for the adaptive time stepping routine
     real(wp), parameter :: threshold_first_guess = 1.e-5_wp    !< Threshold for initial step size estimate
