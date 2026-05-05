@@ -106,10 +106,6 @@ contains
         type(scalar_field), dimension(:), intent(inout), optional :: q_hifu_vf
 
         if (probe_wrt) then
-            if (hifu_params%stg3_3d .and. hifu_params%heatSolver) then
-                call s_write_probe_files(t_step, q_cons_vf, accel_mag, q_hifu_vf)
-                return
-            end if
 
             call s_derive_acceleration_component(1, q_prim_ts1(1)%vf, q_prim_ts1(2)%vf, q_prim_ts2(1)%vf, q_prim_ts2(2)%vf, x_accel)
             if (n > 0) then

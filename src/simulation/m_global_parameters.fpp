@@ -844,7 +844,6 @@ contains
         hifu_params%stg1 = .false.
         hifu_params%stg2 = .false.
         hifu_params%stg3 = .false.
-        hifu_params%stg3_3d = .false.
         hifu_params%t_step_stop_stg1 = dflt_int
         hifu_params%t_step_stop_stg2 = dflt_int
         hifu_params%t_step_stop_stg3 = dflt_int
@@ -1221,8 +1220,8 @@ contains
         end if
 
         if (hifu) then
-            sys_size_hifu = 11
-            if (hifu_params%streaming) sys_size_hifu = 14
+            sys_size_hifu = sys_size
+            ! if (hifu_params%streaming) sys_size_hifu = 14
         end if
 
         if (bubbles_euler .and. qbmm .and. .not. polytropic) then

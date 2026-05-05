@@ -719,7 +719,7 @@ contains
         character(len=20)                              :: value_str1, value_str2, value_str3, value_str4, value_str5
 
 #ifdef MFC_MPI
-        real(wp), dimension(20)                :: inputvals
+        real(wp), dimension(lag_io_vars)       :: inputvals
         real(wp)                               :: time_real
         integer, dimension(MPI_STATUS_SIZE)    :: status
         integer(KIND=MPI_OFFSET_KIND)          :: disp
@@ -823,12 +823,16 @@ contains
                 if (lag_mg_wrt) write (29, '(A17)', advance='no') 'mg, '
                 if (lag_betaT_wrt) write (29, '(A17)', advance='no') 'betaT, '
                 if (lag_betaC_wrt) write (29, '(A17)', advance='no') 'betaC, '
+                if (lag_mrmtnt_wrt) write (29, '(A17)', advance='no') 'shell, '
+                if (lag_hifu_wrt) write (29, '(A17)', advance='no') 'avg_radius, '
+                if (lag_hifu_wrt) write (29, '(A17)', advance='no') 'avg_qvis, '
+                if (lag_hifu_wrt) write (29, '(A17)', advance='no') 'avg_qth, '
                 write (29, '(A15)') 'time'
             end if
 
             do i = 1, file_tot_part
                 id = int(MPI_IO_DATA_lg_bubbles(i, 1))
-                inputvals(1:20) = MPI_IO_DATA_lg_bubbles(i,2:21)
+                inputvals(1:lag_io_vars) = MPI_IO_DATA_lg_bubbles(i,2:lag_io_vars+1)
                 if (id > 0) then
                     write (29, '(100(A))', advance='no') ''
                     if (lag_id_wrt) write (29, '(I6, A)', advance='no') id, ', '
@@ -849,6 +853,10 @@ contains
                     if (lag_mg_wrt) write (29, '(E15.7, A)', advance='no') inputvals(18), ', '
                     if (lag_betaT_wrt) write (29, '(E15.7, A)', advance='no') inputvals(19), ', '
                     if (lag_betaC_wrt) write (29, '(E15.7, A)', advance='no') inputvals(20), ', '
+                    if (lag_mrmtnt_wrt) write (29, '(E15.7, A)', advance='no') inputvals(21), ', '
+                    if (lag_hifu_wrt) write (29, '(E15.7, A)', advance='no') inputvals(27), ', '
+                    if (lag_hifu_wrt) write (29, '(E15.7, A)', advance='no') inputvals(24), ', '
+                    if (lag_hifu_wrt) write (29, '(E15.7, A)', advance='no') inputvals(25), ', '
                     write (29, '(E15.7)') time_real
                 end if
             end do
@@ -958,7 +966,8 @@ contains
         if (nBub > 0) then
             #:for VAR in ['bub_id', 'px', 'py', 'pz', 'ppx', 'ppy', 'ppz', 'vx', 'vy', 'vz', &
                 'radius', 'rvel', 'rnot', 'rmax', 'rmin', 'dphidt', &
-                'pressure', 'mv', 'mg', 'betaT', 'betaC']
+                'pressure', 'mv', 'mg', 'betaT', 'betaC', &
+                'shell', 'avg_radius', 'avg_qvis', 'avg_qth']
                 allocate (${VAR}$ (nBub))
             #:endfor
             allocate (MPI_IO_DATA_lg_bubbles(nBub,1:lag_io_vars))
@@ -982,7 +991,8 @@ contains
             #:for VAR, IDX in [('bub_id', 1), ('px', 2), ('py',3), ('pz',4), ('ppx',5), ('ppy',6), ('ppz',7), &
                 ('vx',8), ('vy',9), ('vz',10), ('radius',11), ('rvel',12), &
                 ('rnot',13), ('rmax',14), ('rmin',15), ('dphidt',16), &
-                ('pressure',17), ('mv',18), ('mg',19), ('betaT',20), ('betaC',21)]
+                ('pressure',17), ('mv',18), ('mg',19), ('betaT',20), ('betaC',21), &
+                ('shell',22), ('avg_radius',28), ('avg_qvis',25), ('avg_qth',26)]
                 ${VAR}$ (:) = MPI_IO_DATA_lg_bubbles(:,${IDX}$)
             #:endfor
 
@@ -1017,9 +1027,14 @@ contains
             if (lag_mg_wrt) call s_write_lag_variable_to_formatted_database_file('part_mg', t_step, mg, nBub)
             if (lag_betaT_wrt) call s_write_lag_variable_to_formatted_database_file('part_betaT', t_step, betaT, nBub)
             if (lag_betaC_wrt) call s_write_lag_variable_to_formatted_database_file('part_betaC', t_step, betaC, nBub)
+            if (lag_mrmtnt_wrt) call s_write_lag_variable_to_formatted_database_file('part_shell', t_step, shell, nBub)
+            if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_radius', t_step, avg_radius, nBub)
+            if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_qvis', t_step, avg_qvis, nBub)
+            if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_qth', t_step, avg_qth, nBub)
+            
 
             deallocate (bub_id, px, py, pz, ppx, ppy, ppz, vx, vy, vz, radius, rvel, rnot, rmax, rmin, dphidt, pressure, mv, mg, &
-                        & betaT, betaC)
+                        & betaT, betaC, shell, avg_radius, avg_qvis, avg_qth)
             deallocate (MPI_IO_DATA_lg_bubbles)
         else
             call MPI_TYPE_CONTIGUOUS(0, mpi_p, view, ierr)
@@ -1066,6 +1081,10 @@ contains
             if (lag_mg_wrt) call s_write_lag_variable_to_formatted_database_file('part_mg', t_step)
             if (lag_betaT_wrt) call s_write_lag_variable_to_formatted_database_file('part_betaT', t_step)
             if (lag_betaC_wrt) call s_write_lag_variable_to_formatted_database_file('part_betaC', t_step)
+            if (lag_mrmtnt_wrt) call s_write_lag_variable_to_formatted_database_file('part_shell', t_step)
+            if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_radius', t_step)
+            if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_qvis', t_step)
+            if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_qth', t_step)
         end if
 #endif
 

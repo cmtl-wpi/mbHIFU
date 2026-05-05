@@ -492,7 +492,7 @@ module m_derived_types
         integer                  :: mb, me, ne  !< Reduce domain to solve heat eqn (cylindrical)
         logical                  :: cartesian  !< from 2D to 3D cartesian (needs interpolation of qus)
         integer                  :: m, n, p  !< number of cells for the cartesian grid
-        integer                  :: T_idx, tsamp_idx, qus_idx, qus_prms_idx, qvis_idx, qth_idx, P_idx, u_idx, v_idx
+        integer                  :: T_idx, tsamp_idx, qac_idx, qac_prms_idx, qvis_idx, qth_idx, P_idx, u_idx, v_idx
         logical                  :: moments  !< Whether to compute moments
         real(wp)                 :: R_cloud  !< Radius of the bubble cloud to filter moments region
         real(wp), dimension(1:3) :: cloud_center  !< Center of the bubble cloud

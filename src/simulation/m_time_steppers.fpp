@@ -493,11 +493,7 @@ contains
                 if (probe_wrt) then
                     call s_time_step_cycling(t_step)
                     if (hifu_params%heatSolver) then
-                        if (hifu_params%stg3_3d) then
-                            call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu_3d%vf)
-                        else
-                            call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu%vf)
-                        end if
+                        call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu%vf)
                     else
                         call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2)
                     end if
@@ -867,121 +863,69 @@ contains
     end subroutine s_time_step_cycling
 
     ! Euler forward scheme for dT/dt
-    subroutine s_time_stepper_heatEqn(t_step)
+    subroutine s_time_stepper_heatEqn(t_step, time_avg)
 
         integer, intent(in) :: t_step
+        real(wp), intent(inout) :: time_avg
         integer             :: i, j, k, l, q  !< Generic loop iterator
-        real(wp)            :: rhs_heat, temp_max, temp_min, val_tmp
+        real(wp)            :: abortFlag, temp_max, temp_min, val_tmp
+        real(wp)                :: start, finish
 
-        ! Stage 1 of 1 =====================================================
+        call cpu_time(start)
+        call nvtxStartRange("TIMESTEP")
 
-        call nvtxStartRange("Time_Step")
-
-        call s_rhs_heatEqn(q_cons_ts(1)%vf, pb_ts(1)%sf, mv_ts(1)%sf, t_step, bc_type)
+        call s_rhs_heatEqn(q_cons_ts(1)%vf, rhs_vf, pb_ts(1)%sf, mv_ts(1)%sf, t_step, bc_type, time_avg)
 
         if (probe_wrt) then
-            if (hifu_params%stg3_3d) then
-                call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu_3d%vf)
-            else
-                call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu%vf)
-            end if
+            call s_compute_derived_variables(t_step, q_cons_ts(1)%vf, q_prim_ts1, q_prim_ts2, q_hifu%vf)
         end if
 
         if (t_step == t_step_stop) return
 
         temp_max = -abs(dflt_real); temp_min = abs(dflt_real)
+        abortFlag = 0._wp
 
-        if (hifu_params%cartesian) then
-            if (proc_rank == 0) then
-                $:GPU_PARALLEL_LOOP(collapse=3,reduction='[[temp_max], [temp_min]]',reductionOp='[MAX, MIN]', &
-                                    & copy='[temp_max, temp_min]')
-                do l = 0, p_hf
-                    do k = 0, n_hf
-                        do j = 0, m_hf
-                            ! Forward euler time scheme, explicit
-                            q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, &
-                                         & l) + dt*q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+        $:GPU_PARALLEL_LOOP(collapse=3,reduction='[[temp_max], [temp_min], [abortFlag]]',reductionOp='[MAX, MIN, +]', &
+                            & copy='[temp_max, temp_min, abortFlag]')
+        do l = 0, p
+            do k = 0, n
+                do j = 0, m
+                    ! Forward euler time scheme, explicit
+                    q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
+                                & l) + dt*rhs_vf(1)%sf(j,k,l)
+                    ! Max and min
+                    temp_max = max(temp_max, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
+                    temp_min = min(temp_min, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
 
-                            ! Max and min
-                            temp_max = max(temp_max, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
-                            temp_min = min(temp_min, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
+                    if (temp_max > 15000._wp) abortFlag = abortFlag + 1._wp
 
-                            if (abs(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) > 10._wp) then
-                                print *, 'Temp > 10', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l, m_hf, n_hf, p_hf, &
-                                                                   & x_cc_hf(j), y_cc_hf(k), z_cc_hf(l), proc_rank
-                                print *, "Temperature value > 10!!"
-                            end if
-                        end do
-                    end do
                 end do
-                $:END_GPU_PARALLEL_LOOP()
-            end if
-
-            call s_mpi_barrier()
-        else
-            if (hifu_params%stg3_3d) then  ! Cylindrical coord
-
-                $:GPU_PARALLEL_LOOP(collapse=3,reduction='[[temp_max], [temp_min]]',reductionOp='[MAX, MIN]',copy='[temp_max, &
-                                    & temp_min]', copyin='[t_step]')
-                do l = 0, p
-                    do j = hifu_params%mb, hifu_params%me
-                        do k = 0, hifu_params%ne
-                            rhs_heat = q_hifu_3d%vf(hifu_params%T_idx + 1)%sf(j, k, l)
-
-                            ! Correction to address numerical stiffness at the pole call s_pole_correction(rhs_heat, j, k, l,
-                            ! t_step)
-
-                            ! Forward euler time scheme, explicit
-                            q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) + dt*rhs_heat
-                            ! Max and min
-                            temp_max = max(temp_max, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
-                            temp_min = min(temp_min, q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l))
-
-                            ! if (q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l) /= q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) then
-                            if (abs(q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l)) > 10) then
-                                print *, 'Temp > 10', q_hifu_3d%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l, m, n, p, x_cc(j), &
-                                                                   & y_cc(k), proc_rank
-                                print *, "Temperature value > 10!!"
-                            end if
-                        end do
-                    end do
-                end do
-                $:END_GPU_PARALLEL_LOOP()
-            else  ! Axisymmetric coord and full 3D
-                $:GPU_PARALLEL_LOOP(collapse=3,reduction='[[temp_max], [temp_min]]',reductionOp='[MAX, MIN]', &
-                                    & copy='[temp_max, temp_min]')
-                do l = 0, p
-                    do k = 0, n
-                        do j = 0, m
-                            ! Forward euler time scheme, explicit
-                            q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                                      & l) + dt*q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)
-                            ! Max and min
-                            temp_max = max(temp_max, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
-                            temp_min = min(temp_min, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
-
-                            if (temp_max > 15000._wp) print *, temp_max, j, k, l
-
-                            if (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%T_idx)%sf(j, k, l)) then
-                                print *, 'NaNs in q hifu temp', q_hifu%vf(hifu_params%T_idx)%sf(j, k, l), j, k, l
-                            end if
-                        end do
-                    end do
-                end do
-                $:END_GPU_PARALLEL_LOOP()
-            end if
-        end if
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
 
         if (num_procs > 1) then
             val_tmp = temp_max
             call s_mpi_allreduce_max(val_tmp, temp_max)
             val_tmp = temp_min
             call s_mpi_allreduce_min(val_tmp, temp_min)
+            val_tmp = abortFlag
+            call s_mpi_allreduce_max(val_tmp, abortFlag)
         end if
 
         if (proc_rank == 0) print *, 'Temp max:', temp_max, 'Temp min:', temp_min
+        if (abortFlag > 0._wp) call s_mpi_abort("mbHF: Temperature above 250")
 
         call nvtxEndRange
+        call cpu_time(finish)
+
+        wall_time = abs(finish - start)
+
+        if (t_step - t_step_start >= 2) then
+            wall_time_avg = (wall_time + (t_step - t_step_start - 2)*wall_time_avg)/(t_step - t_step_start - 1)
+        else
+            wall_time_avg = 0._wp
+        end if
 
     end subroutine s_time_stepper_heatEqn
 

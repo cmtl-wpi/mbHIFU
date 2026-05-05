@@ -1533,16 +1533,14 @@ contains
 
     end subroutine s_qbmm_extrapolation
 
-    impure subroutine s_populate_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
+    impure subroutine s_populate_EL_buffers(q_beta, bc_type, nVar)
 
         type(vector_field), intent(inout)                           :: q_beta
         type(integer_field), dimension(1:num_dims,-1:1), intent(in) :: bc_type
         integer, intent(in)                                         :: nVar
-        logical, intent(in)                                         :: hifu_EL_flag
         integer                                                     :: k, l, el_mpi
 
         el_mpi = 1
-        if (hifu_EL_flag) el_mpi = 2
 
         !> x-direction
         if (bc_x%beg >= 0) then
@@ -1553,7 +1551,7 @@ contains
             call s_mpi_sendrecv_variables_buffers(q_beta%vf, 1, 1, nVar, el_id=el_mpi)
         end if
 
-        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
+        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar)
 
         if (n == 0) return
 
@@ -1566,7 +1564,7 @@ contains
             call s_mpi_sendrecv_variables_buffers(q_beta%vf, 2, 1, nVar, el_id=el_mpi)
         end if
 
-        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
+        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar)
 
         if (p == 0) return
 
@@ -1579,50 +1577,33 @@ contains
             call s_mpi_sendrecv_variables_buffers(q_beta%vf, 3, 1, nVar, el_id=el_mpi)
         end if
 
-        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar, hifu_EL_flag)
+        call s_summation_q_beta_EL_buffers(q_beta, bc_type, nVar)
 
     end subroutine s_populate_EL_buffers
 
-    subroutine s_summation_q_beta_EL_buffers(q_comm, bc_type, nVar, hifu_EL_flag)
+    subroutine s_summation_q_beta_EL_buffers(q_comm, bc_type, nVar)
 
         type(vector_field), intent(inout)                           :: q_comm
         type(integer_field), dimension(1:num_dims,-1:1), intent(in) :: bc_type
         integer, intent(in)                                         :: nVar
-        logical, intent(in)                                         :: hifu_EL_flag
         integer                                                     :: i, j, k, l
 
-        if (hifu_EL_flag) then
-            $:GPU_PARALLEL_LOOP(collapse=3, copy='[nVar]')
-            do l = idwbuff(3)%beg, idwbuff(3)%end
-                do k = idwbuff(2)%beg, idwbuff(2)%end
-                    do j = idwbuff(1)%beg, idwbuff(1)%end
-                        q_comm%vf(nVar)%sf(j, k, l) = q_comm%vf(nVar)%sf(j, k, l) + q_comm%vf(nVar + 1)%sf(j, k, l)
-
-                        q_comm%vf(nVar + 2)%sf(j, k, l) = q_comm%vf(nVar + 2)%sf(j, k, l) + q_comm%vf(nVar + 3)%sf(j, k, l)
-
-                        q_comm%vf(nVar + 1)%sf(j, k, l) = 0._wp
-                        q_comm%vf(nVar + 3)%sf(j, k, l) = 0._wp
+        $:GPU_PARALLEL_LOOP(collapse=4, copy='[nVar]')
+        do l = idwbuff(3)%beg, idwbuff(3)%end
+            do k = idwbuff(2)%beg, idwbuff(2)%end
+                do j = idwbuff(1)%beg, idwbuff(1)%end
+                    do i = 1, nVar
+                        if (i == 3) then
+                            q_comm%vf(2*i - 1)%sf(j, k, l) = q_comm%vf(2*i - 1)%sf(j, k, l) + q_comm%vf(2*i)%sf(j, k, l)
+                            q_comm%vf(2*i)%sf(j, k, l) = 0._wp
+                        else
+                            q_comm%vf(i)%sf(j, k, l) = q_comm%vf(i)%sf(j, k, l) + q_comm%vf(nVar + i)%sf(j, k, l)
+                            q_comm%vf(nVar + i)%sf(j, k, l) = 0._wp
+                        end if
                     end do
                 end do
             end do
-        else
-            $:GPU_PARALLEL_LOOP(collapse=4, copy='[nVar]')
-            do l = idwbuff(3)%beg, idwbuff(3)%end
-                do k = idwbuff(2)%beg, idwbuff(2)%end
-                    do j = idwbuff(1)%beg, idwbuff(1)%end
-                        do i = 1, nVar
-                            if (i == 3) then
-                                q_comm%vf(2*i - 1)%sf(j, k, l) = q_comm%vf(2*i - 1)%sf(j, k, l) + q_comm%vf(2*i)%sf(j, k, l)
-                                q_comm%vf(2*i)%sf(j, k, l) = 0._wp
-                            else
-                                q_comm%vf(i)%sf(j, k, l) = q_comm%vf(i)%sf(j, k, l) + q_comm%vf(nVar + i)%sf(j, k, l)
-                                q_comm%vf(nVar + i)%sf(j, k, l) = 0._wp
-                            end if
-                        end do
-                    end do
-                end do
-            end do
-        end if
+        end do
 
     end subroutine s_summation_q_beta_EL_buffers
 

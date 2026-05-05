@@ -667,6 +667,11 @@ contains
             end if
         end if
 
+        if (t_step == t_step_start .and. hifu_params%heatSolver) then
+            call s_initialize_pure_3D(q_cons_ts(1)%vf, bc_type)
+            time_avg = 0._wp
+        end if
+
         if (cfl_dt) then
             if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
                 eta_sec = wall_time_avg*(t_stop - mytime)/max(dt, tiny(dt))
@@ -689,25 +694,9 @@ contains
             end if
         end if
 
-        if (t_step == t_step_start .and. hifu_params%heatSolver) then
-            if (hifu_params%stg3_3d) then
-                ! Transforming from 2d axisymmetric to 3d cylindrical coords
-                call s_finalize_derived_variables_module()
-                call s_initialize_from_2d_to_3d(bc_type)
-                call s_initialize_derived_variables_module()
-                call s_initialize_derived_variables()
-            else if (p > 0 .and. .not. cyl_coord) then
-                call s_initialize_pure_3D(bc_type)
-            end if
-        end if
-
         if (probe_wrt) then
             if (hifu_params%heatSolver) then
-                if (hifu_params%stg3_3d) then
-                    $:GPU_UPDATE(host='[q_hifu_3d%vf(hifu_params%T_idx)%sf]')
-                else
-                    $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%T_idx)%sf]')
-                end if
+                $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%T_idx)%sf]')
             else
                 do i = 1, sys_size
                     $:GPU_UPDATE(host='[q_cons_ts(1)%vf(i)%sf]')
@@ -717,7 +706,7 @@ contains
 
         ! Solve heat eqn for HIFU solver
         if (hifu_params%heatSolver) then
-            call s_time_stepper_heatEqn(t_step)
+            call s_time_stepper_heatEqn(t_step, time_avg)
             ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
         else if (any(time_stepper == (/1, 2, 3/))) then
             call s_tvd_rk(t_step, time_avg, time_stepper)
@@ -825,7 +814,7 @@ contains
         integer, intent(inout)  :: t_step
         real(wp), intent(inout) :: start, finish, io_time_avg
         integer, intent(inout)  :: nt
-        integer(kind=8)         :: i, j, k, l, l_mod
+        integer(kind=8)         :: i, j, k, l
         integer                 :: stor
         integer                 :: save_count
         logical                 :: hifu_write_output
@@ -860,10 +849,8 @@ contains
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
-                        l_mod = l
-                        if (hifu_params%stg3_3d .and. hifu_params%heatSolver) l_mod = 0
-                        if (ieee_is_nan(real(q_cons_ts(stor)%vf(i)%sf(j, k, l_mod), kind=wp))) then
-                            print *, "NaN(s) in timestep output.", j, k, l_mod, i, proc_rank, t_step, m, n, p
+                        if (ieee_is_nan(real(q_cons_ts(stor)%vf(i)%sf(j, k, l), kind=wp))) then
+                            print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
                             call s_mpi_abort("NaN(s) in timestep output.")
                         end if
                     end do
@@ -901,22 +888,10 @@ contains
 
         ! HIFU
         if (hifu_params%heatSolver) then
-            if (hifu_params%stg3_3d) then
-                do i = 1, sys_size_hifu
-                    $:GPU_UPDATE(host='[q_hifu_3d%vf(i)%sf]')
-                end do
-                if (hifu_params%cartesian) then
-                    if (proc_rank == 0) call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, bc_type, &
-                        & q_hifu_vf=q_hifu_3d%vf)
-                else
-                    call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, bc_type, q_hifu_vf=q_hifu_3d%vf)
-                end if
-            else
-                do i = 1, sys_size_hifu
-                    $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
-                end do
-                call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, bc_type, q_hifu_vf=q_hifu%vf)
-            end if
+            do i = 1, sys_size_hifu
+                $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
+            end do
+            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, bc_type, q_hifu_vf=q_hifu%vf)
         else if (hifu_params%sampling) then
             do i = 1, sys_size_hifu
                 $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
@@ -1225,7 +1200,7 @@ contains
     !> Finalize and deallocate all simulation sub-modules in reverse initialization order
     impure subroutine s_finalize_modules
 
-        if (hifu_params%heatSolver) call s_restore_initial_setup()
+        if (hifu) call s_finalize_HIFU_module()
         call s_finalize_time_steppers_module()
         if (hypoelasticity) call s_finalize_hypoelastic_module()
         if (hyperelasticity) call s_finalize_hyperelastic_module()
@@ -1250,7 +1225,7 @@ contains
         call s_finalize_boundary_common_module()
         if (relax) call s_finalize_relaxation_solver_module()
         if (bubbles_lagrange) call s_finalize_lagrangian_solver()
-        if (hifu) call s_finalize_HIFU_module()
+        
         if (viscous .and. (.not. igr)) then
             call s_finalize_viscous_module()
         end if

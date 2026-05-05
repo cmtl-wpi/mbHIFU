@@ -248,67 +248,63 @@ contains
         varname(:) = ' '
         ! Adding the Temperature to the previously formatted database file -------------------
         if (hifu) then
-            sampled_time = q_cons_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0)
-            if (proc_rank == 0) print *, 'The current sampled period is:', sampled_time
+            if (hifu_params%stg3) then
 
-            ! ------- Temperature --------------------
-            q_sf(:,:,:) = q_cons_hifu(hifu_params%T_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
-            write (varname, '(A)') 'Temp'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            ! ------- Avg heat intensity from acoustic damping q_us ---------
-            q_sf(:,:,:) = q_cons_hifu(hifu_params%qus_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
-            write (varname, '(A)') 'avg_qac'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            ! ------- Avg heat intensity from acoustic damping q_us PRMS ---------
-            q_sf(:,:,:) = q_cons_hifu(hifu_params%qus_prms_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
-            write (varname, '(A)') 'avg_qac_prms'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            ! ------- Avg heat intensity from viscous damping q_vis ---------
-            q_sf(:,:,:) = q_cons_hifu(hifu_params%qvis_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
-            write (varname, '(A)') 'avg_qvis'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            ! ------- Avg heat intensity from thermal damping q_th ---------
-            q_sf(:,:,:) = q_cons_hifu(hifu_params%qth_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
-            write (varname, '(A)') 'avg_qth'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            if (hifu_params%stg3 .and. hifu_params%cartesian) return
-
-            if (hifu_params%streaming) then
-                ! ------- Avg streaming velocity x-dir---------------------------
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%u_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
-                write (varname, '(A)') 'avg_vel_x'
+                ! ------- Temperature --------------------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%T_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                write (varname, '(A)') 'Temp'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
-                ! ------- Avg streaming velocity y-dir---------------------------
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%v_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
-                write (varname, '(A)') 'avg_vel_y'
+                ! ------- Avg heat intensity from acoustic damping q_ac ---------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%qac_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                write (varname, '(A)') 'avg_qac'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
+
+                ! ------- Avg heat intensity from viscous damping q_vis ---------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%qvis_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                write (varname, '(A)') 'avg_qvis'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+
+                ! ------- Avg heat intensity from thermal damping q_th ---------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%qth_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                write (varname, '(A)') 'avg_qth'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+
+                return
+            else
+
+                sampled_time = q_cons_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0)
+                if (proc_rank == 0) print *, 'The current sampled period is:', sampled_time
+
+                ! ------- Avg heat intensity from acoustic damping q_ac ---------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%qac_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                write (varname, '(A)') 'avg_qac'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+
+                ! ------- Avg heat intensity from acoustic damping q_us PRMS ---------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%qac_prms_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                write (varname, '(A)') 'avg_qac_prms'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+
+                ! ------- Max Pressure --------------------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%P_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                write (varname, '(A)') 'Pmax'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+
+                ! ------- Min Pressure --------------------
+                q_sf(:,:,:) = q_cons_hifu(hifu_params%P_idx + 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                write (varname, '(A)') 'Pmin'
+                call s_write_variable_to_formatted_database_file(varname, t_step)
+                varname(:) = ' '
+
             end if
-            ! ------- Max Pressure --------------------
-            q_sf(:,:,:) = q_cons_hifu(hifu_params%P_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
-            write (varname, '(A)') 'Pmax'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            ! ------- Min Pressure --------------------
-            q_sf(:,:,:) = q_cons_hifu(hifu_params%P_idx + 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
-            write (varname, '(A)') 'Pmin'
-            call s_write_variable_to_formatted_database_file(varname, t_step)
-            varname(:) = ' '
-
-            if (hifu_params%stg3) return
         end if
 
         if (omega_wrt(2) .or. omega_wrt(3) .or. qm_wrt .or. liutex_wrt .or. schlieren_wrt) then

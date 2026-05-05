@@ -1406,7 +1406,7 @@ contains
                 if (p == 0) nVar = 3
             end if
 
-            call s_populate_EL_buffers(q_beta, bc_type, nVar, .false.)
+            call s_populate_EL_buffers(q_beta, bc_type, nVar)
         end if
 
         ! Store 1-beta
@@ -2853,8 +2853,67 @@ contains
 
     end subroutine s_remove_lag_bubble
 
-    subroutine s_free_memory_stg3()
+    ! subroutine s_free_memory_stg3()
 
+    !     @:DEALLOCATE(Rmax_stats)
+    !     @:DEALLOCATE(Rmin_stats)
+    !     @:DEALLOCATE(gas_mg)
+    !     @:DEALLOCATE(gas_betaT)
+    !     @:DEALLOCATE(gas_betaC)
+    !     @:DEALLOCATE(bub_dphidt)
+    !     @:DEALLOCATE(gas_p)
+    !     @:DEALLOCATE(gas_mv)
+    !     @:DEALLOCATE(intfc_ac)
+    !     @:DEALLOCATE(mtn_vel)
+    !     @:DEALLOCATE(intfc_draddt)
+    !     @:DEALLOCATE(intfc_dveldt)
+    !     @:DEALLOCATE(gas_dpdt)
+    !     @:DEALLOCATE(gas_dmvdt)
+    !     @:DEALLOCATE(mtn_dposdt)
+    !     @:DEALLOCATE(mtn_dveldt)
+    !     ! Marmotant model
+    !     @:DEALLOCATE(mrmtnt_shell)
+    !     @:DEALLOCATE(mrmtnt_Rbuck)
+    !     @:DEALLOCATE(mrmtnt_Rrupt)
+    !     ! bubble interaction
+    !     @:DEALLOCATE(bub_interact)
+    !     if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) then
+    !         @:DEALLOCATE(bub_int_ids)
+    !     end if
+    !     !@:DEALLOCATE(bub_lambda_c)
+    !     if (hifu_params%moments) then
+    !         @:DEALLOCATE(moments_bubs)
+    !     end if
+    !     if (hifu_params%power_balance) then
+    !         @:DEALLOCATE(acPw_bubs)
+    !     end if
+
+    ! end subroutine s_free_memory_stg3
+
+    !> The purpose of this subroutine is to deallocate variables
+    impure subroutine s_finalize_lagrangian_solver()
+
+        integer :: i
+
+        do i = 1, q_beta_idx
+            @:DEALLOCATE(q_beta%vf(i)%sf)
+        end do
+        @:DEALLOCATE(q_beta%vf)
+
+        ! Deallocating space
+        @:DEALLOCATE(lag_id)
+        @:DEALLOCATE(bub_R0)
+        @:DEALLOCATE(intfc_rad)
+        @:DEALLOCATE(intfc_vel)
+        @:DEALLOCATE(mtn_pos)
+        @:DEALLOCATE(mtn_posPrev)
+        @:DEALLOCATE(mtn_s)
+        ! hifu
+        @:DEALLOCATE(bub_qvis)
+        @:DEALLOCATE(bub_qth)
+        @:DEALLOCATE(bub_hifu_rad)
+
+        ! if (.not. hifu_params%heatSolver) then
         @:DEALLOCATE(Rmax_stats)
         @:DEALLOCATE(Rmin_stats)
         @:DEALLOCATE(gas_mg)
@@ -2887,66 +2946,7 @@ contains
         if (hifu_params%power_balance) then
             @:DEALLOCATE(acPw_bubs)
         end if
-
-    end subroutine s_free_memory_stg3
-
-    !> The purpose of this subroutine is to deallocate variables
-    impure subroutine s_finalize_lagrangian_solver()
-
-        integer :: i
-
-        do i = 1, q_beta_idx
-            @:DEALLOCATE(q_beta%vf(i)%sf)
-        end do
-        @:DEALLOCATE(q_beta%vf)
-
-        ! Deallocating space
-        @:DEALLOCATE(lag_id)
-        @:DEALLOCATE(bub_R0)
-        @:DEALLOCATE(intfc_rad)
-        @:DEALLOCATE(intfc_vel)
-        @:DEALLOCATE(mtn_pos)
-        @:DEALLOCATE(mtn_posPrev)
-        @:DEALLOCATE(mtn_s)
-        ! hifu
-        @:DEALLOCATE(bub_qvis)
-        @:DEALLOCATE(bub_qth)
-        @:DEALLOCATE(bub_hifu_rad)
-
-        if (.not. hifu_params%heatSolver) then
-            @:DEALLOCATE(Rmax_stats)
-            @:DEALLOCATE(Rmin_stats)
-            @:DEALLOCATE(gas_mg)
-            @:DEALLOCATE(gas_betaT)
-            @:DEALLOCATE(gas_betaC)
-            @:DEALLOCATE(bub_dphidt)
-            @:DEALLOCATE(gas_p)
-            @:DEALLOCATE(gas_mv)
-            @:DEALLOCATE(intfc_ac)
-            @:DEALLOCATE(mtn_vel)
-            @:DEALLOCATE(intfc_draddt)
-            @:DEALLOCATE(intfc_dveldt)
-            @:DEALLOCATE(gas_dpdt)
-            @:DEALLOCATE(gas_dmvdt)
-            @:DEALLOCATE(mtn_dposdt)
-            @:DEALLOCATE(mtn_dveldt)
-            ! Marmotant model
-            @:DEALLOCATE(mrmtnt_shell)
-            @:DEALLOCATE(mrmtnt_Rbuck)
-            @:DEALLOCATE(mrmtnt_Rrupt)
-            ! bubble interaction
-            @:DEALLOCATE(bub_interact)
-            if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) then
-                @:DEALLOCATE(bub_int_ids)
-            end if
-            !@:DEALLOCATE(bub_lambda_c)
-            if (hifu_params%moments) then
-                @:DEALLOCATE(moments_bubs)
-            end if
-            if (hifu_params%power_balance) then
-                @:DEALLOCATE(acPw_bubs)
-            end if
-        end if
+        ! end if
 
     end subroutine s_finalize_lagrangian_solver
 

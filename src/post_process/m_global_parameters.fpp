@@ -224,6 +224,8 @@ module m_global_parameters
     logical                            :: lag_mg_wrt
     logical                            :: lag_betaT_wrt
     logical                            :: lag_betaC_wrt
+    logical                            :: lag_mrmtnt_wrt
+    logical                            :: lag_hifu_wrt
     !> @}
 
     real(wp), dimension(num_fluids_max) :: schlieren_alpha  !< Per-fluid Schlieren intensity amplitude coefficients
@@ -454,6 +456,8 @@ contains
         lag_mg_wrt = .false.
         lag_betaT_wrt = .false.
         lag_betaC_wrt = .false.
+        lag_mrmtnt_wrt = .false.
+        lag_hifu_wrt = .false.
 
         schlieren_alpha = dflt_real
 
