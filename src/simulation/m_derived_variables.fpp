@@ -106,7 +106,6 @@ contains
         type(scalar_field), dimension(:), intent(inout), optional :: q_hifu_vf
 
         if (probe_wrt) then
-
             call s_derive_acceleration_component(1, q_prim_ts1(1)%vf, q_prim_ts1(2)%vf, q_prim_ts2(1)%vf, q_prim_ts2(2)%vf, x_accel)
             if (n > 0) then
                 call s_derive_acceleration_component(2, q_prim_ts1(1)%vf, q_prim_ts1(2)%vf, q_prim_ts2(1)%vf, q_prim_ts2(2)%vf, &

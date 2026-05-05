@@ -1422,7 +1422,7 @@ contains
     ! in_bc_time(in_bc_samples), in_bc_pressure(in_bc_samples) end do close (94) else call s_mpi_abort("Customizes pressure acoustic
     ! BC requires input/pressureProfile.txt") end if
 
-    !     !$acc update device(in_bc_pressure, in_bc_time, in_bc_samples)
+    !     $:GPU_UPDATE(device='[in_bc_pressure, in_bc_time, in_bc_samples]')
 
     ! end subroutine s_read_txt_input_acoustic
 

@@ -670,7 +670,7 @@ FEATURE_META = {
     "riemann_solver": {"title": "Riemann Solver", "category": "numerics"},
     "model_eqns": {"title": "Model Equations", "category": "fundamentals"},
     "num_fluids": {"title": "Number of Fluids", "category": "fundamentals"},
-    "hifu":{"title": "HIFU and mbHIFU", "category": "physics"},
+    "hifu": {"title": "HIFU and mbHIFU", "category": "physics"},
 }
 
 

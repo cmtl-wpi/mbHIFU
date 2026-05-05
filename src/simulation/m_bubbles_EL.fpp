@@ -1426,73 +1426,6 @@ contains
 
     end subroutine s_smear_voidfraction
 
-    ! !> The purpose of this procedure is obtain the pressure from the Eulerian field !! @param bub_id Particle identifier !! @param
-    ! q_prim_vf Primitive variables subroutine s_white_noise_constants(bub_id, l_c, q_prim_vf, cell, TzPcell, noise_constant, dk)
-    ! #ifdef _CRAYFTN !DIR$ INLINEALWAYS s_white_noise_constants #else !$acc routine seq #endif integer, intent(in) :: bub_id
-    ! real(wp), intent(in) :: l_c type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf integer, dimension(3), intent(in)
-    ! :: cell real(wp), intent(out) :: TzPcell, noise_constant, dk
-
-    ! real(wp) :: vol real(wp) :: denom real(wp) :: charvol, charpres, charvol2, charpres2, charbeta real(wp) :: charpres_sqrd,
-    ! charpres2_sqrd, cell_count, c_t real(wp) :: chardist, k integer, dimension(3) :: cellaux integer :: i, j integer :: smearGrid
-    ! logical :: celloutside
-
-    ! if (lag_params%cluster_type == 2) then ! Stochastic closure from Maeda and Colonius (2018) ! Only valid for 2D reduced model
-
-    ! ! Conditions: if (lag_params%smooth_type /= 1) stop "lag_params%cluster_type: 2 requires lag_params%smooth_type: 1."
-
-    ! ! Include the cell that contains the bubble (mapCells+1+mapCells) ! Assume that the bubble radius is always smaller than the
-    ! characteristic cell size.
-
-    !             smearGrid = mapCells - (-mapCells)
-
-    ! vol = 0._wp charvol = 0._wp charpres = 0._wp charpres_sqrd = 0._wp charvol2 = 0._wp charpres2 = 0._wp charpres2_sqrd = 0._wp
-    ! cell_count = 0._wp
-
-    ! $:GPU_LOOP(parallelism='[seq]') do i = 0, smearGrid $:GPU_LOOP(parallelism='[seq]') do j = 0, smearGrid cellaux(1) = cell(1) +
-    ! i - mapCells cellaux(2) = cell(2) + j - mapCells cellaux(3) = 0
-
-    ! !< check if the current cell is outside the computational domain or not (including ghost cells) celloutside = .false. if
-    ! ((cellaux(1) < -buff_size) .or. (cellaux(2) < -buff_size)) then celloutside = .true. end if if ((cellaux(2) > n + buff_size)
-    ! .or. (cellaux(1) > m + buff_size)) then celloutside = .true. end if if (.not. celloutside .and. cyl_coord) then if (cellaux(2)
-    ! < 0) celloutside = .true. end if
-
-    ! if (.not. celloutside) then !< Obtaining the cell volulme if (cyl_coord) then vol =
-    ! dx(cellaux(1))*dy(cellaux(2))*y_cc(cellaux(2))*2._wp*pi else vol = dx(cellaux(1))*dy(cellaux(2))*lag_params%charwidth end if
-    ! !< Update values cell_count = cell_count + 1._wp charvol = charvol + vol charpres = charpres +
-    ! vol*q_prim_vf(eqn_idx%E)%sf(cellaux(1), cellaux(2), cellaux(3)) charpres_sqrd = charpres_sqrd +
-    ! vol*(q_prim_vf(eqn_idx%E)%sf(cellaux(1), cellaux(2), cellaux(3)))**2._wp charvol2 = charvol2 + vol*q_beta%vf(1)%sf(cellaux(1),
-    ! cellaux(2), cellaux(3)) charpres2 = charpres2 + vol*q_prim_vf(eqn_idx%E)%sf(cellaux(1), cellaux(2), cellaux(3)) &
-    ! *q_beta%vf(1)%sf(cellaux(1), cellaux(2), cellaux(3)) charpres2_sqrd = charpres2_sqrd + vol*(q_beta%vf(1)%sf(cellaux(1),
-    ! cellaux(2), cellaux(3)) & *q_prim_vf(eqn_idx%E)%sf(cellaux(1), cellaux(2), cellaux(3)))**2._wp end if end do end do
-
-    ! TzPcell = charpres2/charvol2 noise_constant = 0._wp
-
-    ! if (lag_params%pressure_corrector) then ! find noise_constant: C_A
-
-    ! if (cyl_coord) then c_t = ceiling(2._wp*pi*y_cc(cell(2))/(y_cb(cell(2)) - y_cb(cell(2) - 1))) else c_t =
-    ! ceiling(lag_params%charwidth/(y_cb(cell(2)) - y_cb(cell(2) - 1))) end if c_t = c_t / cell_count
-
-    ! chardist = sqrt(dx(cell(1))*dy(cell(2))) dk = pi/(num_noise*chardist)
-
-    ! k = 0._wp denom = 0._wp $:GPU_LOOP(parallelism='[seq]') do i = 1, num_noise denom = denom + dk * exp(-0.5_wp*((2_wp*pi/k -
-    ! l_c)/(0.5_wp*l_c))**2._wp) k = k + dk end do
-
-    ! noise_constant = (0.5_wp*l_c) * sqrt(2._wp*pi) * c_t * ((charpres_sqrd/charvol)-(charpres/charvol)**2_wp) / denom
-    ! !noise_constant = (0.5_wp*l_c) * sqrt(2._wp*pi) * c_t * ((charpres2_sqrd/charvol2)-(charpres2/charvol2)**2_wp) / denom
-
-    ! !if (noise_constant == 0._wp) stop "noise_constant si zero. Exiting." if (lag_id(bub_id, 1) ==1) print*, noise_constant, c_t,
-    ! ((charpres_sqrd/charvol)-(charpres/charvol)**2_wp), ((charpres2_sqrd/charvol2)-(charpres2/charvol2)**2_wp)
-
-    ! !if (noise_constant <= 0._wp) noise_constant = 0._wp end if
-
-    !         else
-
-    !             stop "Check white noise. Exiting."
-
-    !         end if
-
-    !     end subroutine s_white_noise_constants
-
     subroutine s_calculate_scattered_pressure(q_prim_vf)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
@@ -1502,33 +1435,6 @@ contains
         real(wp)                                            :: preterm1, term2, aux, denom, c1, c2, myInt
         integer                                             :: bub_idx, total_ids
         integer                                             :: i, k
-
-        ! if (lag_params%interaction_model == 0) then !MFC for tests !$acc parallel loop gang vector default(present) private(k,
-        ! cell) do k = 1, nBubs ! Current bubble state myR0 = bub_R0(k) myR = intfc_rad(k, 2) myV = intfc_vel(k, 2) myPb = gas_p(k,
-        ! 2) myShell = mrmtnt_shell(k, 2) myRbuck = mrmtnt_Rbuck(k) myRrupt = mrmtnt_Rrupt(k) if (myR > myRrupt) myShell = 0._wp
-
-        ! ! Calculate velocity potentials (valid for one bubble per cell) call s_get_pinf(k, q_prim_vf, 2, Pcell, cell, preterm1,
-        ! term2, Rcell)
-
-        ! ! Obtain liquid density and computing speed of sound from myPinf myRho = 0._wp $:GPU_LOOP(parallelism='[seq]') do i = 1,
-        ! num_fluids myRho = myRho + q_prim_vf(i)%sf(cell(1), cell(2), cell(3)) end do
-
-        ! aux = Rcell**3._wp - myR**3._wp c2 = (3._wp/2._wp)*(myR**3._wp)*(1._wp - myR/Rcell)/aux c1 =
-        ! 3._wp/2._wp*(myR*(Rcell**2._wp - myR**2._wp))/aux
-
-        ! Pw = f_cpbw_KM(myR0, myR, myV, myPb, myShell, myRbuck) Pw = Pw + 0.5_wp*myV**2._wp bub_dphidt(k) = (Pcell - Pw) +
-        ! c2*myV**2._wp ! Accounting for the potential induced by the bubble averaged over the control volume ! Note that this is
-        ! based on the incompressible flow assumption near the bubble. bub_dphidt(k) = bub_dphidt(k)/(1._wp - c1)
-
-        ! ! Scattered pressure myPout = c1*bub_dphidt(k) + c2*myV**2._wp
-
-        ! !Update emitted Pout bub_interact(k) = myPout print*, 'myPout matching:', myPout, bub_dphidt(k), mytime
-
-        !     end do
-
-        ! end if
-
-        ! if (any(lag_params%interaction_model == (/1, 3/)) .and. p > 0 .and. .not. adap_dt) then !Kazuki's model (DV version)
 
         if (any(lag_params%interaction_model == (/1, 3/))) then  ! Kazuki's model (DV version)
             $:GPU_PARALLEL_LOOP(private='[k, cell]')
@@ -2855,38 +2761,13 @@ contains
 
     ! subroutine s_free_memory_stg3()
 
-    !     @:DEALLOCATE(Rmax_stats)
-    !     @:DEALLOCATE(Rmin_stats)
-    !     @:DEALLOCATE(gas_mg)
-    !     @:DEALLOCATE(gas_betaT)
-    !     @:DEALLOCATE(gas_betaC)
-    !     @:DEALLOCATE(bub_dphidt)
-    !     @:DEALLOCATE(gas_p)
-    !     @:DEALLOCATE(gas_mv)
-    !     @:DEALLOCATE(intfc_ac)
-    !     @:DEALLOCATE(mtn_vel)
-    !     @:DEALLOCATE(intfc_draddt)
-    !     @:DEALLOCATE(intfc_dveldt)
-    !     @:DEALLOCATE(gas_dpdt)
-    !     @:DEALLOCATE(gas_dmvdt)
-    !     @:DEALLOCATE(mtn_dposdt)
-    !     @:DEALLOCATE(mtn_dveldt)
-    !     ! Marmotant model
-    !     @:DEALLOCATE(mrmtnt_shell)
-    !     @:DEALLOCATE(mrmtnt_Rbuck)
-    !     @:DEALLOCATE(mrmtnt_Rrupt)
-    !     ! bubble interaction
-    !     @:DEALLOCATE(bub_interact)
-    !     if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2, 3/))) then
-    !         @:DEALLOCATE(bub_int_ids)
-    !     end if
-    !     !@:DEALLOCATE(bub_lambda_c)
-    !     if (hifu_params%moments) then
-    !         @:DEALLOCATE(moments_bubs)
-    !     end if
-    !     if (hifu_params%power_balance) then
-    !         @:DEALLOCATE(acPw_bubs)
-    !     end if
+    ! @:DEALLOCATE(Rmax_stats) @:DEALLOCATE(Rmin_stats) @:DEALLOCATE(gas_mg) @:DEALLOCATE(gas_betaT) @:DEALLOCATE(gas_betaC)
+    ! @:DEALLOCATE(bub_dphidt) @:DEALLOCATE(gas_p) @:DEALLOCATE(gas_mv) @:DEALLOCATE(intfc_ac) @:DEALLOCATE(mtn_vel)
+    ! @:DEALLOCATE(intfc_draddt) @:DEALLOCATE(intfc_dveldt) @:DEALLOCATE(gas_dpdt) @:DEALLOCATE(gas_dmvdt) @:DEALLOCATE(mtn_dposdt)
+    ! @:DEALLOCATE(mtn_dveldt) ! Marmotant model @:DEALLOCATE(mrmtnt_shell) @:DEALLOCATE(mrmtnt_Rbuck) @:DEALLOCATE(mrmtnt_Rrupt) !
+    ! bubble interaction @:DEALLOCATE(bub_interact) if (lag_params%pressure_corrector .and. any(lag_params%interaction_model == (/2,
+    ! 3/))) then @:DEALLOCATE(bub_int_ids) end if !@:DEALLOCATE(bub_lambda_c) if (hifu_params%moments) then
+    ! @:DEALLOCATE(moments_bubs) end if if (hifu_params%power_balance) then @:DEALLOCATE(acPw_bubs) end if
 
     ! end subroutine s_free_memory_stg3
 

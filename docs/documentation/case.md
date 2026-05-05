@@ -679,6 +679,8 @@ To restart the simulation from $k$-th time step, see @ref running "Restarting Ca
 | `lag_mg_wrt`            | Logical | Add the bubble gas mass to the database file |
 | `lag_betaT_wrt`         | Logical | Add the bubble heat flux model coefficient to the database file |
 | `lag_betaC_wrt`         | Logical | Add the bubble mass flux model coefficient to the database file |
+| `lag_mrmtnt_wrt`        | Logical | Add the bubble shell presence |
+| `lag_hifu_wrt`          | Logical | Add the bubble viscous and thermal damping heat sources |
 
 The table lists formatted database output parameters. The parameters define variables that are outputted from simulation and file types and formats of data as well as options for post-processing.
 
@@ -1090,6 +1092,12 @@ This boundary condition can be used for fixed-temperature (isothermal) walls at 
 | `nv_uvm_igr_temps_on_gpu` | Integer | Store IGR temporaries on GPU with UVM                    |
 
 - These parameters are for NVIDIA Grace-Hopper and similar architectures with hardware-managed unified memory. They allow MFC to run problems larger than GPU memory by paging data between host and device.
+
+### 20. HIFU
+
+| Parameter                  | Type    | Description                                              |
+| ---:                       | :---:   | :---                                                     |
+| `hifu`                     | Logical | Enable High-intensity focused ultrasound solver |
 
 ## Enumerations
 

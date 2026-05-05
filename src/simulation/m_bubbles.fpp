@@ -401,42 +401,6 @@ contains
 
     end function f_pout
 
-    ! function f_pres_stochastic(fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson)!, fPhase_rn) !$acc routine seq
-    ! real(wp), intent(in) :: fTzPcell, fnoise_constant, flambda_c, fdk, floc, ftime, fCson !real(wp), dimension(num_noise),
-    ! intent(in) :: fPhase_rn
-
-    ! real(wp) :: f_pres_stochastic real(wp) :: constant_term, k, angFreq, rndPhase, A_k_sqrd integer :: i
-
-    !     f_pres_stochastic = 0._wp
-
-    !     constant_term = (fnoise_constant/(0.5_wp*flambda_c*sqrt(2_wp*pi)))
-
-    !     if (constant_term <= 0._wp) return ! Avoid complex numbers when taking squared root of negative A_k_sqrd
-
-    ! k = 0._wp do i = 1, num_noise rndPhase = f_random_normal(0.5_wp*pi, lag_params%pnoise_dev, 0._wp, 2._wp*pi) ! mean, dev, min,
-    ! max A_k_sqrd = constant_term * exp(-0.5_wp*((2._wp*pi/k - flambda_c)/(0.5_wp*flambda_c))**2._wp) f_pres_stochastic =
-    ! f_pres_stochastic + sqrt(A_k_sqrd) * fdk * cos(k*floc - k*fCson*ftime + rndPhase)!+ fPhase_rn(i)) if (f_pres_stochastic /=
-    ! f_pres_stochastic) then print*, i, k, A_k_sqrd, sqrt(A_k_sqrd), f_pres_stochastic stop "f_pres_stochastic is NaN" end if k = k
-    ! + fdk end do
-
-    ! end function f_pres_stochastic
-
-    ! function f_random_normal(fmean, fdev, fmin, fmax) !$acc routine seq real(wp), intent(in) :: fmean, fdev, fmin, fmax
-
-    ! real(wp) :: f_random_normal real(wp) :: num_rn1, num_rn2
-
-    !     do while (.true.)
-
-    ! call random_number(num_rn1) num_rn1 = 1._wp - num_rn1 call random_number(num_rn2) num_rn2 = 1._wp - num_rn2
-
-    !         f_random_normal = fdev*sqrt(-2._wp*log(num_rn1))*cos(2._wp*pi*num_rn2) + fmean
-
-    !         if (f_random_normal >= fmin .and. f_random_normal <= fmax) exit
-
-    !     end do
-
-    ! end function f_random_normal
-
     !> Adaptive time stepping routine for subgrid bubbles (See Heirer, E. Hairer S.P.Norsett G. Wanner, Solving Ordinary
     !! Differential Equations I, Chapter II.4)
     subroutine s_advance_step(fRho, fP, fR, fV, fR0, fpb, fpbdot, alf, fntait, fBtait, f_bub_adv_src, f_divu, bub_id, fmass_v, &

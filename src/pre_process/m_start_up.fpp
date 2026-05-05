@@ -537,16 +537,16 @@ contains
 
         real(wp) :: tbprint1, tbprint2, glbVal, tempVal
 
-        if (proc_rank == 0) print *, '=========== x-dir'
+        if (proc_rank == 0) print *, 'Grid stats in the x-dir:'
         call s_print_direction(m)
 
         if (n > 0) then
-            if (proc_rank == 0) print *, '=========== y-dir'
+            if (proc_rank == 0) print *, 'Grid stats in the y-dir:'
             call s_print_direction(n)
         end if
 
         if (p > 0) then
-            if (proc_rank == 0) print *, '=========== z-dir'
+            if (proc_rank == 0) print *, 'Grid stats in the z-dir:'
             call s_print_direction(p)
         end if
 

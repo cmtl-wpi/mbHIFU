@@ -146,10 +146,9 @@ t_step_stop_source = int(t_stop_hifu_source * (c0 / x0) / round(dt_heat * c0 / x
 print(
     json.dumps(
         {
-            # Logistics ================================================
+            # Logistics
             "run_time_info": "T",
-            # ==========================================================
-            # Computational Domain Parameters ==========================
+            # Computational Domain Parameters
             "cyl_coord": "F",
             "x_domain%beg": xb / x0,
             "x_domain%end": xe / x0,
@@ -176,9 +175,8 @@ print(
             "n_start": 0,  # ADAPTIVE ### also modify stg1, stg2 or stg3 flags
             "t_save": t_save_hyd * (c0 / x0),  # Always stg1
             "t_stop": t_stop_stg1 * (c0 / x0),  # Always stg1
-            # ==========================================================
-            # Simulation Algorithm Parameters ==========================
-            "num_fluids": 1,  # Water/Phantom/BubbleGas
+            # Simulation Algorithm Parameters
+            "num_fluids": 1,  # Water
             "num_patches": 1,
             "viscous": "T",
             "model_eqns": 2,  # 5 model eqns
@@ -198,8 +196,7 @@ print(
             "bc_y%end": -6,
             "bc_z%beg": -6,
             "bc_z%end": -6,
-            # ==========================================================
-            # Acoustic source (bc == -20)===============================
+            # Acoustic source (bc == -20)
             "acoustic_bc_params%iwave": 2,  # transducer
             "acoustic_bc_params%ncycles": int(1e6),
             "acoustic_bc_params%Pbase": patm / p0,
@@ -210,8 +207,7 @@ print(
             "acoustic_bc_params%focLen": focLen / x0,
             "acoustic_bc_params%focCal": 3.3e-3 / x0,  # add calibration parameter bulb1: 3.3 mm -> focLen + focCal
             "acoustic_bc_params%apert": aperture / x0,
-            # ==========================================================
-            # HIFU parameters ==========================================
+            # HIFU parameters
             "hifu": "T",
             "hifu_params%atmPres": patm / p0,
             "hifu_params%Tref": T_host / T0,
@@ -258,8 +254,7 @@ print(
             "hifu_params%t_step_save_stg3": t_step_save_heat,
             "hifu_params%t_step_stop_stg3": t_step_stop_stg3,
             "hifu_params%stepStopSource": t_step_stop_source,
-            # ==========================================================
-            # Lagrangian Bubbles ===========================
+            # Lagrangian Bubbles
             "bubbles_lagrange": "T",
             "bubble_model": 2,  # Keller-Miksis model
             "thermal": 3,
@@ -278,8 +273,7 @@ print(
             "lag_params%valmaxvoid": 0.9,
             "lag_params%write_bubbles": "T",
             "lag_params%write_bubbles_stats": "F",
-            # ==========================================================
-            # Bubble parameters ===========================
+            # Bubble parameters
             "bub_pp%R0ref": x0 / x0,
             "bub_pp%p0ref": p0 / p0,
             "bub_pp%rho0ref": rho0 / rho0,
@@ -299,8 +293,7 @@ print(
             "bub_pp%M_g": MW_g,
             "bub_pp%R_v": (R_uni / MW_v) * (T0 / (c0 * c0)),
             "bub_pp%R_g": (R_uni / MW_g) * (T0 / (c0 * c0)),
-            # ==========================================================
-            # Formatted Database Files Structure Parameters ============
+            # Formatted Database Files Structure Parameters
             "format": 1,
             "precision": 2,
             "prim_vars_wrt": "T",
@@ -316,8 +309,7 @@ print(
             # 'probe(3)%x'                   : (1.e-3)/x0,
             # 'probe(3)%y'                   : 0.,
             # 'probe(3)%z'                   : 0.,
-            # ==========================================================
-            # Patch 2: EMP (only) ====================================
+            # Patch 2: EMP (only)
             "patch_icpp(1)%geometry": 9,
             "patch_icpp(1)%x_centroid": 0.5 * (xe + xb) / x0,
             "patch_icpp(1)%y_centroid": 0.5 * (ye + yb) / x0,
@@ -330,61 +322,8 @@ print(
             "patch_icpp(1)%vel(3)": 0.0,
             "patch_icpp(1)%pres": patm / p0,
             "patch_icpp(1)%alpha_rho(1)": rho_host / rho0,
-            # 'patch_icpp(1)%alpha_rho(2)'   : 0.,
             "patch_icpp(1)%alpha(1)": 1.0,
-            # 'patch_icpp(1)%alpha(2)'       : 0.,
-            # ==========================================================
-            # # Patch 1: Water (left) ====================================
-            # 'patch_icpp(1)%geometry'       : 9,
-            # 'patch_icpp(1)%x_centroid'     : 0.5*(xe+xb)/x0,
-            # 'patch_icpp(1)%y_centroid'     : 0.5*(ye+yb)/x0,
-            # 'patch_icpp(1)%z_centroid'     : 0.5*(ze+zb)/x0,
-            # 'patch_icpp(1)%length_x'       : 4*(xe-xb)/x0,
-            # 'patch_icpp(1)%length_y'       : 4*(ye-yb)/x0,
-            # 'patch_icpp(1)%length_z'       : 4*(ze-zb)/x0,
-            # 'patch_icpp(1)%vel(1)'         : 0.,
-            # 'patch_icpp(1)%vel(2)'         : 0.,
-            # 'patch_icpp(1)%vel(3)'         : 0.,
-            # 'patch_icpp(1)%pres'           : patm/p0,
-            # 'patch_icpp(1)%alpha_rho(1)'   : rho_water/rho0,
-            # 'patch_icpp(1)%alpha_rho(2)'   : 0.,
-            # 'patch_icpp(1)%alpha_rho(3)'   : 0.,
-            # 'patch_icpp(1)%alpha(1)'       : 1.,
-            # 'patch_icpp(1)%alpha(2)'       : 0.,
-            # 'patch_icpp(1)%alpha(3)'       : 0.,
-            # # ==========================================================
-            # # Patch 2: EMP (right) ====================================
-            # 'patch_icpp(2)%geometry'        : 11,
-            # 'patch_icpp(2)%alter_patch(1)'  : 'T',
-            # 'patch_icpp(2)%smoothen'        : 'T',
-            # 'patch_icpp(2)%smooth_patch_id' : 1,
-            # 'patch_icpp(2)%smooth_coeff'    : 0.4,
-            # 'patch_icpp(2)%x_centroid'      : 2.e-3/x0,
-            # 'patch_icpp(2)%y_centroid'      : 1.e-3/x0,
-            # 'patch_icpp(2)%z_centroid'      : 1.e-3/x0,
-            # 'patch_icpp(2)%normal(1)'       : 1.0,
-            # 'patch_icpp(2)%normal(2)'       : 0.0,
-            # 'patch_icpp(2)%normal(3)'       : 0.0,
-            # 'patch_icpp(2)%vel(1)'          : 0.,
-            # 'patch_icpp(2)%vel(2)'          : 0.,
-            # 'patch_icpp(2)%vel(3)'          : 0.,
-            # 'patch_icpp(2)%pres'            : patm/p0,
-            # 'patch_icpp(2)%alpha_rho(1)'    : 0.,
-            # 'patch_icpp(2)%alpha_rho(2)'    : rho_host/rho0,
-            # 'patch_icpp(2)%alpha_rho(3)'    : 0.,
-            # 'patch_icpp(2)%alpha(1)'        : 0.,
-            # 'patch_icpp(2)%alpha(2)'        : 1.,
-            # 'patch_icpp(2)%alpha(3)'        : 0.,
-            # # ==========================================================
-            # Fluids Physical Parameters ===============================
-            # Water
-            # 'fluid_pp(1)%gamma'            : 1.0/(gamma_water-1.0),
-            # 'fluid_pp(1)%pi_inf'           : gamma_water*(pi_inf_water/p0)/(gamma_water-1.0),
-            # 'fluid_pp(1)%Re(1)'            : 1.0/(mu_water/(rho0*c0*x0)),
-            # 'fluid_pp(1)%Re(2)'            : 1.0/(3*mu_water/(rho0*c0*x0)),
-            # 'fluid_pp(1)%rho_cp'           : (rho_water/rho0)*(cp_water*(T0/(c0*c0))),
-            # 'fluid_pp(1)%tdiff'            : tdiff_water/(x0*c0),
-            # 'fluid_pp(1)%absCoef'          : abs_coef_water*x0,
+            # Fluids Physical Parameters
             # EMP (host medium)
             "fluid_pp(1)%gamma": 1.0 / (gamma_host - 1.0),
             "fluid_pp(1)%pi_inf": gamma_host * (pi_inf_host / p0) / (gamma_host - 1.0),
@@ -393,25 +332,6 @@ print(
             "fluid_pp(1)%rho_cp": (rho_host / rho0) * (cp_host * (T0 / (c0 * c0))),
             "fluid_pp(1)%tdiff": tdiff_host / (x0 * c0),
             "fluid_pp(1)%absCoef": abs_coef_host * x0,
-            # 'fluid_pp(1)%mul0'             : mu_host,
-            # 'fluid_pp(1)%ss'               : sigBubble,
-            # 'fluid_pp(1)%pv'               : pv,
-            # 'fluid_pp(1)%gamma_v'          : gamma_v,
-            # 'fluid_pp(1)%M_v'              : MW_v,
-            # 'fluid_pp(1)%k_v'              : k_v,
-            # 'fluid_pp(1)%cp_v'             : cp_v,
-            # Bubble gas state
-            # 'fluid_pp(2)%gamma'            : 1./(gamma_g-1.),
-            # 'fluid_pp(2)%pi_inf'           : 0.0E+00,
-            # 'fluid_pp(2)%Re(1)'            : 1.0/(mu_g/(rho0*c0*x0)),
-            # 'fluid_pp(2)%Re(2)'            : 1.0/(mu_g/(rho0*c0*x0)),
-            # 'fluid_pp(2)%gamma_v'          : gamma_g,
-            # 'fluid_pp(2)%M_v'              : MW_g,
-            # 'fluid_pp(2)%k_v'              : k_g,
-            # 'fluid_pp(2)%cp_v'             : cp_g,
-            # ==========================================================
         }
     )
 )
-
-# ==============================================================================

@@ -984,6 +984,8 @@ def _load():
         "lag_mg_wrt",
         "lag_betaT_wrt",
         "lag_betaC_wrt",
+        "lag_mrmtnt_wrt",
+        "lag_hifu_wrt",
     ]:
         _r(v, LOG, {"bubbles", "output"})
 
@@ -1297,19 +1299,39 @@ def _load():
     # lag_params (Lagrangian bubbles)
     for a in ["heatTransfer_model", "massTransfer_model", "pressure_corrector", "write_bubbles", "write_bubbles_stats", "coatedBub_model"]:
         _r(f"lag_params%{a}", LOG, {"bubbles"})
-    for a in ["solver_approach", "cluster_type", "smooth_type", "nBubs_glb",
-              "interaction_model"]:
+    for a in ["solver_approach", "cluster_type", "smooth_type", "nBubs_glb", "interaction_model"]:
         _r(f"lag_params%{a}", INT, {"bubbles"})
     for a in ["epsilonb", "valmaxvoid", "charwidth", "c0", "rho0", "T0", "x0", "Thost"]:
         _r(f"lag_params%{a}", REAL, {"bubbles"})
 
     # hifu_params
-    for a in ["sampling", "heatSolver", "intPrms", "streaming", "automatic_stages", "stg1", "stg2", "stg3", "stg3_3d", "cartesian", "moments","power_balance"]:
+    for a in ["sampling", "heatSolver", "intPrms", "streaming", "automatic_stages", "stg1", "stg2", "stg3", "stg3_3d", "cartesian", "moments", "power_balance"]:
         _r(f"hifu_params%{a}", LOG, {"hifu"})
     for a in ["stepStopSource", "t_step_stop_stg1", "t_step_stop_stg2", "t_step_stop_stg3", "t_step_save_stg3", "p_cyl", "m", "n", "p"]:
         _r(f"hifu_params%{a}", INT, {"hifu"})
-    for a in ["Tref", "K", "alpha", "atmPres", "absCoef", "t_stop_stg1", "t_stop_stg2", "dt_stg2", "dt_stg3", "z_max", "xb", "xe", "ye", "cfl_stg3", "R_cloud",
-              "cv_xb", "cv_xe", "cv_yb", "cv_ye", "cv_zb", "cv_ze"]:
+    for a in [
+        "Tref",
+        "K",
+        "alpha",
+        "atmPres",
+        "absCoef",
+        "t_stop_stg1",
+        "t_stop_stg2",
+        "dt_stg2",
+        "dt_stg3",
+        "z_max",
+        "xb",
+        "xe",
+        "ye",
+        "cfl_stg3",
+        "R_cloud",
+        "cv_xb",
+        "cv_xe",
+        "cv_yb",
+        "cv_ye",
+        "cv_zb",
+        "cv_ze",
+    ]:
         _r(f"hifu_params%{a}", REAL, {"hifu"})
     for d in range(1, 4):
         _r(f"hifu_params%cloud_center({d})", REAL, {"hifu"})

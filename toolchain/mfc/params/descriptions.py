@@ -109,7 +109,6 @@ DESCRIPTIONS = {
     "hyper_cleaning_tau": "Damping time constant for hyperbolic divergence cleaning",
     "relativity": "Enable special relativity",
     "hifu": "Enable HIFU and mbHIFU physics",
-
     # Output
     "run_time_info": "Output run-time information",
     "prim_vars_wrt": "Write primitive variables",
@@ -252,6 +251,8 @@ DESCRIPTIONS = {
     "lag_mg_wrt": "Write bubble gas mass",
     "lag_betaT_wrt": "Write bubble heat transfer coefficient",
     "lag_betaC_wrt": "Write bubble mass transfer coefficient",
+    "lag_mrmtnt_wrt": "Write bubble lipid shell",
+    "lag_hifu_wrt": "Write bubble viscous and thermal heat sources",
     "coefficient_of_restitution": "Real number describing the elasticity of collisions from 0 (perfectly ineleastic) to 1 (perfectly elastic)",
     "collision_model": "Integer selecting the collision model being used. 0 for no collision. 1 for soft-sphere collisions",
     "collision_time": "Amount of simulation time each collision will take to resolve",
@@ -469,6 +470,8 @@ PATTERNS = [
     (r"lag_dphidt_wrt", "Write Lagrangian void fraction time derivative"),
     (r"lag_betaT_wrt", "Write Lagrangian thermal beta coefficient"),
     (r"lag_betaC_wrt", "Write Lagrangian concentration beta coefficient"),
+    (r"lag_mrmtnt_wrt", "Write bubble lipid shell"),
+    (r"lag_hifu_wrt", "Write bubble viscous and thermal heat sources"),
     (r"lag_id_wrt", "Write Lagrangian bubble ID"),
     (r"lag_txt_wrt", "Write Lagrangian data to text files"),
     (r"lag_(\w+)_wrt", "Write Lagrangian {0} field"),

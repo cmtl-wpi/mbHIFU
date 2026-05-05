@@ -273,9 +273,9 @@ _FALLBACK_PARAMS = {
         "z_a",
         "z_b",
         "z_domain",
-        'hifu',
-        'hifu_params',
-        'acoustic_bc_params',
+        "hifu",
+        "hifu_params",
+        "acoustic_bc_params",
     },
     "post_process": {
         "Bx0",
@@ -325,6 +325,8 @@ _FALLBACK_PARAMS = {
         "ib_state_wrt",
         "igr",
         "igr_order",
+        "lag_mrmtnt_wrt",
+        "lag_hifu_wrt",
         "lag_betaC_wrt",
         "lag_betaT_wrt",
         "lag_db_wrt",
@@ -395,8 +397,8 @@ _FALLBACK_PARAMS = {
         "x_output",
         "y_output",
         "z_output",
-        'hifu',
-        'hifu_params',
+        "hifu",
+        "hifu_params",
     },
 }
 

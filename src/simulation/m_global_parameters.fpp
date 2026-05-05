@@ -490,8 +490,8 @@ module m_global_parameters
     real(wp), target, allocatable, dimension(:) :: x_cb_hf, y_cb_hf, z_cb_hf
     real(wp), target, allocatable, dimension(:) :: x_cc_hf, y_cc_hf, z_cc_hf
     real(wp), target, allocatable, dimension(:) :: dx_hf, dy_hf, dz_hf
-    !$acc declare create(x_cb_hf, y_cb_hf, z_cb_hf, x_cc_hf, y_cc_hf, z_cc_hf, dx_hf, dy_hf, dz_hf, m_hf, n_hf, p_hf)
-    !$acc declare create(hifu, hifu_params, sys_size_hifu)
+    $:GPU_DECLARE(create='[x_cb_hf, y_cb_hf, z_cb_hf, x_cc_hf, y_cc_hf, z_cc_hf, dx_hf, dy_hf, dz_hf, m_hf, n_hf, p_hf]')
+    $:GPU_DECLARE(create='[hifu, hifu_params, sys_size_hifu]')
     !> @}
 
     !> @name Acoustic wave generator (boundary condition)
@@ -499,7 +499,7 @@ module m_global_parameters
     type(acoustic_bc_parameters)                :: acoustic_bc_params  !< Acoustic wave parameters
     real(wp), target, allocatable, dimension(:) :: in_bc_pressure, in_bc_time
     integer                                     :: in_bc_samples
-    !$acc declare create(acoustic_bc_params, in_bc_pressure, in_bc_time, in_bc_samples)
+    $:GPU_DECLARE(create='[acoustic_bc_params, in_bc_pressure, in_bc_time, in_bc_samples]')
     !> @}
 
 contains

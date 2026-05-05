@@ -865,10 +865,10 @@ contains
     ! Euler forward scheme for dT/dt
     subroutine s_time_stepper_heatEqn(t_step, time_avg)
 
-        integer, intent(in) :: t_step
+        integer, intent(in)     :: t_step
         real(wp), intent(inout) :: time_avg
-        integer             :: i, j, k, l, q  !< Generic loop iterator
-        real(wp)            :: abortFlag, temp_max, temp_min, val_tmp
+        integer                 :: i, j, k, l, q  !< Generic loop iterator
+        real(wp)                :: abortFlag, temp_max, temp_min, val_tmp
         real(wp)                :: start, finish
 
         call cpu_time(start)
@@ -891,14 +891,12 @@ contains
             do k = 0, n
                 do j = 0, m
                     ! Forward euler time scheme, explicit
-                    q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                                & l) + dt*rhs_vf(1)%sf(j,k,l)
+                    q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) + dt*rhs_vf(1)%sf(j, k, l)
                     ! Max and min
                     temp_max = max(temp_max, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
                     temp_min = min(temp_min, q_hifu%vf(hifu_params%T_idx)%sf(j, k, l))
 
                     if (temp_max > 15000._wp) abortFlag = abortFlag + 1._wp
-
                 end do
             end do
         end do

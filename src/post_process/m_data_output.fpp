@@ -832,7 +832,7 @@ contains
 
             do i = 1, file_tot_part
                 id = int(MPI_IO_DATA_lg_bubbles(i, 1))
-                inputvals(1:lag_io_vars) = MPI_IO_DATA_lg_bubbles(i,2:lag_io_vars+1)
+                inputvals(1:lag_io_vars) = MPI_IO_DATA_lg_bubbles(i,2:lag_io_vars + 1)
                 if (id > 0) then
                     write (29, '(100(A))', advance='no') ''
                     if (lag_id_wrt) write (29, '(I6, A)', advance='no') id, ', '
@@ -899,6 +899,7 @@ contains
         real(wp), dimension(:), allocatable             :: px, py, pz, ppx, ppy, ppz, vx, vy, vz
         real(wp), dimension(:), allocatable             :: radius, rvel, rnot, rmax, rmin, dphidt
         real(wp), dimension(:), allocatable             :: pressure, mv, mg, betaT, betaC
+        real(wp), dimension(:), allocatable             :: shell, avg_radius, avg_qvis, avg_qth
 
         dummy = 0._wp
         dummy_data = 0._wp
@@ -1031,7 +1032,6 @@ contains
             if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_radius', t_step, avg_radius, nBub)
             if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_qvis', t_step, avg_qvis, nBub)
             if (lag_hifu_wrt) call s_write_lag_variable_to_formatted_database_file('part_avg_qth', t_step, avg_qth, nBub)
-            
 
             deallocate (bub_id, px, py, pz, ppx, ppy, ppz, vx, vy, vz, radius, rvel, rnot, rmax, rmin, dphidt, pressure, mv, mg, &
                         & betaT, betaC, shell, avg_radius, avg_qvis, avg_qth)

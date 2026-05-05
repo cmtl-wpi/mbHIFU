@@ -7,18 +7,13 @@
 !> @brief The module contains the subroutines used to study HIFU
 module m_hifu
 
-    ! Dependencies ============================================================
     use m_derived_types         !< Definitions of the derived types
     use m_global_parameters     !< Definitions of the global parameters
     use m_mpi_proxy             !< Message passing interface (MPI) module proxy
     use m_variables_conversion  !< State variables type conversion procedures
-
-    ! use m_data_output
-
     use m_bubbles_EL
     use m_bubbles_EL_kernels
     use m_helper
-    ! ==========================================================================
 
     implicit none
 
@@ -67,7 +62,8 @@ contains
     end subroutine s_initialize_HIFU_module
 
     subroutine s_start_HIFU_indexes(stg)
-        integer, intent(in)  :: stg
+
+        integer, intent(in) :: stg
 
         if (stg == 2) then
             hifu_params%qac_idx = 1
@@ -76,7 +72,7 @@ contains
             hifu_params%P_idx = 4
         end if
 
-        if (stg == 3 ) then
+        if (stg == 3) then
             hifu_params%T_idx = 1
             hifu_params%qac_idx = 3
             hifu_params%qvis_idx = 4
@@ -91,6 +87,7 @@ contains
         integer :: i, j, k, l
 
         ! Zeroing all the hifu variables
+
         $:GPU_PARALLEL_LOOP(private='[i, j, k, l]', collapse=4)
         do l = 1, sys_size_hifu
             do k = idwbuff(3)%beg, idwbuff(3)%end
@@ -171,7 +168,6 @@ contains
             finaltime = t_step_stop*dt
 
             if (proc_rank == 0) print *, 'WARNING :: HIFU -> Stage 3 -> restarting'
-
         end if
 
     end subroutine s_restart_hifu_stages
@@ -200,14 +196,13 @@ contains
                 hifu_write_output = .true.
 
                 $:GPU_UPDATE(device='[hifu_params, dt]')
-                
+
                 exitFlag = .false.
                 return
-
             end if
         else
             if (t_step == hifu_params%t_step_stop_stg1 .and. .not. hifu_params%sampling) then
-                ! Define params to start stage 2 (Constant dt) Stg 2 uses the same dt as in stg 1
+                ! Define params to start stage 2 (constant dt) Stg 2 uses the same dt as in stg 1
                 if (.not. hifu_params%stg2) return
 
                 dt = hifu_params%dt_stg2
@@ -227,9 +222,9 @@ contains
         end if
 
         ! 2nd to 3rd stage
-        if ((cfl_dt .and. mytime >= hifu_params%t_stop_stg2 .and. .not. hifu_params%heatSolver) .or. &
-            & (.not. cfl_dt .and. t_step == hifu_params%t_step_stop_stg2 .and. .not. hifu_params%heatSolver)) then
-            ! Define params to start stage 3 (onstant dt only)
+        if ((cfl_dt .and. mytime >= hifu_params%t_stop_stg2 .and. .not. hifu_params%heatSolver) &
+            & .or. (.not. cfl_dt .and. t_step == hifu_params%t_step_stop_stg2 .and. .not. hifu_params%heatSolver)) then
+            ! Define params to start stage 3 (constant dt only)
             call s_close_run_time_information_samplingHIFU()
             if (.not. hifu_params%stg3) return
 
@@ -257,11 +252,9 @@ contains
             exitFlag = .false.
 
             $:GPU_UPDATE(device='[hifu_params, dt]')
-
         end if
 
     end subroutine s_HIFU_stages
-
 
     !> The purpose of this procedure is to take samples needed to calculate the time averaged heat sources. It calculates the
     !! generated heat source "q_us_ac", from the primary ultrasound source.
@@ -430,13 +423,10 @@ contains
 
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
-                        ! Update average velocities for streaming
-                        ! if (hifu_params%streaming) then
-                        !     q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, &
-                        !               & l) + vel_h(1)*hdid  ! Sampling x-vel
-                        !     q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, &
-                        !               & l) + vel_h(2)*hdid  ! Sampling y-vel
-                        ! end if
+                        ! Update average velocities for streaming if (hifu_params%streaming) then q_hifu%vf(hifu_params%u_idx)%sf(j,
+                        ! k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, & & l) + vel_h(1)*hdid ! Sampling x-vel
+                        ! q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, & & l) + vel_h(2)*hdid !
+                        ! Sampling y-vel end if
 
                         ! Intensity summation through the domain
                         sum_qac = sum_qac + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l)
@@ -588,13 +578,10 @@ contains
 
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
-                        ! Update average velocities for streaming
-                        ! if (hifu_params%streaming) then
-                        !     q_hifu%vf(hifu_params%u_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, &
-                        !               & l) + vel_h(1)*hdid  ! Sampling x-vel
-                        !     q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, &
-                        !               & l) + vel_h(2)*hdid  ! Sampling y-vel
-                        ! end if
+                        ! Update average velocities for streaming if (hifu_params%streaming) then q_hifu%vf(hifu_params%u_idx)%sf(j,
+                        ! k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, & & l) + vel_h(1)*hdid ! Sampling x-vel
+                        ! q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, & & l) + vel_h(2)*hdid !
+                        ! Sampling y-vel end if
 
                         ! Intensity summation through the domain
                         sum_qac = sum_qac + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l)
@@ -921,7 +908,7 @@ contains
         do i = 1, sys_size_hifu
             $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
         end do
-        sampledTime = q_hifu%vf(hifu_params%tsamp_idx)%sf(0,0,0)
+        sampledTime = q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0)
 
         if (f_approx_equal(sampledTime, 0._wp)) call s_mpi_abort("mbHF: time sampled is zero. Run stage 2.")
 
@@ -930,7 +917,7 @@ contains
             call s_mean_radius_hifu(sampledTime)
             hifu_params%qvis_idx = 1; hifu_params%qth_idx = hifu_params%qvis_idx + 1
             $:GPU_UPDATE(device='[hifu_params]')
-            
+
             $:GPU_PARALLEL_LOOP(private='[i, j, k]', collapse=3)
             do k = idwbuff(3)%beg, idwbuff(3)%end
                 do j = idwbuff(2)%beg, idwbuff(2)%end
@@ -972,26 +959,25 @@ contains
             abortFlag = 0._wp; CFL_heat_max = -100_wp
 
             $:GPU_PARALLEL_LOOP(private='[i, j, k, q_ac, q_vis, q_th, alpha, rho_cp, tdiff]', collapse=3, &
-                            & reduction='[[abortFlag], [CFL_heat_max]]', reductionOp='[+, MAX]', &
-                            & copy='[abortFlag, sampledTime, CFL_heat_max]')
+                                & reduction='[[abortFlag], [CFL_heat_max]]', reductionOp='[+, MAX]', copy='[abortFlag, &
+                                & sampledTime, CFL_heat_max]')
             do k = idwbuff(3)%beg, idwbuff(3)%end
                 do j = idwbuff(2)%beg, idwbuff(2)%end
                     do i = idwbuff(1)%beg, idwbuff(1)%end
+                        q_ac = q_hifu%vf(sys_size_hifu)%sf(i, j, k)/sampledTime
+                        q_vis = q_hifu%vf(1)%sf(i, j, k)/sampledTime
+                        q_th = q_hifu%vf(2)%sf(i, j, k)/sampledTime
 
-                        q_ac = q_hifu%vf(sys_size_hifu)%sf(i,j,k) / sampledTime
-                        q_vis = q_hifu%vf(1)%sf(i,j,k) / sampledTime
-                        q_th = q_hifu%vf(2)%sf(i,j,k) / sampledTime
-
-                        q_hifu%vf(hifu_params%qac_idx)%sf(i,j,k) = q_ac
-                        q_hifu%vf(hifu_params%qvis_idx)%sf(i,j,k) = q_vis
-                        q_hifu%vf(hifu_params%qth_idx)%sf(i,j,k) = q_th
-                        q_hifu%vf(hifu_params%T_idx)%sf(i,j,k) = hifu_params%Tref
+                        q_hifu%vf(hifu_params%qac_idx)%sf(i, j, k) = q_ac
+                        q_hifu%vf(hifu_params%qvis_idx)%sf(i, j, k) = q_vis
+                        q_hifu%vf(hifu_params%qth_idx)%sf(i, j, k) = q_th
+                        q_hifu%vf(hifu_params%T_idx)%sf(i, j, k) = hifu_params%Tref
 
                         !> Get thermal properties
                         rho_cp = 0._wp; tdiff = 0._wp
                         $:GPU_LOOP(parallelism='[seq]')
                         do l = 1, num_fluids
-                            alpha = q_cons_vf(eqn_idx%adv%beg + l - 1)%sf(i,j,k)
+                            alpha = q_cons_vf(eqn_idx%adv%beg + l - 1)%sf(i, j, k)
                             rho_cp = rho_cp + alpha*rho_cp_fluids(l)
                             tdiff = tdiff + alpha*tdiff_fluids(l)
                         end do
@@ -1000,11 +986,10 @@ contains
 
                         q_hifu%vf(hifu_params%T_idx + 1)%sf(i, j, k) = (q_ac + q_vis + q_th)/rho_cp
 
-                        CFL_heat = max(CFL_heat, tdiff*dt/(dx(i)**2_wp))
-                        CFL_heat = max(CFL_heat, tdiff*dt/(dy(j)**2_wp))
-                        if (p > 0) CFL_heat = max(CFL_heat, tdiff*dt/(dz(k)**2_wp))
+                        CFL_heat = max(CFL_heat, tdiff*dt/(dx(i)**2.0_wp))
+                        CFL_heat = max(CFL_heat, tdiff*dt/(dy(j)**2.0_wp))
+                        if (p > 0) CFL_heat = max(CFL_heat, tdiff*dt/(dz(k)**2.0_wp))
                         CFL_heat_max = max(CFL_heat_max, CFL_heat)
-                        
                     end do
                 end do
             end do
@@ -1026,7 +1011,6 @@ contains
             if (proc_rank == 0) print*, 'Max CFL:', CFL_heat_max
 
             if (abortFlag > 0._wp) call s_mpi_abort("mbHF: not defined thermal properties (rho_cp or tdiff)")
-
         end if
 
     end subroutine s_initialize_pure_3D
@@ -1176,36 +1160,33 @@ contains
         ! 3D cartesian (all stages)
         call s_populate_variables_buffers(bc_type, q_hifu%vf, pb, mv)
 
-        $:GPU_PARALLEL_LOOP(collapse=3, copyin='[hifu_on]', reduction='[[abortFlag]]', &
-                           & reductionOp='[+]', copy='[abortFlag]')
+        $:GPU_PARALLEL_LOOP(collapse=3, copyin='[hifu_on]', reduction='[[abortFlag]]', reductionOp='[+]', copy='[abortFlag]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
+                    rhs_vf(1)%sf(j, k, l) = 0._stp
 
-                    rhs_vf(1)%sf(j,k,l) = 0._stp
-
-                    !> Temperature derivatives at the cell center. METHOD: Second order centered difference
-                    !! approximation
-                    dTdx = (q_hifu%vf(hifu_params%T_idx)%sf(j+1,k,l) - q_hifu%vf(hifu_params%T_idx)%sf(j-1,k,l))/ &
-                                & (x_cc(j + 1) - x_cc(j - 1))
+                    !> Temperature derivatives at the cell center. METHOD: Second order centered difference approximation
+                    dTdx = (q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, &
+                            & l))/(x_cc(j + 1) - x_cc(j - 1))
                     dTdx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j - 2, k, &
-                                & l))/(x_cc(j) - x_cc(j - 2))
+                              & l))/(x_cc(j) - x_cc(j - 2))
                     dTdx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j + 2, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                                & l))/(x_cc(j + 2) - x_cc(j))
+                              & l))/(x_cc(j + 2) - x_cc(j))
 
                     dTdr = (q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, &
                             & l))/(y_cc(k + 1) - y_cc(k - 1))
                     dTdr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k - 2, &
-                                & l))/(y_cc(k) - y_cc(k - 2))
+                              & l))/(y_cc(k) - y_cc(k - 2))
                     dTdr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k + 2, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                                & l))/(y_cc(k + 2) - y_cc(k))
+                              & l))/(y_cc(k + 2) - y_cc(k))
 
                     dTdz = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l + 1) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
                             & l - 1))/(z_cc(l + 1) - z_cc(l - 1))
                     dTdz_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                                & l - 2))/(z_cc(l) - z_cc(l - 2))
+                              & l - 2))/(z_cc(l) - z_cc(l - 2))
                     dTdz_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l + 2) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                                & l))/(z_cc(l + 2) - z_cc(l))
+                              & l))/(z_cc(l + 2) - z_cc(l))
 
                     !> Find temperature derivatives at the faces of the cell
                     dTdx_L = (dTdx*(x_cc(j) - x_cb(j - 1)) + dTdx_L*(x_cb(j - 1) - x_cc(j - 1)))/(x_cc(j) - x_cc(j - 1))
@@ -1225,24 +1206,21 @@ contains
                     end do
 
                     !> Thermal diffusion
-                    rhs_vf(1)%sf(j,k,l) = rhs_vf(1)%sf(j,k,l) + tdiff*(&
-                                & (1._wp/dx(j))*(dTdx_R - dTdx_L) + &
-                                & (1._wp/dy(k))*(dTdr_R - dTdr_L) + &
-                                & (1._wp/dz(l))*(dTdz_R - dTdz_L))
+                    rhs_vf(1)%sf(j, k, l) = rhs_vf(1)%sf(j, k, &
+                           & l) + tdiff*((1._wp/dx(j))*(dTdx_R - dTdx_L) + (1._wp/dy(k))*(dTdr_R - dTdr_L) + (1._wp/dz(l)) &
+                           & *(dTdz_R - dTdz_L))
 
                     !> Adding the heat source terms avg(qac+qvis+qth)/rho_cp
-                    if (hifu_on) then 
-                        rhs_vf(1)%sf(j,k,l) = rhs_vf(1)%sf(j,k,l) + q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+                    if (hifu_on) then
+                        rhs_vf(1)%sf(j, k, l) = rhs_vf(1)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)
                     end if
 
                     ! Checking NaNs
-                    if (rhs_vf(1)%sf(j,k,l) /= rhs_vf(1)%sf(j,k,l)) abortFlag = abortFlag + 1._wp
-
+                    if (rhs_vf(1)%sf(j, k, l) /= rhs_vf(1)%sf(j, k, l)) abortFlag = abortFlag + 1._wp
                 end do
             end do
         end do
         $:END_GPU_PARALLEL_LOOP()
-
 
         if (num_procs > 1) then
             val_tmp = abortFlag
