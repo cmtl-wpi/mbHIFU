@@ -118,3 +118,5 @@ t-gpu nvhpc/24.3/m4bujn7 python/3.13.5/6anz4qy
 t-gpu CC=nvc CXX=nvc++ FC=nvfortran
 t-gpu MFC_CUDA_CC=80,86
 t-gpu MPI_HOME=/cm/shared/spack/opt/spack/linux-ubuntu20.04-x86_64/gcc-13.2.0/nvhpc-24.3-m4bujn7c3a4or53dloraad6pcqfxyqul/Linux_x86_64/24.3/comm_libs/openmpi/openmpi-3.1.5
+t-all TMPDIR=/scratch/$USER/tmp
+
