@@ -287,6 +287,7 @@ contains
         real(wp)                                            :: acPw, acPw_qac, acPw_cmprssv, acPw_kntc
         real(wp), dimension(1:6)                            :: acPw_in_dt, acPw_out_dt
         logical                                             :: flg_cell_in_cv
+        character(len=512)                                  :: line
 
         if (hifu_params%moments) mom_qac(1:4) = 0._wp
 
@@ -448,8 +449,11 @@ contains
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') mytime, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), sum_qac, &
-                & sum_qac_prms
+            if (proc_rank == 0) then
+                write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
+                       & sum_qac, sum_qac_prms
+                write (99, '(A)') trim(line)
+            end if
         else if (.not. cyl_coord .and. p > 0) then  ! Cartesian 3D
 #ifdef MFC_DEBUG
             if (proc_rank == 0) print*, 'Computing cartesian 3D acoustic damping', mytime, hdid
@@ -644,8 +648,11 @@ contains
 
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
-            if (proc_rank == 0) write (99, '(*(ES0.12,:,","))') mytime + dt, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
-                & sum_qac, sum_qac_prms
+            if (proc_rank == 0) then
+                write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, &
+                       & 0), sum_qac, sum_qac_prms
+                write (99, '(A)') trim(line)
+            end if
 
             if (hifu_params%moments) call s_write_moments(mom_qac, idx=0)
         else
@@ -676,6 +683,7 @@ contains
         real(wp), intent(in)                  :: hdid
         real(wp)                              :: var_glb
         integer                               :: i
+        character(len=512)                    :: line
 
         if (num_procs > 1) then
             do i = 1, 6
@@ -697,13 +705,17 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (92, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPw_in_dt(1), acPw_in_dt(2), acPw_in_dt(3), acPw_in_dt(4), &
-                   & acPw_in_dt(5), acPw_in_dt(6)
+            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, &
+                   & hdid, acPw_in_dt(1), acPw_in_dt(2), acPw_in_dt(3), acPw_in_dt(4), acPw_in_dt(5), acPw_in_dt(6)
+            write (92, '(A)') trim(line)
 
-            write (91, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPw_out_dt(1), acPw_out_dt(2), acPw_out_dt(3), acPw_out_dt(4), &
-                   & acPw_out_dt(5), acPw_out_dt(6)
+            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, &
+                   & hdid, acPw_out_dt(1), acPw_out_dt(2), acPw_out_dt(3), acPw_out_dt(4), acPw_out_dt(5), acPw_out_dt(6)
+            write (91, '(A)') trim(line)
 
-            write (90, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPw_qac, acPw_cmprssv, acPw_kntc
+            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, hdid, acPw_qac, acPw_cmprssv, &
+                   & acPw_kntc
+            write (90, '(A)') trim(line)
         end if
 
     end subroutine s_write_power_balance
@@ -866,6 +878,7 @@ contains
         integer, intent(in) :: save_count
         integer             :: j, k, l
         logical             :: axialCondition, radialCondition, condition
+        character(len=512)  :: line
 
         do l = 0, p
             do k = 0, n
@@ -880,11 +893,14 @@ contains
                     condition = (axialCondition .or. radialCondition)
                     if (condition) then
                         if (p > 0) then
-                            write (100, '(*(ES0.12,:,","))') mytime, x_cc(j), y_cc(k), z_cc(l), &
-                                   & q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
-                        else
-                            write (100, '(*(ES0.12,:,","))') mytime, x_cc(j), y_cc(k), q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
+                            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, x_cc(j), &
+                                   & y_cc(k), z_cc(l), q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
                                    & q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
+                            write (100, '(A)') trim(line)
+                        else
+                            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, x_cc(j), y_cc(k), &
+                                   & q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
+                            write (100, '(A)') trim(line)
                         end if
                     end if
                 end do
@@ -901,6 +917,7 @@ contains
         integer :: j, k, l, i
         integer :: qac_hs_idx
         real(wp) :: alpha, rho_cp, tdiff, q_ac, q_vis, q_th, abortFlag, CFL_heat, CFL_heat_max, val_tmp
+        character(len=512) :: line
 
         qac_hs_idx = hifu_params%qac_idx
         if (hifu_params%intPrms) qac_hs_idx = hifu_params%qac_prms_idx
@@ -949,7 +966,9 @@ contains
             call s_print_hifu_source_stats(hifu_params%qvis_idx, sum_val_qvis)
             call s_print_hifu_source_stats(hifu_params%qth_idx, sum_val_qth)
             if (proc_rank == 0) then
-                write (98, '(*(ES0.12,:,","))') sampledTime, 0._wp, 0._wp, 0._wp, 0._wp, sum_val_qvis, sum_val_qth
+                write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') sampledTime, 0._wp, &
+                       & 0._wp, 0._wp, 0._wp, sum_val_qvis, sum_val_qth
+                write (98, '(A)') trim(line)
                 close (98)
             end if
 
@@ -1073,6 +1092,7 @@ contains
         integer                              :: i, j, k, l
         logical                              :: file_exist
         character(LEN=path_len + 2*name_len) :: file_loc
+        character(len=512)                   :: line
 
         total_heat = 0._wp
         heat_moment1 = 0._wp
@@ -1123,10 +1143,9 @@ contains
 
         if (proc_rank == 0) then
             open (11, FILE=trim(file_loc), form='formatted', position='append')
-
-            write (11, '(*(ES0.12,:,","))') sampledTime, heat_moment1/total_heat, heat_moment2/total_heat, &
-                   & heat_moment3/total_heat, total_heat
-
+            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') sampledTime, heat_moment1/total_heat, &
+                   & heat_moment2/total_heat, heat_moment3/total_heat, total_heat
+            write (11, '(A)') trim(line)
             close (11)
         end if
 

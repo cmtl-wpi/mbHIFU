@@ -1192,6 +1192,7 @@ contains
 
         real(wp), intent(inout) :: sum_qvis, sum_qth
         real(wp)                :: var_glb, sum_nBubs
+        character(len=512)      :: line
 
         sum_nBubs = nBubs*1._wp
 
@@ -1207,7 +1208,9 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (98, '(*(ES0.12,:,","))') mytime + dt, dt, sum_qvis, sum_qth, sum_nBubs, 0._wp, 0._wp
+            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, dt, sum_qvis, &
+                   & sum_qth, sum_nBubs, 0._wp, 0._wp
+            write (98, '(A)') trim(line)
         end if
 
     end subroutine s_sum_qbub
@@ -1230,6 +1233,7 @@ contains
         real(wp)                :: hdid
         real(wp)                :: var_glb
         integer                 :: i
+        character(len=512)      :: line
 
         if (num_procs > 1) then
             call s_mpi_allreduce_sum(acPw_qvis, var_glb)
@@ -1246,7 +1250,9 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (89, '(*(ES0.12,:,","))') mytime + hdid, hdid, acPW_nbubs, acPw_qvis, acPw_qth, acPw_ke
+            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, hdid, acPW_nbubs, &
+                   & acPw_qvis, acPw_qth, acPw_ke
+            write (89, '(A)') trim(line)
         end if
 
     end subroutine s_write_power_balance_bubs
@@ -1885,6 +1891,7 @@ contains
         real(wp), dimension(4), intent(in) :: mom_all
         real(wp)                           :: total, moment1, moment2, moment3
         real(wp)                           :: val_tmp
+        character(len=512)                 :: line
 
         total = mom_all(1); moment1 = mom_all(2)
         moment2 = mom_all(3); moment3 = mom_all(4)
@@ -1902,7 +1909,9 @@ contains
 
         ! Write the heat statistics to file
         if (proc_rank == 0) then
-            write (97 - idx, '(*(ES0.12,:,","))') mytime + dt, moment1/total, moment2/total, moment3/total, total
+            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, moment1/total, moment2/total, &
+                   & moment3/total, total
+            write (97 - idx, '(A)') trim(line)
         end if
 
     end subroutine s_write_moments
@@ -2349,6 +2358,7 @@ contains
         logical                              :: file_exist, write_unique_id
         character(LEN=path_len + 2*name_len) :: file_loc
         character(LEN=25)                    :: FMT
+        character(len=512)                   :: line
 
         write_unique_id = .false.
         if (lag_params%write_only_bub_id /= dflt_int) write_unique_id = .true.
@@ -2376,9 +2386,12 @@ contains
         if (write_unique_id) then
             k = lag_params%write_only_bub_id
             if (k == lag_id(k, 1)) then
-                write (11, '(*(ES0.12,:,","))') qtime, dt, lag_id(k, 1)*1._wp, mtn_pos(k, 1, 1), mtn_pos(k, 2, 1), mtn_pos(k, 3, &
-                       & 1), intfc_rad(k, 1), intfc_vel(k, 1), intfc_ac(k, 1), bub_interact(k), gas_mv(k, 1), gas_mv(k, &
-                       & 1)/(gas_mv(k, 1) + gas_mg(k)), gas_p(k, 1), mrmtnt_shell(k, 1), mrmtnt_Rrupt(k)
+                write (line, &
+                       & '(ES0.12,",",ES0.12,",",I0,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",I0,",",ES0.12)') qtime, &
+                       & dt, lag_id(k, 1), mtn_pos(k, 1, 1), mtn_pos(k, 2, 1), mtn_pos(k, 3, 1), intfc_rad(k, 1), intfc_vel(k, &
+                       & 1), intfc_ac(k, 1), bub_interact(k), gas_mv(k, 1), gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), gas_p(k, 1), &
+                       & int(mrmtnt_shell(k, 1)), mrmtnt_Rrupt(k)
+                write (11, '(A)') trim(line)
             end if
 
             close (11)
@@ -2387,9 +2400,12 @@ contains
 
         if (hifu .or. lag_params%coatedBub_model) then
             do k = 1, nBubs
-                write (11, '(*(ES0.12,:,","))') qtime, dt, lag_id(k, 1)*1._wp, mtn_pos(k, 1, 1), mtn_pos(k, 2, 1), mtn_pos(k, 3, &
-                       & 1), intfc_rad(k, 1), intfc_vel(k, 1), intfc_ac(k, 1), bub_interact(k), gas_mv(k, 1), gas_mv(k, &
-                       & 1)/(gas_mv(k, 1) + gas_mg(k)), gas_p(k, 1), mrmtnt_shell(k, 1), mrmtnt_Rrupt(k)
+                write (line, &
+                       & '(ES0.12,",",ES0.12,",",I0,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",I0,",",ES0.12)') qtime, &
+                       & dt, lag_id(k, 1), mtn_pos(k, 1, 1), mtn_pos(k, 2, 1), mtn_pos(k, 3, 1), intfc_rad(k, 1), intfc_vel(k, &
+                       & 1), intfc_ac(k, 1), bub_interact(k), gas_mv(k, 1), gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), gas_p(k, 1), &
+                       & int(mrmtnt_shell(k, 1)), mrmtnt_Rrupt(k)
+                write (11, '(A)') trim(line)
             end do
 
             close (11)
@@ -2426,6 +2442,7 @@ contains
         integer                              :: i, j, k
         character(LEN=path_len + 2*name_len) :: file_loc
         logical                              :: file_exist
+        character(len=512)                   :: line
 
         if (proc_rank == 0) then
             write (file_loc, '(A)') 'voidfraction.dat'
@@ -2492,8 +2509,11 @@ contains
 
         if (proc_rank == 0) then
             if (hifu) then
-                write (12, '(*(ES0.12,:,","))') qtime, dt, nBubs_all, Rmean_glb/nBubs_all, Rmax_glb, Rmin_glb, lag_vol_glb, &
-                       & lag_void_avg, lag_void_max, voltot
+                write (line, &
+                       & '(ES0.12,",",ES0.12,",",I0,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') qtime, &
+                       & dt, int(nBubs_all), Rmean_glb/nBubs_all, Rmax_glb, Rmin_glb, lag_vol_glb, lag_void_avg, lag_void_max, &
+                       & voltot
+                write (12, '(A)') trim(line)
             else
                 write (12, '(6X,4e24.8)') qtime, lag_void_avg, lag_void_max, voltot
             end if
