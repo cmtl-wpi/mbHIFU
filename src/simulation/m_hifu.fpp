@@ -450,8 +450,8 @@ contains
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
             if (proc_rank == 0) then
-                write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0), &
-                       & sum_qac, sum_qac_prms
+                write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, &
+                       & 0), sum_qac, sum_qac_prms
                 write (99, '(A)') trim(line)
             end if
         else if (.not. cyl_coord .and. p > 0) then  ! Cartesian 3D
@@ -649,8 +649,8 @@ contains
             $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
 
             if (proc_rank == 0) then
-                write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, &
-                       & 0), sum_qac, sum_qac_prms
+                write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, &
+                       & 0, 0), sum_qac, sum_qac_prms
                 write (99, '(A)') trim(line)
             end if
 
@@ -705,16 +705,18 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, &
-                   & hdid, acPw_in_dt(1), acPw_in_dt(2), acPw_in_dt(3), acPw_in_dt(4), acPw_in_dt(5), acPw_in_dt(6)
+            write (line, &
+                   & '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",", ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime &
+                   & + hdid, hdid, acPw_in_dt(1), acPw_in_dt(2), acPw_in_dt(3), acPw_in_dt(4), acPw_in_dt(5), acPw_in_dt(6)
             write (92, '(A)') trim(line)
 
-            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, &
-                   & hdid, acPw_out_dt(1), acPw_out_dt(2), acPw_out_dt(3), acPw_out_dt(4), acPw_out_dt(5), acPw_out_dt(6)
+            write (line, &
+                   & '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",", ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime &
+                   & + hdid, hdid, acPw_out_dt(1), acPw_out_dt(2), acPw_out_dt(3), acPw_out_dt(4), acPw_out_dt(5), acPw_out_dt(6)
             write (91, '(A)') trim(line)
 
-            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, hdid, acPw_qac, acPw_cmprssv, &
-                   & acPw_kntc
+            write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + hdid, hdid, acPw_qac, &
+                   & acPw_cmprssv, acPw_kntc
             write (90, '(A)') trim(line)
         end if
 
@@ -893,13 +895,13 @@ contains
                     condition = (axialCondition .or. radialCondition)
                     if (condition) then
                         if (p > 0) then
-                            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, x_cc(j), &
-                                   & y_cc(k), z_cc(l), q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
+                            write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, &
+                                   & x_cc(j), y_cc(k), z_cc(l), q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
                                    & q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
                             write (100, '(A)') trim(line)
                         else
-                            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, x_cc(j), y_cc(k), &
-                                   & q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
+                            write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, x_cc(j), &
+                                   & y_cc(k), q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
                             write (100, '(A)') trim(line)
                         end if
                     end if
@@ -966,8 +968,8 @@ contains
             call s_print_hifu_source_stats(hifu_params%qvis_idx, sum_val_qvis)
             call s_print_hifu_source_stats(hifu_params%qth_idx, sum_val_qth)
             if (proc_rank == 0) then
-                write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') sampledTime, 0._wp, &
-                       & 0._wp, 0._wp, 0._wp, sum_val_qvis, sum_val_qth
+                write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') sampledTime, &
+                       & 0._wp, 0._wp, 0._wp, 0._wp, sum_val_qvis, sum_val_qth
                 write (98, '(A)') trim(line)
                 close (98)
             end if
@@ -1143,7 +1145,7 @@ contains
 
         if (proc_rank == 0) then
             open (11, FILE=trim(file_loc), form='formatted', position='append')
-            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') sampledTime, heat_moment1/total_heat, &
+            write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') sampledTime, heat_moment1/total_heat, &
                    & heat_moment2/total_heat, heat_moment3/total_heat, total_heat
             write (11, '(A)') trim(line)
             close (11)

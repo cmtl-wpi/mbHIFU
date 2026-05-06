@@ -1208,8 +1208,8 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, dt, sum_qvis, &
-                   & sum_qth, sum_nBubs, 0._wp, 0._wp
+            write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, dt, &
+                   & sum_qvis, sum_qth, sum_nBubs, 0._wp, 0._wp
             write (98, '(A)') trim(line)
         end if
 
@@ -1250,8 +1250,8 @@ contains
         end if
 
         if (proc_rank == 0) then
-            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + hdid, hdid, acPW_nbubs, &
-                   & acPw_qvis, acPw_qth, acPw_ke
+            write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + hdid, hdid, &
+                   & acPW_nbubs, acPw_qvis, acPw_qth, acPw_ke
             write (89, '(A)') trim(line)
         end if
 
@@ -1909,7 +1909,7 @@ contains
 
         ! Write the heat statistics to file
         if (proc_rank == 0) then
-            write (line, '(ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') mytime + dt, moment1/total, moment2/total, &
+            write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, moment1/total, moment2/total, &
                    & moment3/total, total
             write (97 - idx, '(A)') trim(line)
         end if
@@ -2387,7 +2387,7 @@ contains
             k = lag_params%write_only_bub_id
             if (k == lag_id(k, 1)) then
                 write (line, &
-                       & '(ES0.12,",",ES0.12,",",I0,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",I0,",",ES0.12)') qtime, &
+                       & '(ES24.16,",",ES24.16,",",I0,",",ES24.16,",",ES24.16,",", ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",", ES24.16,",",ES24.16,",",ES24.16,",",I0,",",ES24.16)') qtime, &
                        & dt, lag_id(k, 1), mtn_pos(k, 1, 1), mtn_pos(k, 2, 1), mtn_pos(k, 3, 1), intfc_rad(k, 1), intfc_vel(k, &
                        & 1), intfc_ac(k, 1), bub_interact(k), gas_mv(k, 1), gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), gas_p(k, 1), &
                        & int(mrmtnt_shell(k, 1)), mrmtnt_Rrupt(k)
@@ -2401,7 +2401,7 @@ contains
         if (hifu .or. lag_params%coatedBub_model) then
             do k = 1, nBubs
                 write (line, &
-                       & '(ES0.12,",",ES0.12,",",I0,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",I0,",",ES0.12)') qtime, &
+                       & '(ES24.16,",",ES24.16,",",I0,",",ES24.16,",",ES24.16,",", ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",", ES24.16,",",ES24.16,",",ES24.16,",",I0,",",ES24.16)') qtime, &
                        & dt, lag_id(k, 1), mtn_pos(k, 1, 1), mtn_pos(k, 2, 1), mtn_pos(k, 3, 1), intfc_rad(k, 1), intfc_vel(k, &
                        & 1), intfc_ac(k, 1), bub_interact(k), gas_mv(k, 1), gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k)), gas_p(k, 1), &
                        & int(mrmtnt_shell(k, 1)), mrmtnt_Rrupt(k)
@@ -2510,7 +2510,7 @@ contains
         if (proc_rank == 0) then
             if (hifu) then
                 write (line, &
-                       & '(ES0.12,",",ES0.12,",",I0,",",ES0.12,",",ES0.12,",", ES0.12,",",ES0.12,",",ES0.12,",",ES0.12,",",ES0.12)') qtime, &
+                       & '(ES24.16,",",ES24.16,",",I0,",",ES24.16,",",ES24.16,",", ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') qtime, &
                        & dt, int(nBubs_all), Rmean_glb/nBubs_all, Rmax_glb, Rmin_glb, lag_vol_glb, lag_void_avg, lag_void_max, &
                        & voltot
                 write (12, '(A)') trim(line)
