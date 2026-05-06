@@ -192,11 +192,10 @@ contains
                 call s_start_HIFU_indexes(stg=2)
                 hifu_params%sampling = .true.
                 hifu_params%heatSolver = .false.
+                $:GPU_UPDATE(device='[dt, hifu_params]')
+
                 call s_initialize_sampling_vars()
                 hifu_write_output = .true.
-
-                $:GPU_UPDATE(device='[hifu_params, dt]')
-
                 exitFlag = .false.
                 return
             end if
@@ -211,11 +210,10 @@ contains
                 call s_start_HIFU_indexes(stg=2)
                 hifu_params%sampling = .true.
                 hifu_params%heatSolver = .false.
-                call s_initialize_sampling_vars()
-                hifu_write_output = .true.
-
                 $:GPU_UPDATE(device='[hifu_params, dt]')
 
+                call s_initialize_sampling_vars()
+                hifu_write_output = .true.
                 exitFlag = .false.
                 return
             end if
@@ -1139,7 +1137,7 @@ contains
 
         ! Write the heat statistics to file
 
-        write (file_loc, '(A,I0,A)') 'moments_qus.dat'
+        write (file_loc, '(A,I0,A)') 'moments_qac.dat'
         file_loc = trim(case_dir) // '/D/' // trim(file_loc)
         inquire (FILE=trim(file_loc), EXIST=file_exist)
 
@@ -1294,7 +1292,7 @@ contains
 
             if (hifu_params%moments) then
                 ! Open files to save heat sources and volume moments
-                write (file_path, '(A,I0,A)') '/D/moments_qus.dat'
+                write (file_path, '(A,I0,A)') '/D/moments_qac.dat'
                 file_path = trim(case_dir) // trim(file_path)
                 open (97, FILE=trim(file_path), form='formatted', POSITION='append', STATUS='replace')
                 write (97, '(A)') 'mytime,normMom_f,normMom_s,normMom_t,totalHeat'
