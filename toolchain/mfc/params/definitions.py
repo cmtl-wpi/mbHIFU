@@ -1174,7 +1174,7 @@ def _load():
         ("cp_g", r"\f$c_{p,g}\f$"),
         ("R_v", r"\f$R_v\f$"),
         ("R_g", r"\f$R_g\f$"),
-        ("ss0", r"\f$\sigma_0\f$"),
+        ("ss_init", r"\f$\sigma_{init}\f$"),
         ("dil_vsc", r"\f$dil_vsc\f$"),
         ("el_vsc", r"\f$el_vsc\f$"),
         ("Thost", r"\f$T_{host}\f$"),

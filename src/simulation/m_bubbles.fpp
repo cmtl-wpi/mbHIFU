@@ -726,6 +726,7 @@ contains
             err_V = 0._wp
         end if
         err = sqrt((err_R**2._wp + err_V**2._wp)/2._wp)
+        fAc = (1._wp/6._wp)*(myA_tmp(1) + myA_tmp(2) + 4._wp*myA_tmp(3))
 
     end subroutine s_advance_substep
 

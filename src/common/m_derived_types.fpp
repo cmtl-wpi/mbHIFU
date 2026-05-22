@@ -345,7 +345,7 @@ module m_derived_types
         real(wp) :: cp_g     !< specific heat capacity in constant pressure of gas (bubble)
         real(wp) :: R_v      !< gas constant of host in vapor state
         real(wp) :: R_g      !< gas constant of gas (bubble)
-        real(wp) :: ss0      !< Marmotant: surface tension at R0
+        real(wp) :: ss_init  !< Marmotant: surface tension at R0
         real(wp) :: dil_vsc  !< Marmotant: surface dilatation viscosity
         real(wp) :: el_vsc   !< Marmotant: surface elasticity viscosity
     end type subgrid_bubble_physical_parameters

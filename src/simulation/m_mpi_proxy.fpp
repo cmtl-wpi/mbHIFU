@@ -120,8 +120,6 @@ contains
                 call MPI_BCAST(lag_params%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
-            ! #:for VAR in [ 'c0', 'rho0', 'T0', 'x0', 'diffcoefvap', 'epsilonb','charwidth', & & 'valmaxvoid', 'Thost',
-            ! 'ss0_ctdBub', 'srfDilVsc_ctdBub', 'srfElast_ctdBub', & & 'pnoise_dev', 'pnoise_scale', 'scaleVirtualSphere']
             #:for VAR in ['epsilonb','charwidth','valmaxvoid',  'pnoise_dev', 'pnoise_scale', &
                 & 'scaleVirtualSphere']
                 call MPI_BCAST(lag_params%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
@@ -218,7 +216,7 @@ contains
         if (bubbles_euler .or. bubbles_lagrange) then
             #:for VAR in [ 'R0ref','p0ref','rho0ref','T0ref', 'ss','pv','vd','mu_l','mu_v','mu_g', &
                 & 'gam_v','gam_g', 'M_v','M_g','k_v','k_g','cp_v','cp_g','R_v','R_g','Thost', &
-                & 'ss0', 'dil_vsc', 'el_vsc']
+                & 'ss_init', 'dil_vsc', 'el_vsc']
                 call MPI_BCAST(bub_pp%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
         end if

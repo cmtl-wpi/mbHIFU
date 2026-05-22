@@ -313,7 +313,7 @@ contains
                      & intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel, mtn_s, intfc_draddt, intfc_dveldt, gas_dpdt, &
                      & gas_dmvdt, mtn_dposdt, mtn_dveldt, nBubs]')
 
-        $:GPU_UPDATE(device='[intfc_ac, mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
+        $:GPU_UPDATE(device='[intfc_ac, mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad, bub_interact]')
 
         Rmax_glb = min(dflt_real, -dflt_real)
         Rmin_glb = max(dflt_real, -dflt_real)
@@ -322,6 +322,8 @@ contains
         $:GPU_UPDATE(device='[Rmax_glb, Rmin_glb, Rmean_glb, lag_vol_glb]')
 
         $:GPU_UPDATE(device='[dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc]')
+
+        $:GPU_UPDATE(device='[ss_init, dil_vsc, el_vsc]')
 
         ! Populate temporal variables
         call s_transfer_data_to_tmp
@@ -426,13 +428,13 @@ contains
         ! Marmotant model parameters
         mrmtnt_shell(bub_id, 1) = 0._wp
         if (lag_params%coatedBub_model) mrmtnt_shell(bub_id, 1) = 1._wp
-        mrmtnt_Rbuck(bub_id) = mrmtnt_shell(bub_id, 1)*bub_R0(bub_id)/sqrt(1._wp + ss0/el_vsc)
+        mrmtnt_Rbuck(bub_id) = mrmtnt_shell(bub_id, 1)*bub_R0(bub_id)/sqrt(1._wp + ss_init/el_vsc)
         mrmtnt_Rrupt(bub_id) = mrmtnt_Rbuck(bub_id)*sqrt(1._wp + ss/el_vsc)
 
         ! Initial particle pressure
         gas_p(bub_id, 1) = pliq + 2._wp*(1._wp/Web)/bub_R0(bub_id)
         if (lag_params%coatedBub_model) then
-            gas_p(bub_id, 1) = pliq + 2._wp*(ss0)/bub_R0(bub_id)
+            gas_p(bub_id, 1) = pliq + 2._wp*(ss_init)/bub_R0(bub_id)
             ! print *, 'Rbuck and Rrupt', mrmtnt_Rbuck(bub_id), mrmtnt_Rrupt(bub_id), bub_id
         end if
         if (pv*(massflag) > gas_p(bub_id, 1)) then
@@ -454,7 +456,7 @@ contains
         concvap = gas_mv(bub_id, 1)/(gas_mv(bub_id, 1) + gas_mg(bub_id))
         omegaN_local = (3._wp*(gas_p(bub_id, 1) - pv*(massflag)) + 4._wp*(1._wp/Web)/bub_R0(bub_id))/rhol
         if (lag_params%coatedBub_model) then
-            omegaN_local = (3._wp*(gas_p(bub_id, 1) - pv*(massflag)) + 4._wp*(ss0)/bub_R0(bub_id))/rhol
+            omegaN_local = (3._wp*(gas_p(bub_id, 1) - pv*(massflag)) + 4._wp*(ss_init)/bub_R0(bub_id))/rhol
         end if
         omegaN_local = sqrt(omegaN_local/bub_R0(bub_id)**2._wp)
 
@@ -528,7 +530,7 @@ contains
                 ! Initial particle pressure
                 gas_p(k, 1) = pinf + 2._wp*(1._wp/Web)/bub_R0(k)
                 if (lag_params%coatedBub_model) then
-                    gas_p(k, 1) = pinf + 2._wp*(ss0)/bub_R0(k)
+                    gas_p(k, 1) = pinf + 2._wp*(ss_init)/bub_R0(k)
                 end if
                 if (polytropic) gas_p(k, 2) = gas_p(k, 1)
 
@@ -542,7 +544,7 @@ contains
                 concvap = gas_mv(k, 1)/(gas_mv(k, 1) + gas_mg(k))
                 omegaN = (3._wp*(gas_p(k, 1) - pv*(massflag)) + 4._wp*(1._wp/Web)/bub_R0(k))/rhol
                 if (lag_params%coatedBub_model) then
-                    omegaN = (3._wp*(gas_p(k, 1) - pv*(massflag)) + 4._wp*(ss0)/bub_R0(k))/rhol
+                    omegaN = (3._wp*(gas_p(k, 1) - pv*(massflag)) + 4._wp*(ss_init)/bub_R0(k))/rhol
                 end if
 
                 omegaN = sqrt(omegaN/bub_R0(k)**2._wp)
@@ -573,14 +575,9 @@ contains
             end do
             $:END_GPU_PARALLEL_LOOP()
 
-            $:GPU_UPDATE(device='[lag_id, bub_R0, Rmax_stats, Rmin_stats, gas_mg, gas_betaT, gas_betaC, bub_dphidt, gas_p, &
-                         & gas_mv, intfc_rad, intfc_vel, mtn_pos, mtn_posPrev, mtn_vel, mtn_s, intfc_draddt, intfc_dveldt, &
-                         & gas_dpdt, gas_dmvdt, nBubs]')
-            ! & mtn_dposdt,mtn_dveldt]')
-
-            $:GPU_UPDATE(device='[intfc_ac, bub_interact, mrmtnt_shell, mrmtnt_Rbuck, mrmtnt_Rrupt, bub_qvis, bub_qth, bub_hifu_rad]')
-
             call s_transfer_data_to_tmp
+            $:GPU_UPDATE(host='[gas_p, gas_mv, gas_mg, gas_betaT, gas_betaC, bub_interact]')
+
             call s_smear_voidfraction(bc_type)
 
             ! Replace files
@@ -1006,8 +1003,8 @@ contains
         adap_dt_stop_max = 0
         $:GPU_PARALLEL_LOOP(private='[k, i, myalpha_rho, myalpha, Re, cell, myVapFlux, preterm1, term2, paux, pint, Romega, &
                             & term1_fac, myR_m, mygamma_m, myPb, myMass_g, myMass_v, myR, myV, myBeta_c, myBeta_t, myR0, myPbdot, &
-                            & myMvdot, myPinf, aux1, aux2, myCson, myRho, gamma, pi_inf, qv, dmalf, dmntait, dmBtait, &
-                            & dm_bub_adv_src, dm_divu, adap_dt_stop, fxb_Rc, fVol]', &
+                            & myMvdot, myPinf, aux1, aux2, myCson, myRho, gamma, pi_inf, qv, dmalf, dmntait, dmBtait, myAc, &
+                            & myShell, myRbuck, myRrupt, dm_bub_adv_src, dm_divu, adap_dt_stop, fxb_Rc, fVol]', &
                             & reduction='[[adap_dt_stop_max], [mom_vol(1:4), mom_qvis(1:4), mom_qth_p(1:4), &
                             & mom_qth_n(1:4)], [acPw_qvis, acPw_qth, acPW_nbubs, acPw_ke, sum_qvis, sum_qth]]', &
                             & reductionOp='[MAX, +, +]', copy='[adap_dt_stop_max, mom_vol(1:4), mom_qvis(1:4), mom_qth_p(1:4), &
@@ -1699,19 +1696,17 @@ contains
                                 dist_cc = sqrt((x_cc(cell(1)) - x_cc(cellaux(1)))**2._wp + (y_cc(cell(2)) - y_cc(cellaux(2))) &
                                                & **2._wp + (z_cc(cell(3)) - z_cc(cellaux(3)))**2._wp)
                                 ! condition = abs(dist_cc-lag_params%scaleVirtualSphere*chardist) < 1.8_wp*chardist
-                                condition = (cellaux(1) == cell(1) - mapCells .or. cellaux(1) == cell(1) &
-                                             & + mapCells .or. cellaux(2) == cell(2) - mapCells .or. cellaux(2) == cell(2) &
-                                             & + mapCells .or. cellaux(3) == cell(3) - mapCells .or. cellaux(3) == cell(3) &
-                                             & + mapCells)
+                                condition = (cellaux(1) == cell(1) - mapCells .or. cellaux(1) == cell(1) + mapCells &
+                                             & .or. cellaux(2) == cell(2) - mapCells .or. cellaux(2) == cell(2) + mapCells &
+                                             & .or. cellaux(3) == cell(3) - mapCells .or. cellaux(3) == cell(3) + mapCells)
                                 if (.not. condition) celloutside = .true.
                             else
                                 chardist = sqrt(dx(cell(1))*dy(cell(2)))
                                 dist_cc = sqrt((x_cc(cell(1)) - x_cc(cellaux(1)))**2._wp + (y_cc(cell(2)) - y_cc(cellaux(2))) &
                                                & **2._wp)
                                 ! condition = abs(dist_cc-lag_params%scaleVirtualSphere*chardist) < 1.5_wp*chardist
-                                condition = (cellaux(1) == cell(1) - mapCells .or. cellaux(1) == cell(1) &
-                                             & + mapCells .or. cellaux(2) == cell(2) - mapCells .or. cellaux(2) == cell(2) &
-                                             & + mapCells)
+                                condition = (cellaux(1) == cell(1) - mapCells .or. cellaux(1) == cell(1) + mapCells &
+                                             & .or. cellaux(2) == cell(2) - mapCells .or. cellaux(2) == cell(2) + mapCells)
                                 if (.not. condition) celloutside = .true.
                             end if
                         end if

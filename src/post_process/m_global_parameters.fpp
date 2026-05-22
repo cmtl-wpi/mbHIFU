@@ -253,7 +253,7 @@ module m_global_parameters
     real(wp), dimension(:), allocatable :: pb0, mass_g0, mass_v0, Pe_T, k_v, k_g
     real(wp), dimension(:), allocatable :: Re_trans_T, Re_trans_c, Im_trans_T, Im_trans_c, omegaN
     real(wp) :: R0ref, p0ref, rho0ref, T0ref, ss, pv, vd, mu_l, mu_v, mu_g, gam_v, gam_g, M_v, M_g, cp_v, cp_g, R_v, R_g
-    real(wp) :: ss0, dil_vsc, el_vsc
+    real(wp) :: ss_init, dil_vsc, el_vsc
     real(wp) :: G
     real(wp) :: poly_sigma
     real(wp) :: sigR
@@ -396,7 +396,7 @@ contains
         bub_pp%cp_g = dflt_real; cp_g = dflt_real
         bub_pp%R_v = dflt_real; R_v = dflt_real
         bub_pp%R_g = dflt_real; R_g = dflt_real
-        bub_pp%ss0 = dflt_real; ss0 = dflt_real
+        bub_pp%ss_init = dflt_real; ss_init = dflt_real
         bub_pp%dil_vsc = dflt_real; dil_vsc = dflt_real
         bub_pp%el_vsc = dflt_real; el_vsc = dflt_real
         bub_pp%Thost = dflt_real

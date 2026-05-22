@@ -162,7 +162,7 @@ contains
             mu_l = mu_l/(rho0*x0*c0)
 
             ! Marmotant model
-            ss0 = bub_pp%ss0/(rho0*x0*c0*c0)
+            ss_init = bub_pp%ss_init/(rho0*x0*c0*c0)
             dil_vsc = bub_pp%dil_vsc/(rho0*x0*x0*c0)
             el_vsc = bub_pp%el_vsc/(rho0*x0*c0*c0)
 
