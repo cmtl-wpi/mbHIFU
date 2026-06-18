@@ -25,6 +25,7 @@ module m_start_up
     use m_checker
     use m_thermochem, only: num_species, species_names
     use m_finite_differences
+    use m_constants, only: model_eqns_gamma_law, model_eqns_5eq, model_eqns_6eq, model_eqns_4eq
     use m_chemistry
     use m_hifu
 
@@ -60,19 +61,7 @@ contains
         integer                 :: iostatus
         character(len=1000)     :: line
 
-        namelist /user_inputs/ case_dir, m, n, p, t_step_start, t_step_stop, t_step_save, model_eqns, num_fluids, mpp_lim, &
-            & weno_order, bc_x, bc_y, bc_z, fluid_pp, bub_pp, format, precision, output_partial_domain, x_output, y_output, &
-            & z_output, hypoelasticity, G, mhd, chem_wrt_Y, chem_wrt_T, avg_state, alpha_rho_wrt, rho_wrt, mom_wrt, vel_wrt, &
-            & E_wrt, fft_wrt, pres_wrt, alpha_wrt, gamma_wrt, heat_ratio_wrt, pi_inf_wrt, pres_inf_wrt, cons_vars_wrt, &
-            & prim_vars_wrt, c_wrt, omega_wrt, qm_wrt, liutex_wrt, schlieren_wrt, schlieren_alpha, fd_order, mixture_err, &
-            & alt_soundspeed, flux_lim, flux_wrt, cyl_coord, parallel_io, rhoref, pref, bubbles_euler, qbmm, sigR, R0ref, nb, &
-            & polytropic, thermal, Ca, Web, Re_inv, polydisperse, poly_sigma, file_per_process, relax, relax_model, cf_wrt, &
-            & sigma, adv_n, ib, num_ibs, cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, cfl_target, surface_tension, &
-            & bubbles_lagrange, sim_data, hyperelasticity, Bx0, relativity, cont_damage, hyper_cleaning, num_bc_patches, igr, &
-            & igr_order, down_sample, recon_type, muscl_order, lag_header, lag_txt_wrt, lag_db_wrt, lag_id_wrt, lag_pos_wrt, &
-            & lag_pos_prev_wrt, lag_vel_wrt, lag_rad_wrt, lag_rvel_wrt, lag_r0_wrt, lag_rmax_wrt, lag_rmin_wrt, lag_dphidt_wrt, &
-            & lag_pres_wrt, lag_mv_wrt, lag_mg_wrt, lag_betaT_wrt, lag_betaC_wrt, alpha_rho_e_wrt, ib_state_wrt, hifu, &
-            & hifu_params, lag_hifu_wrt, lag_mrmtnt_wrt
+        #:include 'generated_namelist.fpp'
 
         file_loc = 'post_process.inp'
         inquire (FILE=trim(file_loc), EXIST=file_check)
@@ -244,54 +233,54 @@ contains
         if (hifu) then
             if (hifu_params%stg3) then
                 ! Temperature
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%T_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%T)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A)') 'Temp'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
                 ! Avg heat intensity from acoustic damping q_ac
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%qac_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%qac)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A)') 'avg_qac'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
                 ! Avg heat intensity from viscous damping q_vis
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%qvis_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%qvis)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
                 write (varname, '(A)') 'avg_qvis'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
                 ! Avg heat intensity from thermal damping q_th
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%qth_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%qth)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
                 write (varname, '(A)') 'avg_qth'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
                 return
             else
-                sampled_time = q_cons_hifu(hifu_params%tsamp_idx)%sf(0, 0, 0)
+                sampled_time = q_cons_hifu(hifu_idx%tsamp)%sf(0, 0, 0)
                 if (proc_rank == 0) print *, 'The current sampled period is:', sampled_time
 
                 ! Avg heat intensity from acoustic damping q_ac
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%qac_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%qac)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
                 write (varname, '(A)') 'avg_qac'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
                 ! Avg heat intensity from acoustic damping q_us PRMS
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%qac_prms_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%qac_prms)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)/sampled_time
                 write (varname, '(A)') 'avg_qac_prms'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
                 ! Max Pressure
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%P_idx)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%P)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A)') 'Pmax'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
 
                 ! Min Pressure
-                q_sf(:,:,:) = q_cons_hifu(hifu_params%P_idx + 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_hifu(hifu_idx%P + 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A)') 'Pmin'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -299,22 +288,22 @@ contains
         end if
 
         if (omega_wrt(2) .or. omega_wrt(3) .or. qm_wrt .or. liutex_wrt .or. schlieren_wrt) then
-            call s_compute_finite_difference_coefficients(m, x_cc, fd_coeff_x, buff_size, fd_number, fd_order, offset_x)
+            call s_compute_finite_difference_coefficients(m, x_cc, fd%fd_coeff_x, buff_size, fd_number, fd_order, offset_x)
         end if
 
         if (omega_wrt(1) .or. omega_wrt(3) .or. qm_wrt .or. liutex_wrt .or. (n > 0 .and. schlieren_wrt)) then
-            call s_compute_finite_difference_coefficients(n, y_cc, fd_coeff_y, buff_size, fd_number, fd_order, offset_y)
+            call s_compute_finite_difference_coefficients(n, y_cc, fd%fd_coeff_y, buff_size, fd_number, fd_order, offset_y)
         end if
 
         if (omega_wrt(1) .or. omega_wrt(2) .or. qm_wrt .or. liutex_wrt .or. (p > 0 .and. schlieren_wrt)) then
-            call s_compute_finite_difference_coefficients(p, z_cc, fd_coeff_z, buff_size, fd_number, fd_order, offset_z)
+            call s_compute_finite_difference_coefficients(p, z_cc, fd%fd_coeff_z, buff_size, fd_number, fd_order, offset_z)
         end if
 
-        if ((model_eqns == 2) .or. (model_eqns == 3) .or. (model_eqns == 4)) then
+        if ((model_eqns == model_eqns_5eq) .or. (model_eqns == model_eqns_6eq) .or. (model_eqns == model_eqns_4eq)) then
             do i = 1, num_fluids
                 if (alpha_rho_wrt(i) .or. (cons_vars_wrt .or. prim_vars_wrt)) then
-                    q_sf(:,:,:) = q_cons_vf(i)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
-                    if (model_eqns /= 4) then
+                    out%q_sf(:,:,:) = q_cons_vf(i)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    if (model_eqns /= model_eqns_4eq) then
                         write (varname, '(A,I0)') 'alpha_rho', i
                     else
                         write (varname, '(A,I0)') 'rho', i
@@ -326,8 +315,9 @@ contains
             end do
         end if
 
-        if ((rho_wrt .or. (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) .and. (.not. relativity)) then
-            q_sf(:,:,:) = rho_sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+        if ((rho_wrt .or. (model_eqns == model_eqns_gamma_law .and. (cons_vars_wrt .or. prim_vars_wrt))) .and. (.not. relativity)) &
+            & then
+            out%q_sf(:,:,:) = rho_sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'rho'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -335,7 +325,7 @@ contains
         end if
 
         if (relativity .and. (rho_wrt .or. prim_vars_wrt)) then
-            q_sf(:,:,:) = q_prim_vf(1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+            out%q_sf(:,:,:) = q_prim_vf(1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'rho'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -344,7 +334,7 @@ contains
 
         if (relativity .and. (rho_wrt .or. cons_vars_wrt)) then
             ! For relativistic flow, conservative and primitive densities are different Hard-coded single-component for now
-            q_sf(:,:,:) = q_cons_vf(1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+            out%q_sf(:,:,:) = q_cons_vf(1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'D'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -353,7 +343,7 @@ contains
 
         do i = 1, eqn_idx%E - eqn_idx%mom%beg
             if (mom_wrt(i) .or. cons_vars_wrt) then
-                q_sf(:,:,:) = q_cons_vf(i + eqn_idx%cont%end)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_vf(i + eqn_idx%cont%end)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A,I0)') 'mom', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -363,7 +353,7 @@ contains
 
         do i = 1, eqn_idx%E - eqn_idx%mom%beg
             if (vel_wrt(i) .or. prim_vars_wrt) then
-                q_sf(:,:,:) = q_prim_vf(i + eqn_idx%cont%end)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_prim_vf(i + eqn_idx%cont%end)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A,I0)') 'vel', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -374,7 +364,7 @@ contains
         if (chemistry) then
             do i = 1, num_species
                 if (chem_wrt_Y(i) .or. prim_vars_wrt) then
-                    q_sf(:,:,:) = q_prim_vf(eqn_idx%species%beg + i - 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf(:,:,:) = q_prim_vf(eqn_idx%species%beg + i - 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                     write (varname, '(A,A)') 'Y_', trim(species_names(i))
                     call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -383,7 +373,7 @@ contains
             end do
 
             if (chem_wrt_T) then
-                q_sf(:,:,:) = q_T_sf%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_T_sf%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A)') 'T'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -393,7 +383,7 @@ contains
 
         do i = 1, eqn_idx%E - eqn_idx%mom%beg
             if (flux_wrt(i)) then
-                call s_derive_flux_limiter(i, q_prim_vf, q_sf)
+                call s_derive_flux_limiter(i, q_prim_vf, out%q_sf)
 
                 write (varname, '(A,I0)') 'flux', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -403,17 +393,17 @@ contains
         end do
 
         if (E_wrt .or. cons_vars_wrt) then
-            q_sf(:,:,:) = q_cons_vf(eqn_idx%E)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+            out%q_sf(:,:,:) = q_cons_vf(eqn_idx%E)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'E'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
             varname(:) = ' '
         end if
 
-        if (model_eqns == 3) then
+        if (model_eqns == model_eqns_6eq) then
             do i = 1, num_fluids
                 if (alpha_rho_e_wrt(i) .or. cons_vars_wrt) then
-                    q_sf = q_cons_vf(i + eqn_idx%int_en%beg - 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf = q_cons_vf(i + eqn_idx%int_en%beg - 1)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                     write (varname, '(A,I0)') 'alpha_rho_e', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -530,7 +520,7 @@ contains
 
         if (mhd .and. prim_vars_wrt) then
             do i = eqn_idx%B%beg, eqn_idx%B%end
-                q_sf(:,:,:) = q_prim_vf(i)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_prim_vf(i)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
 
                 ! 1D: output By, Bz
                 if (n == 0) then
@@ -558,7 +548,7 @@ contains
         if (elasticity) then
             do i = 1, eqn_idx%stress%end - eqn_idx%stress%beg + 1
                 if (prim_vars_wrt) then
-                    q_sf(:,:,:) = q_prim_vf(i - 1 + eqn_idx%stress%beg)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf(:,:,:) = q_prim_vf(i - 1 + eqn_idx%stress%beg)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                     write (varname, '(A,I0)') 'tau', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                 end if
@@ -569,7 +559,7 @@ contains
         if (hyperelasticity) then
             do i = 1, eqn_idx%xi%end - eqn_idx%xi%beg + 1
                 if (prim_vars_wrt) then
-                    q_sf(:,:,:) = q_prim_vf(i - 1 + eqn_idx%xi%beg)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf(:,:,:) = q_prim_vf(i - 1 + eqn_idx%xi%beg)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                     write (varname, '(A,I0)') 'xi', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                 end if
@@ -578,7 +568,7 @@ contains
         end if
 
         if (cont_damage) then
-            q_sf(:,:,:) = q_cons_vf(eqn_idx%damage)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+            out%q_sf(:,:,:) = q_cons_vf(eqn_idx%damage)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'damage_state'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -586,7 +576,7 @@ contains
         end if
 
         if (hyper_cleaning) then
-            q_sf = q_cons_vf(eqn_idx%psi)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+            out%q_sf = q_cons_vf(eqn_idx%psi)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'psi'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -594,17 +584,17 @@ contains
         end if
 
         if (pres_wrt .or. prim_vars_wrt) then
-            q_sf(:,:,:) = q_prim_vf(eqn_idx%E)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+            out%q_sf(:,:,:) = q_prim_vf(eqn_idx%E)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'pres'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
             varname(:) = ' '
         end if
 
-        if (((model_eqns == 2) .and. (bubbles_euler .neqv. .true.)) .or. (model_eqns == 3)) then
+        if (((model_eqns == model_eqns_5eq) .and. (bubbles_euler .neqv. .true.)) .or. (model_eqns == model_eqns_6eq)) then
             do i = 1, num_fluids - 1
                 if (alpha_wrt(i) .or. (cons_vars_wrt .or. prim_vars_wrt)) then
-                    q_sf(:,:,:) = q_cons_vf(i + eqn_idx%E)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf(:,:,:) = q_cons_vf(i + eqn_idx%E)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                     write (varname, '(A,I0)') 'alpha', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -617,15 +607,15 @@ contains
                     do k = z_beg, z_end
                         do j = y_beg, y_end
                             do i = x_beg, x_end
-                                q_sf(i, j, k) = 1._wp
+                                out%q_sf(i, j, k) = 1._wp
                                 do l = 1, num_fluids - 1
-                                    q_sf(i, j, k) = q_sf(i, j, k) - q_cons_vf(eqn_idx%E + l)%sf(i, j, k)
+                                    out%q_sf(i, j, k) = out%q_sf(i, j, k) - q_cons_vf(eqn_idx%E + l)%sf(i, j, k)
                                 end do
                             end do
                         end do
                     end do
                 else
-                    q_sf(:,:,:) = q_cons_vf(eqn_idx%adv%end)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf(:,:,:) = q_cons_vf(eqn_idx%adv%end)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 end if
                 write (varname, '(A,I0)') 'alpha', num_fluids
                 call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -634,8 +624,8 @@ contains
             end if
         end if
 
-        if (gamma_wrt .or. (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) then
-            q_sf(:,:,:) = gamma_sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+        if (gamma_wrt .or. (model_eqns == model_eqns_gamma_law .and. (cons_vars_wrt .or. prim_vars_wrt))) then
+            out%q_sf(:,:,:) = gamma_sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'gamma'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -643,7 +633,7 @@ contains
         end if
 
         if (heat_ratio_wrt) then
-            call s_derive_specific_heat_ratio(q_sf)
+            call s_derive_specific_heat_ratio(out%q_sf)
 
             write (varname, '(A)') 'heat_ratio'
             call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -651,8 +641,8 @@ contains
             varname(:) = ' '
         end if
 
-        if (pi_inf_wrt .or. (model_eqns == 1 .and. (cons_vars_wrt .or. prim_vars_wrt))) then
-            q_sf(:,:,:) = pi_inf_sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+        if (pi_inf_wrt .or. (model_eqns == model_eqns_gamma_law .and. (cons_vars_wrt .or. prim_vars_wrt))) then
+            out%q_sf(:,:,:) = pi_inf_sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A)') 'pi_inf'
             call s_write_variable_to_formatted_database_file(varname, t_step)
 
@@ -660,7 +650,7 @@ contains
         end if
 
         if (pres_inf_wrt) then
-            call s_derive_liquid_stiffness(q_sf)
+            call s_derive_liquid_stiffness(out%q_sf)
 
             write (varname, '(A)') 'pres_inf'
             call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -683,7 +673,7 @@ contains
                         call s_compute_speed_of_sound(pres, rho_sf(i, j, k), gamma_sf(i, j, k), pi_inf_sf(i, j, k), H, adv, &
                                                       & 0._wp, 0._wp, c, qv_sf(i, j, k))
 
-                        q_sf(i, j, k) = c
+                        out%q_sf(i, j, k) = c
                     end do
                 end do
             end do
@@ -696,7 +686,7 @@ contains
 
         do i = 1, 3
             if (omega_wrt(i)) then
-                call s_derive_vorticity_component(i, q_prim_vf, q_sf)
+                call s_derive_vorticity_component(i, q_prim_vf, out%q_sf)
 
                 write (varname, '(A,I0)') 'omega', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -706,14 +696,14 @@ contains
         end do
 
         if (ib) then
-            q_sf(:,:,:) = real(ib_markers%sf(-offset_x%beg:m + offset_x%end,-offset_y%beg:n + offset_y%end, &
-                 & -offset_z%beg:p + offset_z%end))
+            out%q_sf(:,:,:) = real(ib_markers%sf(-offset_x%beg:m + offset_x%end,-offset_y%beg:n + offset_y%end, &
+                     & -offset_z%beg:p + offset_z%end))
             varname = 'ib_markers'
             call s_write_variable_to_formatted_database_file(varname, t_step)
         end if
 
         if (p > 0 .and. qm_wrt) then
-            call s_derive_qm(q_prim_vf, q_sf)
+            call s_derive_qm(q_prim_vf, out%q_sf)
 
             write (varname, '(A)') 'qm'
             call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -724,7 +714,7 @@ contains
         if (liutex_wrt) then
             call s_derive_liutex(q_prim_vf, liutex_mag, liutex_axis)
 
-            q_sf = liutex_mag
+            out%q_sf = liutex_mag
 
             write (varname, '(A)') 'liutex_mag'
             call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -732,7 +722,7 @@ contains
             varname(:) = ' '
 
             do i = 1, 3
-                q_sf = liutex_axis(:,:,:,i)
+                out%q_sf = liutex_axis(:,:,:,i)
 
                 write (varname, '(A,I0)') 'liutex_axis', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -742,7 +732,7 @@ contains
         end if
 
         if (schlieren_wrt) then
-            call s_derive_numerical_schlieren_function(q_cons_vf, q_sf)
+            call s_derive_numerical_schlieren_function(q_cons_vf, out%q_sf)
 
             write (varname, '(A)') 'schlieren'
             call s_write_variable_to_formatted_database_file(varname, t_step)
@@ -751,7 +741,7 @@ contains
         end if
 
         if (cf_wrt) then
-            q_sf(:,:,:) = q_cons_vf(eqn_idx%c)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+            out%q_sf(:,:,:) = q_cons_vf(eqn_idx%c)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
             write (varname, '(A,I0)') 'color_function'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '
@@ -759,7 +749,7 @@ contains
 
         if (bubbles_euler) then
             do i = eqn_idx%adv%beg, eqn_idx%adv%end
-                q_sf(:,:,:) = q_cons_vf(i)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_vf(i)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A,I0)') 'alpha', i - eqn_idx%E
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -769,7 +759,7 @@ contains
         if (bubbles_euler) then
             ! nR
             do i = 1, nb
-                q_sf(:,:,:) = q_cons_vf(qbmm_idx%rs(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_vf(qbmm_idx%rs(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A,I3.3)') 'nR', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -777,7 +767,7 @@ contains
 
             ! nRdot
             do i = 1, nb
-                q_sf(:,:,:) = q_cons_vf(qbmm_idx%vs(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_vf(qbmm_idx%vs(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A,I3.3)') 'nV', i
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -785,7 +775,7 @@ contains
             if ((polytropic .neqv. .true.) .and. (.not. qbmm)) then
                 ! nP
                 do i = 1, nb
-                    q_sf(:,:,:) = q_cons_vf(qbmm_idx%ps(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf(:,:,:) = q_cons_vf(qbmm_idx%ps(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                     write (varname, '(A,I3.3)') 'nP', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                     varname(:) = ' '
@@ -793,7 +783,7 @@ contains
 
                 ! nM
                 do i = 1, nb
-                    q_sf(:,:,:) = q_cons_vf(qbmm_idx%ms(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                    out%q_sf(:,:,:) = q_cons_vf(qbmm_idx%ms(i))%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                     write (varname, '(A,I3.3)') 'nM', i
                     call s_write_variable_to_formatted_database_file(varname, t_step)
                     varname(:) = ' '
@@ -802,7 +792,7 @@ contains
 
             ! number density
             if (adv_n) then
-                q_sf(:,:,:) = q_cons_vf(eqn_idx%n)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
+                out%q_sf(:,:,:) = q_cons_vf(eqn_idx%n)%sf(x_beg:x_end,y_beg:y_end,z_beg:z_end)
                 write (varname, '(A)') 'n'
                 call s_write_variable_to_formatted_database_file(varname, t_step)
                 varname(:) = ' '
@@ -811,8 +801,8 @@ contains
 
         if (bubbles_lagrange) then
             ! Void fraction field
-            q_sf(:,:,:) = 1._wp - q_cons_vf(beta_idx)%sf(-offset_x%beg:m + offset_x%end,-offset_y%beg:n + offset_y%end, &
-                 & -offset_z%beg:p + offset_z%end)
+            out%q_sf(:,:,:) = 1._wp - q_cons_vf(beta_idx)%sf(-offset_x%beg:m + offset_x%end,-offset_y%beg:n + offset_y%end, &
+                     & -offset_z%beg:p + offset_z%end)
             write (varname, '(A)') 'voidFraction'
             call s_write_variable_to_formatted_database_file(varname, t_step)
             varname(:) = ' '

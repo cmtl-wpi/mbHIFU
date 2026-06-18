@@ -11,6 +11,7 @@ module m_pressure_relaxation
 
     use m_derived_types
     use m_global_parameters
+    use m_constants, only: model_eqns_5eq
 
     implicit none
 
@@ -217,7 +218,7 @@ contains
         type(scalar_field), dimension(sys_size), intent(inout) :: q_cons_vf
         integer, intent(in)                                    :: j, k, l
         #:if not MFC_CASE_OPTIMIZATION and USING_AMD
-            real(wp), dimension(2) :: alpha_rho, alpha
+            real(wp), dimension(3) :: alpha_rho, alpha
         #:else
             real(wp), dimension(num_fluids) :: alpha_rho, alpha
         #:endif
@@ -237,14 +238,14 @@ contains
         pi_inf = 0._wp
 
         if (bubbles_euler) then
-            if (mpp_lim .and. (model_eqns == 2) .and. (num_fluids > 2)) then
+            if (mpp_lim .and. (model_eqns == model_eqns_5eq) .and. (num_fluids > 2)) then
                 $:GPU_LOOP(parallelism='[seq]')
                 do i = 1, num_fluids
                     rho = rho + alpha_rho(i)
                     gamma = gamma + alpha(i)*gammas(i)
                     pi_inf = pi_inf + alpha(i)*pi_infs(i)
                 end do
-            else if ((model_eqns == 2) .and. (num_fluids > 2)) then
+            else if ((model_eqns == model_eqns_5eq) .and. (num_fluids > 2)) then
                 $:GPU_LOOP(parallelism='[seq]')
                 do i = 1, num_fluids - 1
                     rho = rho + alpha_rho(i)

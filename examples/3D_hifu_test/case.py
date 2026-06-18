@@ -179,17 +179,17 @@ print(
             "num_fluids": 1,  # Water
             "num_patches": 1,
             "viscous": "T",
-            "model_eqns": 2,  # 5 model eqns
+            "model_eqns": "5eq",  # 5 model eqns
             "alt_soundspeed": "F",  # Alternate sound speed (5 eqn model only)
             # 'mpp_lim'                      : 'T',       # Mixture physical parameters limits
             # 'mixture_err'                  : 'T',       # Mixture properties correction
-            "time_stepper": 3,  # O(3) TVD RK
+            "time_stepper": "rk3",  # O(3) TVD RK
             "weno_order": 5,
             "weno_eps": 1.0e-16,
             "mapped_weno": "T",
-            "riemann_solver": 2,
-            "wave_speeds": 1,
-            "avg_state": 2,
+            "riemann_solver": "hllc",
+            "wave_speeds": "direct",
+            "avg_state": "arithmetic",
             "bc_x%beg": -20,  # Acoustic input BC
             "bc_x%end": -6,
             "bc_y%beg": -6,
@@ -256,7 +256,7 @@ print(
             "hifu_params%stepStopSource": t_step_stop_source,
             # Lagrangian Bubbles
             "bubbles_lagrange": "T",
-            "bubble_model": 2,  # Keller-Miksis model
+            "bubble_model": "keller_miksis",  # Keller-Miksis model
             "thermal": 3,
             "polytropic": "F",
             "lag_params%nBubs_glb": 10,  # Number of bubbles
@@ -294,8 +294,8 @@ print(
             "bub_pp%R_v": (R_uni / MW_v) * (T0 / (c0 * c0)),
             "bub_pp%R_g": (R_uni / MW_g) * (T0 / (c0 * c0)),
             # Formatted Database Files Structure Parameters
-            "format": 1,
-            "precision": 2,
+            "format": "silo",
+            "precision": "double",
             "prim_vars_wrt": "T",
             "parallel_io": "T",
             "probe_wrt": "F",

@@ -1,8 +1,7 @@
 """
 MFC Case Parameter Type Definitions.
 
-This module provides exports from the central parameter registry (mfc.params).
-All parameter definitions are sourced from the registry.
+Exports from the central parameter registry (mfc.params).
 
 Exports:
     ALL: Family-aware mapping of all parameters {name: ParamType}
@@ -20,14 +19,10 @@ from ..state import ARG
 
 
 class _ParamTypeMapping(Mapping):
-    """
-    Read-only mapping wrapping REGISTRY's all_params for {name: ParamType} access.
+    """Read-only {name: ParamType} view over REGISTRY.all_params.
 
-    Delegates containment checks and lookup to the registry's family-aware
-    mapping, so indexed families like ``patch_ib(500000)%geometry`` resolve
-    in O(1) without enumerating all possible indices.
-
-    For iteration, yields scalar params plus one example per family attr.
+    Delegates containment and lookup to the registry's family-aware mapping,
+    so indexed families like ``patch_ib(500000)%geometry`` resolve in O(1).
     """
 
     def __init__(self):
@@ -48,525 +43,55 @@ class _ParamTypeMapping(Mapping):
         return len(self._view)
 
 
-def _load_case_optimization_params():
-    """Get params that can be hard-coded for GPU optimization."""
+def _registry():
     from ..params import REGISTRY
 
-    return [name for name, param in REGISTRY.all_params.items() if param.case_optimization]
+    return REGISTRY
 
 
-def _build_schema():
-    """Build JSON schema from registry."""
-    from ..params import REGISTRY
-
-    return REGISTRY.get_json_schema()
-
-
-def _get_validator_func():
-    """Get the cached validator from registry."""
-    from ..params import REGISTRY
-
-    return REGISTRY.get_validator()
-
-
-def _get_target_params():
-    """Get valid params for each target by parsing Fortran namelists."""
-    from ..params.namelist_parser import get_target_params
-
-    return get_target_params()
-
-
-#     for real_attr_stl, ty_stl in [("filepath", ParamType.STR), ("spc", ParamType.INT),
-#                           ("threshold", ParamType.REAL)]:
-#         PRE_PROCESS[f"patch_ib({ib_id})%model_{real_attr_stl}"] = ty_stl
-
-#     for real_attr_stl2 in ["translate", "scale", "rotate"]:
-#         for j in range(1, 4):
-#             PRE_PROCESS[f"patch_ib({ib_id})%model_{real_attr_stl2}({j})"] = ParamType.REAL
-
-# for cmp in ["x", "y", "z"]:
-#     for prepend in ["domain%beg", "domain%end", "a", "b"]:
-#         PRE_PROCESS[f"{cmp}_{prepend}"] = ParamType.REAL
-
-#     for append, ty in [("stretch", ParamType.LOG), ("a", ParamType.REAL),
-#                        ("loops", ParamType.INT)]:
-#         PRE_PROCESS[f"{append}_{cmp}"] = ty
-
-#     PRE_PROCESS[f"bc_{cmp}%beg"] = ParamType.INT
-#     PRE_PROCESS[f"bc_{cmp}%end"] = ParamType.INT
-
-# for f_id in range(1, 10+1):
-#     PRE_PROCESS[f'fluid_rho({f_id})'] = ParamType.REAL
-
-#     for real_attr in ["gamma", "pi_inf", "mul0", "ss", "pv", "gamma_v", "M_v",
-#                       "mu_v", "k_v", "cp_v", "G", "cv", "qv", "qvp", "rho_cp",
-#                       "tdiff", "absCoef"]:
-#         PRE_PROCESS[f"fluid_pp({f_id})%{real_attr}"] = ParamType.REAL
-
-# for bc_p_id in range(1, 10+1):
-#     for attribute in ["geometry","type","dir","loc"]:
-#         PRE_PROCESS[f"patch_bc({bc_p_id})%{attribute}"] = ParamType.INT
-
-#     for attribute in ["centroid","length"]:
-#         for d_id in range(1, 3+1):
-#             PRE_PROCESS[f"patch_bc({bc_p_id})%{attribute}({d_id})"] = ParamType.REAL
-
-#     PRE_PROCESS[f"patch_bc({bc_p_id})%radius"] = ParamType.REAL
-
-# for p_id in range(1, 10+1):
-#     for attribute, ty in [("geometry", ParamType.INT), ("smoothen", ParamType.LOG),
-#                       ("smooth_patch_id", ParamType.INT), ("hcid", ParamType.INT)]:
-#         PRE_PROCESS[f"patch_icpp({p_id})%{attribute}"] = ty
-
-#     for real_attr in ["radius",  "radii", "epsilon", "beta", "normal", "alpha_rho",
-#                       'non_axis_sym', "normal", "smooth_coeff", "rho", "vel",
-#                       "alpha", "gamma", "pi_inf", "r0", "v0", "p0", "m0", "cv",
-#                       "qv", "qvp"]:
-#         PRE_PROCESS[f"patch_icpp({p_id})%{real_attr}"] = ParamType.REAL
-
-#     for real_attr in range(2, 9+1):
-#         PRE_PROCESS[f"patch_icpp({p_id})%a({real_attr})"] = ParamType.REAL
-
-#     PRE_PROCESS[f"patch_icpp({p_id})%pres"] = ParamType.REAL.analytic()
-
-#     PRE_PROCESS[f"patch_icpp({p_id})%Bx"] = ParamType.REAL.analytic()
-#     PRE_PROCESS[f"patch_icpp({p_id})%By"] = ParamType.REAL.analytic()
-#     PRE_PROCESS[f"patch_icpp({p_id})%Bz"] = ParamType.REAL.analytic()
-
-#     for i in range(100):
-#         PRE_PROCESS[f"patch_icpp({p_id})%Y({i})"] = ParamType.REAL.analytic()
-
-#     PRE_PROCESS[f"patch_icpp({p_id})%model_filepath"] = ParamType.STR
-
-#     for real_attr in ["translate", "scale", "rotate"]:
-#         for j in range(1, 4):
-#             PRE_PROCESS[f"patch_icpp({p_id})%model_{real_attr}({j})"] = ParamType.REAL
-
-#     PRE_PROCESS[f"patch_icpp({p_id})%model_spc"] = ParamType.INT
-#     PRE_PROCESS[f"patch_icpp({p_id})%model_threshold"] = ParamType.REAL
-
-#     for cmp_id, cmp in enumerate(["x", "y", "z"]):
-#         cmp_id += 1
-#         PRE_PROCESS[f'patch_icpp({p_id})%{cmp}_centroid'] = ParamType.REAL
-#         PRE_PROCESS[f'patch_icpp({p_id})%length_{cmp}'] = ParamType.REAL
-
-#         for append in ["radii", "normal"]:
-#             PRE_PROCESS[f'patch_icpp({p_id})%{append}({cmp_id})'] = ParamType.REAL
-#         PRE_PROCESS[f'patch_icpp({p_id})%vel({cmp_id})'] = ParamType.REAL.analytic()
-
-#     for arho_id in range(1, 10+1):
-#         PRE_PROCESS[f'patch_icpp({p_id})%alpha({arho_id})'] = ParamType.REAL.analytic()
-#         PRE_PROCESS[f'patch_icpp({p_id})%alpha_rho({arho_id})'] = ParamType.REAL.analytic()
-
-#     for taue_id in range(1, 6+1):
-#         PRE_PROCESS[f'patch_icpp({p_id})%tau_e({taue_id})'] = ParamType.REAL.analytic()
-
-#     PRE_PROCESS[f'patch_icpp({p_id})%cf_val'] = ParamType.REAL.analytic()
-
-#     if p_id >= 2:
-#         PRE_PROCESS[f'patch_icpp({p_id})%alter_patch'] = ParamType.LOG
-
-#         for alter_id in range(1, p_id):
-#             PRE_PROCESS[f'patch_icpp({p_id})%alter_patch({alter_id})'] = ParamType.LOG
-
-#     PRE_PROCESS[f'patch_icpp({p_id})%cf_val'] = ParamType.REAL.analytic()
-
-#     for cmp in ["x", "y", "z"]:
-#         PRE_PROCESS[f'bc_{cmp}%beg'] = ParamType.INT
-#         PRE_PROCESS[f'bc_{cmp}%end'] = ParamType.INT
-#         PRE_PROCESS[f'bc_{cmp}%vb1'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%vb2'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%vb3'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%ve1'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%ve2'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%ve3'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%pres_in'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%pres_out'] = ParamType.REAL
-#         PRE_PROCESS[f'bc_{cmp}%grcbc_in'] = ParamType.LOG
-#         PRE_PROCESS[f'bc_{cmp}%grcbc_out'] = ParamType.LOG
-#         PRE_PROCESS[f'bc_{cmp}%grcbc_vel_out'] = ParamType.LOG
-
-#         for int_id in range(1, 10+1):
-#             PRE_PROCESS[f"bc_{cmp}%alpha_rho_in({int_id})"] = ParamType.REAL
-#             PRE_PROCESS[f"bc_{cmp}%alpha_in({int_id})"] = ParamType.REAL
-
-#         for int_id in range(1, 3+1):
-#             PRE_PROCESS[f"bc_{cmp}%vel_in({int_id})"] = ParamType.REAL
-#             PRE_PROCESS[f"bc_{cmp}%vel_out({int_id})"] = ParamType.REAL
-
-# # NOTE: Currently unused.
-# # for f_id in range(1, 10+1):
-# #     PRE_PROCESS.append(f"spec_pp({f_id})")
-
-
-# # Removed: 't_tol', 'alt_crv', 'regularization', 'lsq_deriv',
-# # Feel free to put them back if they are needed once more.
-# # Be sure to add them to the correct type set at the top of the file too!
-# SIMULATION = COMMON.copy()
-# SIMULATION.update({
-#     'run_time_info': ParamType.LOG,
-#     't_step_old': ParamType.INT,
-#     'dt': ParamType.REAL,
-#     't_step_start': ParamType.INT,
-#     't_step_stop': ParamType.INT,
-#     't_step_save': ParamType.INT,
-#     't_step_print': ParamType.INT,
-#     'time_stepper': ParamType.INT,
-#     'weno_eps': ParamType.REAL,
-#     'teno_CT': ParamType.REAL,
-#     'wenoz_q': ParamType.REAL,
-#     'mapped_weno': ParamType.LOG,
-#     'wenoz': ParamType.LOG,
-#     'teno': ParamType.LOG,
-#     'mp_weno': ParamType.LOG,
-#     'weno_avg': ParamType.LOG,
-#     'weno_Re_flux': ParamType.LOG,
-#     'riemann_solver': ParamType.INT,
-#     'wave_speeds': ParamType.INT,
-#     'avg_state': ParamType.INT,
-#     'prim_vars_wrt': ParamType.LOG,
-#     'alt_soundspeed': ParamType.LOG,
-#     'null_weights': ParamType.LOG,
-#     'mixture_err': ParamType.LOG,
-#     'fd_order': ParamType.INT,
-#     'num_probes': ParamType.INT,
-#     'probe_wrt': ParamType.LOG,
-#     'bubble_model': ParamType.INT,
-#     'acoustic_source': ParamType.LOG,
-#     'num_source': ParamType.INT,
-#     'qbmm': ParamType.LOG,
-#     'integral_wrt': ParamType.LOG,
-#     'num_integrals': ParamType.INT,
-#     'rdma_mpi': ParamType.LOG,
-#     'palpha_eps': ParamType.REAL,
-#     'ptgalpha_eps': ParamType.REAL,
-#     'pi_fac': ParamType.REAL,
-#     'adap_dt': ParamType.LOG,
-#     'adap_dt_tol': ParamType.REAL,
-#     'adap_dt_max_iters': ParamType.INT,
-#     'ib': ParamType.LOG,
-#     'num_ibs': ParamType.INT,
-#     'n_start': ParamType.INT,
-#     't_stop': ParamType.REAL,
-#     't_save': ParamType.REAL,
-#     'cfl_target': ParamType.REAL,
-#     'low_Mach': ParamType.INT,
-#     'surface_tension': ParamType.LOG,
-#     'viscous': ParamType.LOG,
-#     'bubbles_lagrange': ParamType.LOG,
-#     'hifu': ParamType.LOG,
-#     'num_bc_patches': ParamType.INT,
-#     'powell': ParamType.LOG,
-#     'tau_star': ParamType.REAL,
-#     'cont_damage_s': ParamType.REAL,
-#     'alpha_bar': ParamType.REAL,
-#     'num_igr_iters': ParamType.INT,
-#     'num_igr_warm_start_iters': ParamType.INT,
-#     'alf_factor': ParamType.REAL,
-#     'igr_iter_solver': ParamType.INT,
-#     'igr_pres_lim': ParamType.LOG,
-#     'recon_type': ParamType.INT,
-#     'muscl_order': ParamType.INT,
-#     'muscl_lim': ParamType.INT,
-#     'int_comp': ParamType.LOG,
-#     'ic_eps': ParamType.REAL,
-#     'ic_beta': ParamType.REAL,
-#     'nv_uvm_out_of_core': ParamType.LOG,
-#     'nv_uvm_igr_temps_on_gpu': ParamType.INT,
-#     'nv_uvm_pref_gpu': ParamType.LOG,
-# })
-
-# for var in [ 'heatTransfer_model', 'massTransfer_model', 'pressure_corrector',
-#              'write_bubbles', 'write_bubbles_stats', 'coatedBub_model', 'newModel_2D']:
-#     SIMULATION[f'lag_params%{var}'] = ParamType.LOG
-
-# for var in [ 'solver_approach', 'cluster_type', 'smooth_type', 'nBubs_glb', 'write_only_bub_id',
-#             'interaction_model', 'influence']:
-#     SIMULATION[f'lag_params%{var}'] = ParamType.INT
-
-# for var in [ 'epsilonb', 'valmaxvoid', 'charwidth', 'diffcoefvap',
-#             'c0', 'rho0', 'T0', 'x0', 'Thost', 'ss0_ctdBub', 'srfDilVsc_ctdBub',
-#              'srfElast_ctdBub', 'pnoise_dev', 'pnoise_scale', 'scaleVirtualSphere']:
-#     SIMULATION[f'lag_params%{var}'] = ParamType.REAL
-
-# for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',
-#              'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian', 'moments','power_balance' ]:
-#     SIMULATION[f'hifu_params%{var}'] = ParamType.LOG
-
-# for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
-#              't_step_save_stg3', 'p_cyl', 'm', 'n', 'p']:
-#     SIMULATION[f'hifu_params%{var}'] = ParamType.INT
-
-# for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-#              'dt_stg2', 'dt_stg3', 'z_max', 'xb', 'xe', 'ye', 'cfl_stg3', 'R_cloud',
-#              'cv_xb', 'cv_xe', 'cv_yb', 'cv_ye', 'cv_zb', 'cv_ze']:
-#     SIMULATION[f'hifu_params%{var}'] = ParamType.REAL
-
-# for dir_id in range(1, 4):
-#     SIMULATION[f"hifu_params%cloud_center({dir_id})"] = ParamType.REAL
-
-# for var in [ 'iwave', 'ncycles']:
-#     SIMULATION[f'acoustic_bc_params%{var}'] = ParamType.INT
-
-# for var in [ 'Pbase', 'rho', 'cson', 'Pamp', 'freq', 'focLen', 'focCal', 'apert']:
-#     SIMULATION[f'acoustic_bc_params%{var}'] = ParamType.REAL
-
-# for var in [ 'diffusion', 'reactions' ]:
-#     SIMULATION[f'chem_params%{var}'] = ParamType.LOG
-
-# for var in [ 'gamma_method' ]:
-#     SIMULATION[f'chem_params%{var}'] = ParamType.INT
-
-# for ib_id in range(1, 10+1):
-#     for real_attr, ty in [("geometry", ParamType.INT), ("radius", ParamType.REAL),
-#                           ("theta", ParamType.REAL), ("slip", ParamType.LOG),
-#                           ("c", ParamType.REAL), ("p", ParamType.REAL),
-#                           ("t", ParamType.REAL), ("m", ParamType.REAL),
-#                           ("moving_ibm", ParamType.INT)]:
-#         SIMULATION[f"patch_ib({ib_id})%{real_attr}"] = ty
-
-#     for dir_id in range(1, 4):
-#         SIMULATION[f"patch_ib({ib_id})%vel({dir_id})"] = ParamType.REAL
-#         SIMULATION[f"patch_ib({ib_id})%angles({dir_id})"] = ParamType.REAL
-#         SIMULATION[f"patch_ib({ib_id})%angular_vel({dir_id})"] = ParamType.REAL
-
-#     for cmp_id, cmp in enumerate(["x", "y", "z"]):
-#         cmp_id += 1
-#         SIMULATION[f'patch_ib({ib_id})%{cmp}_centroid'] = ParamType.REAL
-#         SIMULATION[f'patch_ib({ib_id})%length_{cmp}'] = ParamType.REAL
-
-# for cmp in ["x", "y", "z"]:
-#     SIMULATION[f'bc_{cmp}%beg'] = ParamType.INT
-#     SIMULATION[f'bc_{cmp}%end'] = ParamType.INT
-#     SIMULATION[f'bc_{cmp}%vb1'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%vb2'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%vb3'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%ve1'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%ve2'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%ve3'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%pres_in'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%pres_out'] = ParamType.REAL
-#     SIMULATION[f'bc_{cmp}%grcbc_in'] = ParamType.LOG
-#     SIMULATION[f'bc_{cmp}%grcbc_out'] = ParamType.LOG
-#     SIMULATION[f'bc_{cmp}%grcbc_vel_out'] = ParamType.LOG
-
-#     for int_id in range(1, 10+1):
-#         SIMULATION[f"bc_{cmp}%alpha_rho_in({int_id})"] = ParamType.REAL
-#         SIMULATION[f"bc_{cmp}%alpha_in({int_id})"] = ParamType.REAL
-
-#     for int_id in range(1, 3+1):
-#         SIMULATION[f"bc_{cmp}%vel_in({int_id})"] = ParamType.REAL
-#         SIMULATION[f"bc_{cmp}%vel_out({int_id})"] = ParamType.REAL
-
-#     for var in ["k", "w", "p", "g"]:
-#         SIMULATION[f'{var}_{cmp}'] = ParamType.REAL
-#     SIMULATION[f'bf_{cmp}'] = ParamType.LOG
-
-
-#     for prepend in ["domain%beg", "domain%end"]:
-#         SIMULATION[f"{cmp}_{prepend}"] = ParamType.REAL
-
-# for probe_id in range(1,10+1):
-#     for cmp in ["x", "y", "z"]:
-#         SIMULATION[f'probe({probe_id})%{cmp}'] = ParamType.REAL
-
-# for f_id in range(1,10+1):
-#     for real_attr in ["gamma", "pi_inf", "mul0", "ss", "pv", "gamma_v", "M_v",
-#                       "mu_v", "k_v", "cp_v", "G", "cv", "qv", "qvp", "rho_cp",
-#                       "tdiff", "absCoef" ]:
-#         SIMULATION[f"fluid_pp({f_id})%{real_attr}"] = ParamType.REAL
-
-#     for re_id in [1, 2]:
-#         SIMULATION[f"fluid_pp({f_id})%Re({re_id})"] = ParamType.REAL
-
-#     for mono_id in range(1,4+1):
-#         for int_attr in ["pulse", "support", "num_elements", "element_on", "bb_num_freq"]:
-#             SIMULATION[f"acoustic({mono_id})%{int_attr}"] = ParamType.INT
-
-#         SIMULATION[f"acoustic({mono_id})%dipole"] = ParamType.LOG
-
-#         for real_attr in ["mag", "length", "height", "wavelength", "frequency",
-#                           "gauss_sigma_dist", "gauss_sigma_time", "npulse",
-#                           "dir", "delay", "foc_length", "aperture",
-#                           "element_spacing_angle", "element_polygon_ratio",
-#                           "rotate_angle", "bb_bandwidth", "bb_lowest_freq"]:
-#             SIMULATION[f"acoustic({mono_id})%{real_attr}"] = ParamType.REAL
-
-#         for cmp_id in range(1,3+1):
-#             SIMULATION[f"acoustic({mono_id})%loc({cmp_id})"] = ParamType.REAL
-
-#     for int_id in range(1,5+1):
-#         for cmp in ["x", "y", "z"]:
-#             SIMULATION[f"integral({int_id})%{cmp}min"] = ParamType.REAL
-#             SIMULATION[f"integral({int_id})%{cmp}max"] = ParamType.REAL
-
-# # Removed: 'fourier_modes%beg', 'fourier_modes%end'.
-# # Feel free to return them if they are needed once more.
-# POST_PROCESS = COMMON.copy()
-# POST_PROCESS.update({
-#     't_step_start': ParamType.INT,
-#     't_step_stop': ParamType.INT,
-#     't_step_save': ParamType.INT,
-#     'alt_soundspeed': ParamType.LOG,
-#     'mixture_err': ParamType.LOG,
-#     'format': ParamType.INT,
-#     'schlieren_wrt': ParamType.LOG,
-#     'schlieren_alpha': ParamType.REAL,
-#     'fd_order': ParamType.INT,
-#     'alpha_rho_wrt': ParamType.LOG,
-#     'rho_wrt': ParamType.LOG,
-#     'mom_wrt': ParamType.LOG,
-#     'vel_wrt': ParamType.LOG,
-#     'flux_lim': ParamType.INT,
-#     'flux_wrt': ParamType.LOG,
-#     'E_wrt': ParamType.LOG,
-#     'pres_wrt': ParamType.LOG,
-#     'alpha_wrt': ParamType.LOG,
-#     'kappa_wrt': ParamType.LOG,
-#     'gamma_wrt': ParamType.LOG,
-#     'heat_ratio_wrt': ParamType.LOG,
-#     'pi_inf_wrt': ParamType.LOG,
-#     'pres_inf_wrt': ParamType.LOG,
-#     'cons_vars_wrt': ParamType.LOG,
-#     'prim_vars_wrt': ParamType.LOG,
-#     'c_wrt': ParamType.LOG,
-#     'omega_wrt': ParamType.LOG,
-#     'qbmm': ParamType.LOG,
-#     'qm_wrt': ParamType.LOG,
-#     'liutex_wrt': ParamType.LOG,
-#     'cf_wrt': ParamType.LOG,
-#     'sim_data': ParamType.LOG,
-#     'ib': ParamType.LOG,
-#     'num_ibs': ParamType.INT,
-#     'cfl_target': ParamType.REAL,
-#     't_save': ParamType.REAL,
-#     't_stop': ParamType.REAL,
-#     'n_start': ParamType.INT,
-#     'surface_tension': ParamType.LOG,
-#     'output_partial_domain': ParamType.LOG,
-#     'bubbles_lagrange': ParamType.LOG,
-#     'hifu': ParamType.LOG,
-# })
-
-# for var in [ 'sampling', 'heatSolver', 'intPrms', 'streaming', 'automatic_stages',
-#              'stg1', 'stg2', 'stg3', 'stg3_3d', 'cartesian' ]:
-#     POST_PROCESS[f'hifu_params%{var}'] = ParamType.LOG
-
-# for var in [ 'stepStopSource', 't_step_stop_stg1', 't_step_stop_stg2', 't_step_stop_stg3',
-#              't_step_save_stg3', 'p_cyl', 'm', 'n', 'p']:
-#     POST_PROCESS[f'hifu_params%{var}'] = ParamType.INT
-
-# for var in [ 'Tref', 'K', 'alpha', 'atmPres', 'absCoef', 't_stop_stg1', 't_stop_stg2',
-#              'dt_stg2', 'dt_stg3', 'z_max']:
-#     POST_PROCESS[f'hifu_params%{var}'] = ParamType.REAL
-
-# for cmp_id in range(1,3+1):
-#     cmp = ["x", "y", "z"][cmp_id-1]
-
-#     POST_PROCESS[f'bc_{cmp}%beg'] = ParamType.INT
-#     POST_PROCESS[f'bc_{cmp}%end'] = ParamType.INT
-
-#     POST_PROCESS[f'{cmp}_output%beg'] = ParamType.REAL
-#     POST_PROCESS[f'{cmp}_output%end'] = ParamType.REAL
-
-#     for real_attr in ["mom_wrt", "vel_wrt", "flux_wrt", "omega_wrt"]:
-#         POST_PROCESS[f'{real_attr}({cmp_id})'] = ParamType.LOG
-
-# for cmp_id in range(100):
-#     POST_PROCESS[f'chem_wrt_Y({cmp_id})'] = ParamType.LOG
-# POST_PROCESS['chem_wrt_T'] = ParamType.LOG
-
-# for fl_id in range(1,10+1):
-#     for append, ty in [("schlieren_alpha", ParamType.REAL),
-#                        ("alpha_rho_wrt", ParamType.LOG),
-#                        ("alpha_wrt", ParamType.LOG), ("kappa_wrt", ParamType.LOG)]:
-#         POST_PROCESS[f'{append}({fl_id})'] = ty
-
-#     for real_attr in ["gamma", "pi_inf", "ss", "pv", "gamma_v", "M_v", "mu_v", "k_v", "cp_v",
-#                       "G", "mul0", "cv", "qv", "qvp" ]:
-#         POST_PROCESS[f"fluid_pp({fl_id})%{real_attr}"] = ParamType.REAL
-
-# Parameters to ignore during certain operations
 IGNORE = ["cantera_file", "chemistry"]
-
-# Family-aware mapping of all parameters — supports O(1) lookup for indexed families
 ALL = _ParamTypeMapping()
+CASE_OPTIMIZATION = [n for n, p in _registry().all_params.items() if p.case_optimization]
+SCHEMA = _registry().get_json_schema()
 
-# Parameters that can be hard-coded for GPU case optimization
-CASE_OPTIMIZATION = _load_case_optimization_params()
-
-# JSON schema for validation
-SCHEMA = _build_schema()
-
-# Regex to extract the base name from indexed params
 _BASE_NAME_RE = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_]*)")
 
 
 def _is_param_valid_for_target(param_name: str, target_name: str) -> bool:
-    """
-    Check if a parameter is valid for a given target.
+    from ..params.namelist_parser import get_target_params
 
-    Uses the Fortran namelist definitions as the source of truth.
-    Handles indexed params like "patch_icpp(1)%geometry" by checking base name.
-    Args:
-        param_name: The parameter name (may include indices)
-        target_name: One of 'pre_process', 'simulation', 'post_process'
-
-    Returns:
-        True if the parameter is valid for the target
-    """
-    target_params = _get_target_params().get(target_name, set())
-
-    # Extract base parameter name (before any index or attribute)
-    # e.g., "patch_icpp(1)%geometry" -> "patch_icpp"
-    # e.g., "fluid_pp(2)%gamma" -> "fluid_pp"
-    # e.g., "acoustic(1)%loc(1)" -> "acoustic"
+    target_params = get_target_params().get(target_name, set())
     match = _BASE_NAME_RE.match(param_name)
-    if match:
-        base_name = match.group(1)
-        return base_name in target_params
-
-    return param_name in target_params
+    return match.group(1) in target_params if match else param_name in target_params
 
 
 class _TargetKeySet:
-    """
-    Set-like object for checking if a param is valid for a specific target.
+    """Set-like object for checking param validity for a specific target.
 
-    Supports ``key in target_key_set`` via base-name matching against the
-    Fortran namelist, plus optionally filtering out case-optimization params.
-    Does not enumerate all possible indexed family members.
+    Supports ``key in obj`` via base-name matching against the Fortran namelist,
+    optionally filtering out case-optimization params.
     """
 
     def __init__(self, target_name: str, filter_case_opt: bool = False):
         self._target_name = target_name
-        self._filter_case_opt = filter_case_opt
         self._case_opt = set(CASE_OPTIMIZATION) if filter_case_opt else set()
 
     def __contains__(self, key):
-        if self._filter_case_opt and key in self._case_opt:
+        if key in self._case_opt:
             return False
         return _is_param_valid_for_target(key, self._target_name)
 
 
 def get_input_dict_keys(target_name: str):
-    """
-    Get a set-like object for checking parameter validity for a target.
+    """Return a set-like object for checking parameter validity for a target.
 
-    Returns an object that supports ``key in result`` for O(1) checks.
-    For indexed families, this does NOT enumerate all possible indices —
-    it checks the base name against the Fortran namelist.
-
-    Args:
-        target_name: One of 'pre_process', 'simulation', 'post_process'
-
-    Returns:
-        Set-like object supporting ``in`` operator
+    Supports ``key in result`` for O(1) checks. Does NOT enumerate indexed family
+    members — checks the base name against the Fortran namelist.
     """
     filter_case_opt = ARG("case_optimization", dflt=False) and target_name == "simulation"
     return _TargetKeySet(target_name, filter_case_opt)
 
 
 def get_validator():
-    """Get the cached JSON schema validator."""
-    return _get_validator_func()
+    """Return the cached JSON schema validator."""
+    return _registry().get_validator()

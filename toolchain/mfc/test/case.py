@@ -155,13 +155,23 @@ class TestCase(case.Case):
     trace: str
     override_tol: Optional[float] = None
     restart_check: bool = False
+    kind: str = "golden"
+    convergence_spec: Optional[dict] = None
+    canary: bool = False
 
-    def __init__(self, trace: str, mods: dict, ppn: int = None, override_tol: float = None, restart_check: bool = False) -> None:
+    def __init__(
+        self, trace: str, mods: dict, ppn: int = None, override_tol: float = None, restart_check: bool = False, kind: str = "golden", convergence_spec: Optional[dict] = None, canary: bool = False
+    ) -> None:
         self.trace = trace
         self.ppn = ppn or 1
         self.override_tol = override_tol
         self.restart_check = restart_check
-        super().__init__({**BASE_CFG.copy(), **mods})
+        self.kind = kind
+        self.convergence_spec = convergence_spec
+        self.canary = canary
+        merge = {**BASE_CFG.copy(), **mods}
+        merge = {key: val for key, val in merge.items() if val is not None}
+        super().__init__(merge)
 
     def run(self, targets: List[Union[str, MFCTarget]], gpus: Set[int]) -> subprocess.CompletedProcess:
         if gpus is not None and len(gpus) != 0:
@@ -239,6 +249,11 @@ class TestCase(case.Case):
 
     def get_uuid(self) -> str:
         return trace_to_uuid(self.trace)
+
+    def coverage_key(self) -> str:
+        from .coverage import param_hash
+
+        return param_hash(self.params)
 
     def get_dirpath(self):
         return os.path.join(common.MFC_TEST_DIR, self.get_uuid())
@@ -359,11 +374,22 @@ class TestCaseBuilder:
     functor: Optional[Callable]
     override_tol: Optional[float] = None
     restart_check: bool = False
+    kind: str = "golden"
+    convergence_spec: Optional[dict] = None
+    canary: bool = False
 
     def get_uuid(self) -> str:
         return trace_to_uuid(self.trace)
 
+    def coverage_key(self) -> str:
+        return self.to_case().coverage_key()
+
     def to_case(self) -> TestCase:
+        if self.kind == "convergence":
+            # Convergence cases drive their own runs — the BASE_CFG mods/path
+            # machinery is unused. Trace + spec are the only inputs.
+            return TestCase(self.trace, {}, self.ppn, self.override_tol, self.restart_check, kind=self.kind, convergence_spec=self.convergence_spec, canary=self.canary)
+
         dictionary = {}
         if self.path:
             dictionary.update(input.load(self.path, self.args, do_print=False).params)
@@ -383,7 +409,7 @@ class TestCaseBuilder:
         if self.functor:
             self.functor(dictionary)
 
-        return TestCase(self.trace, dictionary, self.ppn, self.override_tol, self.restart_check)
+        return TestCase(self.trace, dictionary, self.ppn, self.override_tol, self.restart_check, canary=self.canary)
 
 
 @dataclasses.dataclass
@@ -407,6 +433,15 @@ class CaseGeneratorStack:
 
 def define_case_f(trace: str, path: str, args: List[str] = None, ppn: int = None, mods: dict = None, functor: Callable = None, override_tol: float = None) -> TestCaseBuilder:
     return TestCaseBuilder(trace, mods or {}, path, args or [], ppn or 1, functor, override_tol)
+
+
+def define_convergence_case(trace: str, spec: dict, ppn: int = None) -> TestCaseBuilder:
+    """Register a convergence-rate test (kind='convergence').
+
+    `spec` must include a `runner` key naming a runner in
+    `toolchain/mfc/test/convergence.py` plus runner-specific arguments.
+    """
+    return TestCaseBuilder(trace, {}, None, None, ppn or 1, None, None, False, kind="convergence", convergence_spec=spec)
 
 
 def define_case_d(stack: CaseGeneratorStack, newTrace: str, newMods: dict, ppn: int = None, functor: Callable = None, override_tol: float = None, restart_check: bool = False) -> TestCaseBuilder:
