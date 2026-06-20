@@ -1070,7 +1070,7 @@ def _load():
     # — they must NOT be registered (namelist read would crash).
     for a in ["heatTransfer_model", "massTransfer_model", "pressure_corrector", "write_bubbles", "write_bubbles_stats", "coatedBub_model"]:
         _r(f"lag_params%{a}", LOG, {"bubbles"})
-    for a in ["solver_approach", "cluster_type", "smooth_type", "nBubs_glb", "interaction_model"]:
+    for a in ["solver_approach", "cluster_type", "smooth_type", "nBubs_glb", "interaction_model", "write_only_bub_id"]:
         _r(f"lag_params%{a}", INT, {"bubbles"})
     for a in ["epsilonb", "valmaxvoid", "charwidth"]:
         _r(f"lag_params%{a}", REAL, {"bubbles"})
