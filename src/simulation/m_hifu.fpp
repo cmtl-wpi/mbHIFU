@@ -192,7 +192,7 @@ contains
                 call s_start_HIFU_indexes(stg=2)
                 hifu_params%sampling = .true.
                 hifu_params%heatSolver = .false.
-                $:GPU_UPDATE(device='[dt, hifu_params]')
+                $:GPU_UPDATE(device='[dt, hifu_params, hifu_idx]')
 
                 call s_initialize_sampling_vars()
                 hifu_write_output = .true.
@@ -210,7 +210,7 @@ contains
                 call s_start_HIFU_indexes(stg=2)
                 hifu_params%sampling = .true.
                 hifu_params%heatSolver = .false.
-                $:GPU_UPDATE(device='[hifu_params, dt]')
+                $:GPU_UPDATE(device='[hifu_params, dt, hifu_idx]')
 
                 call s_initialize_sampling_vars()
                 hifu_write_output = .true.
@@ -249,7 +249,7 @@ contains
 
             exitFlag = .false.
 
-            $:GPU_UPDATE(device='[hifu_params, dt]')
+            $:GPU_UPDATE(device='[hifu_params, dt, hifu_idx]')
         end if
 
     end subroutine s_HIFU_stages
@@ -930,7 +930,7 @@ contains
             if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
             call s_mean_radius_hifu(sampledTime)
             hifu_idx%qvis = 1; hifu_idx%qth = hifu_idx%qvis + 1
-            $:GPU_UPDATE(device='[hifu_params]')
+            $:GPU_UPDATE(device='[hifu_params, hifu_idx]')
 
             $:GPU_PARALLEL_LOOP(private='[i, j, k]', collapse=3)
             do k = idwbuff(3)%beg, idwbuff(3)%end
@@ -970,7 +970,7 @@ contains
             end if
 
             call s_start_HIFU_indexes(stg=3)
-            $:GPU_UPDATE(device='[hifu_params]')
+            $:GPU_UPDATE(device='[hifu_params, hifu_idx]')
 
             abortFlag = 0._wp; CFL_heat_max = -100_wp
 

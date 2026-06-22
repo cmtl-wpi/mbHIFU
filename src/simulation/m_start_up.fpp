@@ -1132,7 +1132,7 @@ contains
         $:GPU_UPDATE(device='[sigma, surface_tension]')
 
         $:GPU_UPDATE(device='[acoustic_bc_params]')
-        $:GPU_UPDATE(device='[hifu, hifu_params, sys_size_hifu]')
+        $:GPU_UPDATE(device='[hifu, hifu_params, sys_size_hifu, hifu_idx]')
 
         $:GPU_UPDATE(device='[dx, dy, dz, x_cb, x_cc, y_cb, y_cc, z_cb, z_cc]')
         $:GPU_UPDATE(device='[bc_x%beg, bc_x%end, bc_y%beg, bc_y%end, bc_z%beg, bc_z%end]')
