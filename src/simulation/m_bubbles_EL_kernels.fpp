@@ -117,14 +117,14 @@ contains
                 ! Smear the viscous and thermal intensities in the 3D domain Update heat source field (qvis)
                 addFun1 = lbk_qvis(l)/Vol
                 $:GPU_ATOMIC(atomic='update')
-                updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), &
-                              & cell(3)) = updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), cell(3)) + addFun1
+                updatedvar%vf(hifu_idx%qvis)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(hifu_idx%qvis)%sf(cell(1), cell(2), &
+                              & cell(3)) + addFun1
 
                 ! Update heat source field (qth)
                 addFun2 = lbk_qth(l)/Vol
                 $:GPU_ATOMIC(atomic='update')
-                updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), &
-                              & cell(2), cell(3)) + addFun2
+                updatedvar%vf(hifu_idx%qth)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(hifu_idx%qth)%sf(cell(1), cell(2), &
+                              & cell(3)) + addFun2
             else
                 ! Update void fraction field
                 addFun1 = strength_vol/Vol
@@ -437,15 +437,15 @@ contains
                                 ! Update qvis field
                                 addFun1 = func*lbk_qvis(l)
                                 $:GPU_ATOMIC(atomic='update')
-                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), &
-                                              & cellaux(3)) = updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), &
+                                updatedvar%vf(hifu_idx%qvis)%sf(cellaux(1), cellaux(2), &
+                                              & cellaux(3)) = updatedvar%vf(hifu_idx%qvis)%sf(cellaux(1), cellaux(2), &
                                               & cellaux(3)) + addFun1
 
                                 ! Update qth field
                                 addFun2 = func*lbk_qth(l)
                                 $:GPU_ATOMIC(atomic='update')
-                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), &
-                                              & cellaux(3)) = updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), &
+                                updatedvar%vf(hifu_idx%qth)%sf(cellaux(1), cellaux(2), &
+                                              & cellaux(3)) = updatedvar%vf(hifu_idx%qth)%sf(cellaux(1), cellaux(2), &
                                               & cellaux(3)) + addFun2
                             end do
                         end do
@@ -592,15 +592,15 @@ contains
                                 ! Update qvis field
                                 addFun1 = func*lbk_qvis(l)
                                 $:GPU_ATOMIC(atomic='update')
-                                updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), &
-                                              & cellaux(3)) = updatedvar%vf(hifu_params%qvis_idx)%sf(cellaux(1), cellaux(2), &
+                                updatedvar%vf(hifu_idx%qvis)%sf(cellaux(1), cellaux(2), &
+                                              & cellaux(3)) = updatedvar%vf(hifu_idx%qvis)%sf(cellaux(1), cellaux(2), &
                                               & cellaux(3)) + addFun1
 
                                 ! Update qth field
                                 addFun2 = func*lbk_qth(l)
                                 $:GPU_ATOMIC(atomic='update')
-                                updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), &
-                                              & cellaux(3)) = updatedvar%vf(hifu_params%qth_idx)%sf(cellaux(1), cellaux(2), &
+                                updatedvar%vf(hifu_idx%qth)%sf(cellaux(1), cellaux(2), &
+                                              & cellaux(3)) = updatedvar%vf(hifu_idx%qth)%sf(cellaux(1), cellaux(2), &
                                               & cellaux(3)) + addFun2
                             end do
                         end do
@@ -691,14 +691,14 @@ contains
                 ! Update qvis field
                 addFun1 = lbk_qvis(l)/volCell
                 $:GPU_ATOMIC(atomic='update')
-                updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), &
-                              & cell(3)) = updatedvar%vf(hifu_params%qvis_idx)%sf(cell(1), cell(2), cell(3)) + addFun1
+                updatedvar%vf(hifu_idx%qvis)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(hifu_idx%qvis)%sf(cell(1), cell(2), &
+                              & cell(3)) + addFun1
 
                 ! Update qth field
                 addFun2 = lbk_qth(l)/volCell
                 $:GPU_ATOMIC(atomic='update')
-                updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(hifu_params%qth_idx)%sf(cell(1), &
-                              & cell(2), cell(3)) + addFun2
+                updatedvar%vf(hifu_idx%qth)%sf(cell(1), cell(2), cell(3)) = updatedvar%vf(hifu_idx%qth)%sf(cell(1), cell(2), &
+                              & cell(3)) + addFun2
             end if
         end do
         $:END_GPU_PARALLEL_LOOP()

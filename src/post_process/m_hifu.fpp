@@ -74,17 +74,17 @@ contains
     subroutine s_HIFU_indexes()
 
         if (hifu_params%stg2) then
-            hifu_params%qac_idx = 1
-            hifu_params%qac_prms_idx = 2
-            hifu_params%tsamp_idx = 3
-            hifu_params%P_idx = 4
+            hifu_idx%qac = 1
+            hifu_idx%qac_prms = 2
+            hifu_idx%tsamp = 3
+            hifu_idx%P = 4
         end if
 
         if (hifu_params%stg3) then
-            hifu_params%T_idx = 1
-            hifu_params%qac_idx = 3
-            hifu_params%qvis_idx = 4
-            hifu_params%qth_idx = 5
+            hifu_idx%T = 1
+            hifu_idx%qac = 3
+            hifu_idx%qvis = 4
+            hifu_idx%qth = 5
         end if
 
     end subroutine s_HIFU_indexes

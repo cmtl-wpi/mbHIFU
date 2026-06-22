@@ -66,17 +66,17 @@ contains
         integer, intent(in) :: stg
 
         if (stg == 2) then
-            hifu_params%qac_idx = 1
-            hifu_params%qac_prms_idx = 2
-            hifu_params%tsamp_idx = 3
-            hifu_params%P_idx = 4
+            hifu_idx%qac = 1
+            hifu_idx%qac_prms = 2
+            hifu_idx%tsamp = 3
+            hifu_idx%P = 4
         end if
 
         if (stg == 3) then
-            hifu_params%T_idx = 1
-            hifu_params%qac_idx = 3
-            hifu_params%qvis_idx = 4
-            hifu_params%qth_idx = 5
+            hifu_idx%T = 1
+            hifu_idx%qac = 3
+            hifu_idx%qvis = 4
+            hifu_idx%qth = 5
         end if
 
     end subroutine s_start_HIFU_indexes
@@ -105,8 +105,8 @@ contains
         do k = idwbuff(3)%beg, idwbuff(3)%end
             do j = idwbuff(2)%beg, idwbuff(2)%end
                 do i = idwbuff(1)%beg, idwbuff(1)%end
-                    q_hifu%vf(hifu_params%P_idx)%sf(i, j, k) = min(dflt_real, -dflt_real)
-                    q_hifu%vf(hifu_params%P_idx + 1)%sf(i, j, k) = max(dflt_real, -dflt_real)
+                    q_hifu%vf(hifu_idx%P)%sf(i, j, k) = min(dflt_real, -dflt_real)
+                    q_hifu%vf(hifu_idx%P + 1)%sf(i, j, k) = max(dflt_real, -dflt_real)
                 end do
             end do
         end do
@@ -192,7 +192,7 @@ contains
                 call s_start_HIFU_indexes(stg=2)
                 hifu_params%sampling = .true.
                 hifu_params%heatSolver = .false.
-                $:GPU_UPDATE(device='[dt, hifu_params]')
+                $:GPU_UPDATE(device='[dt, hifu_params, hifu_idx]')
 
                 call s_initialize_sampling_vars()
                 hifu_write_output = .true.
@@ -210,7 +210,7 @@ contains
                 call s_start_HIFU_indexes(stg=2)
                 hifu_params%sampling = .true.
                 hifu_params%heatSolver = .false.
-                $:GPU_UPDATE(device='[hifu_params, dt]')
+                $:GPU_UPDATE(device='[hifu_params, dt, hifu_idx]')
 
                 call s_initialize_sampling_vars()
                 hifu_write_output = .true.
@@ -220,8 +220,8 @@ contains
         end if
 
         ! 2nd to 3rd stage
-        if ((cfl_dt .and. mytime >= hifu_params%t_stop_stg2 .and. .not. hifu_params%heatSolver) &
-            & .or. (.not. cfl_dt .and. t_step == hifu_params%t_step_stop_stg2 .and. .not. hifu_params%heatSolver)) then
+        if ((cfl_dt .and. mytime >= hifu_params%t_stop_stg2 .and. .not. hifu_params%heatSolver) .or. (.not. cfl_dt &
+            & .and. t_step == hifu_params%t_step_stop_stg2 .and. .not. hifu_params%heatSolver)) then
             ! Define params to start stage 3 (constant dt only)
             call s_close_run_time_information_samplingHIFU()
             if (.not. hifu_params%stg3) return
@@ -249,7 +249,7 @@ contains
 
             exitFlag = .false.
 
-            $:GPU_UPDATE(device='[hifu_params, dt]')
+            $:GPU_UPDATE(device='[hifu_params, dt, hifu_idx]')
         end if
 
     end subroutine s_HIFU_stages
@@ -307,8 +307,7 @@ contains
 #endif
 
             $:GPU_PARALLEL_LOOP(collapse=3, reduction='[[abortFlag_max], [sum_qac, sum_qac_prms]]', reductionOp='[MAX, +]', &
-                                & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h]', &
-                                    & copy='[sum_qac, sum_qac_prms, abortFlag_max]')
+                                & private='[myalpha_rho, myalpha, vel_h, Re_h, rhoYks_h]', copy='[sum_qac, sum_qac_prms, abortFlag_max]')
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
@@ -366,8 +365,8 @@ contains
                                                       & 0._wp, cson_h, qv_h)
 
                         ! Obtaining Pmax and Pmin fields
-                        q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), pres_h)
-                        q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_idx%P)%sf(j, k, l) = max(q_hifu%vf(hifu_idx%P)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_idx%P + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_idx%P + 1)%sf(j, k, l), pres_h)
 
                         !> > Compute intensity form acoustic damping
 
@@ -375,13 +374,13 @@ contains
                         intensity_ac_prms = 0._wp
                         if (cfl_dt) then
                             if (mytime + dt >= t_stop) then
-                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, &
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_idx%P)%sf(j, k, &
                                                              & l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                                 if (proc_rank == 0 .and. j == 0 .and. k == 0 .and. l == 0) print*, 'Calculated intensity_ac_prms'
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
-                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, &
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_idx%P)%sf(j, k, &
                                                              & l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                                 if (proc_rank == 0 .and. j == 0 .and. k == 0 .and. l == 0) print*, 'Calculated intensity_ac_prms'
                             end if
@@ -397,16 +396,15 @@ contains
                         varB = (8._wp/3._wp)*varA - (4._wp/3._wp)*(ep11*ep22 + ep11*ep33 + ep22*ep33) + 6._wp*(ep13**2._wp)
                         intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB  ! intensity is "q_us_ac"
 
-                        q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, &
-                                  & l) + hdid  ! Update total sampling time
-                        q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%qac_idx)%sf(j, k, &
-                                  & l) + intensity_ac*hdid  ! Sampling acoustic intensity
-                        q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, &
-                                  & l) = intensity_ac_prms*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, &
-                                  & l)  ! Sampling acoustic intensity (prms)
+                        ! Update total sampling time
+                        q_hifu%vf(hifu_idx%tsamp)%sf(j, k, l) = q_hifu%vf(hifu_idx%tsamp)%sf(j, k, l) + hdid
+                        ! Sampling acoustic intensity
+                        q_hifu%vf(hifu_idx%qac)%sf(j, k, l) = q_hifu%vf(hifu_idx%qac)%sf(j, k, l) + intensity_ac*hdid
+                        ! Sampling acoustic intensity (prms)
+                        q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l) = intensity_ac_prms*q_hifu%vf(hifu_idx%tsamp)%sf(j, k, l)
 
                         ! Checking for NaNs
-                        if (q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_idx%qac)%sf(j, k, l) /= q_hifu%vf(hifu_idx%qac)%sf(j, k, l)) then
                             print*, 'Acoustic intensity is NaN', j, k, l, hdid, intensity_ac
                             print*, 'viscosities (bulk & shear)', bulkVisc, shearVisc
                             print*, 'var: A, B', varA, varB, ep11, ep22, ep33, ep13
@@ -414,22 +412,22 @@ contains
                             abortFlag = 1
                         end if
 
-                        if (q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l) /= q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l)) then
                             print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms, absCoef, &
-                                & q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), hifu_params%atmPres, rho_h, cson_h
+                                & q_hifu%vf(hifu_idx%P)%sf(j, k, l), hifu_params%atmPres, rho_h, cson_h
                             abortFlag = 1
                         end if
 
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
-                        ! Update average velocities for streaming if (hifu_params%streaming) then q_hifu%vf(hifu_params%u_idx)%sf(j,
-                        ! k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, & & l) + vel_h(1)*hdid ! Sampling x-vel
-                        ! q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, & & l) + vel_h(2)*hdid !
+                        ! Update average velocities for streaming if (hifu_params%streaming) then q_hifu%vf(hifu_idx%u)%sf(j,
+                        ! k, l) = q_hifu%vf(hifu_idx%u)%sf(j, k, & & l) + vel_h(1)*hdid ! Sampling x-vel
+                        ! q_hifu%vf(hifu_idx%v)%sf(j, k, l) = q_hifu%vf(hifu_idx%v)%sf(j, k, & & l) + vel_h(2)*hdid !
                         ! Sampling y-vel end if
 
                         ! Intensity summation through the domain
-                        sum_qac = sum_qac + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l)
-                        sum_qac_prms = sum_qac_prms + q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, l)
+                        sum_qac = sum_qac + q_hifu%vf(hifu_idx%qac)%sf(j, k, l)
+                        sum_qac_prms = sum_qac_prms + q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l)
                     end do
                 end do
             end do
@@ -445,11 +443,11 @@ contains
                 call s_mpi_allreduce_sum(tmp, sum_qac_prms)
             end if
 
-            $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
+            $:GPU_UPDATE(host='[q_hifu%vf(hifu_idx%tsamp)%sf]')
 
             if (proc_rank == 0) then
-                write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, &
-                       & 0), sum_qac, sum_qac_prms
+                write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime, q_hifu%vf(hifu_idx%tsamp)%sf(0, 0, 0), &
+                       & sum_qac, sum_qac_prms
                 write (99, '(A)') trim(line)
             end if
         else if (.not. cyl_coord .and. p > 0) then  ! Cartesian 3D
@@ -519,8 +517,8 @@ contains
                                                       & 0._wp, cson_h, qv_h)
 
                         ! Obtaining Pmax and Pmin fields
-                        q_hifu%vf(hifu_params%P_idx)%sf(j, k, l) = max(q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), pres_h)
-                        q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_idx%P)%sf(j, k, l) = max(q_hifu%vf(hifu_idx%P)%sf(j, k, l), pres_h)
+                        q_hifu%vf(hifu_idx%P + 1)%sf(j, k, l) = min(q_hifu%vf(hifu_idx%P + 1)%sf(j, k, l), pres_h)
 
                         !> > Compute intensity form acoustic damping
 
@@ -528,13 +526,13 @@ contains
                         intensity_ac_prms = 0._wp
                         if (cfl_dt) then
                             if (mytime + dt >= t_stop) then
-                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, &
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_idx%P)%sf(j, k, &
                                                              & l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                                 if (proc_rank == 0 .and. j == 0 .and. k == 0 .and. l == 0) print*, 'Calculated intensity_ac_prms'
                             end if
                         else
                             if (t_step == t_step_stop - 1) then
-                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_params%P_idx)%sf(j, k, &
+                                intensity_ac_prms = absCoef*(q_hifu%vf(hifu_idx%P)%sf(j, k, &
                                                              & l) - hifu_params%atmPres)**2._wp/(rho_h*cson_h)
                                 if (proc_rank == 0 .and. j == 0 .and. k == 0 .and. l == 0) print*, 'Calculated intensity_ac_prms'
                             end if
@@ -552,19 +550,18 @@ contains
                         varA = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep11*ep22 + ep11*ep33 + ep22*ep33)
                         varB = ep11**2._wp + ep22**2._wp + ep33**2._wp + 2._wp*(ep12**2._wp + ep13**2._wp + ep23**2._wp)
 
-                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB - (2._wp/3._wp) &
-                            & *shearVisc*varA  ! intensity is "q_us_ac"
+                        ! intensity is "q_us_ac"
+                        intensity_ac = intensity_ac + bulkVisc*varA + 2._wp*shearVisc*varB - (2._wp/3._wp)*shearVisc*varA
 
-                        q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, &
-                                  & l) + hdid  ! Update total sampling time
-                        q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%qac_idx)%sf(j, k, &
-                                  & l) + intensity_ac*hdid  ! Sampling acoustic intensity
-                        q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, &
-                                  & l) = intensity_ac_prms*q_hifu%vf(hifu_params%tsamp_idx)%sf(j, k, &
-                                  & l)  ! Sampling acoustic intensity (prms)
+                        ! Update total sampling time
+                        q_hifu%vf(hifu_idx%tsamp)%sf(j, k, l) = q_hifu%vf(hifu_idx%tsamp)%sf(j, k, l) + hdid
+                        ! Sampling acoustic intensity
+                        q_hifu%vf(hifu_idx%qac)%sf(j, k, l) = q_hifu%vf(hifu_idx%qac)%sf(j, k, l) + intensity_ac*hdid
+                        ! Sampling acoustic intensity (prms)
+                        q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l) = intensity_ac_prms*q_hifu%vf(hifu_idx%tsamp)%sf(j, k, l)
 
                         ! Checking for NaNs
-                        if (q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_idx%qac)%sf(j, k, l) /= q_hifu%vf(hifu_idx%qac)%sf(j, k, l)) then
                             print*, 'Acoustic intensity is NaN', j, k, l, hdid, intensity_ac
                             print*, 'viscosities (bulk & shear)', bulkVisc, shearVisc
                             print*, 'var: A, B', varA, varB, ep11, ep22, ep33, ep13
@@ -572,22 +569,22 @@ contains
                             abortFlag = 1
                         end if
 
-                        if (q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, l) /= q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, l)) then
+                        if (q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l) /= q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l)) then
                             print*, 'Acoustic intensity PRMS is NaN', j, k, l, hdid, intensity_ac_prms, absCoef, &
-                                & q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), hifu_params%atmPres, rho_h, cson_h
+                                & q_hifu%vf(hifu_idx%P)%sf(j, k, l), hifu_params%atmPres, rho_h, cson_h
                             abortFlag = 1
                         end if
 
                         abortFlag_max = max(abortFlag_max, abortFlag)
 
-                        ! Update average velocities for streaming if (hifu_params%streaming) then q_hifu%vf(hifu_params%u_idx)%sf(j,
-                        ! k, l) = q_hifu%vf(hifu_params%u_idx)%sf(j, k, & & l) + vel_h(1)*hdid ! Sampling x-vel
-                        ! q_hifu%vf(hifu_params%v_idx)%sf(j, k, l) = q_hifu%vf(hifu_params%v_idx)%sf(j, k, & & l) + vel_h(2)*hdid !
+                        ! Update average velocities for streaming if (hifu_params%streaming) then q_hifu%vf(hifu_idx%u)%sf(j,
+                        ! k, l) = q_hifu%vf(hifu_idx%u)%sf(j, k, & & l) + vel_h(1)*hdid ! Sampling x-vel
+                        ! q_hifu%vf(hifu_idx%v)%sf(j, k, l) = q_hifu%vf(hifu_idx%v)%sf(j, k, & & l) + vel_h(2)*hdid !
                         ! Sampling y-vel end if
 
                         ! Intensity summation through the domain
-                        sum_qac = sum_qac + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l)
-                        sum_qac_prms = sum_qac_prms + q_hifu%vf(hifu_params%qac_prms_idx)%sf(j, k, l)
+                        sum_qac = sum_qac + q_hifu%vf(hifu_idx%qac)%sf(j, k, l)
+                        sum_qac_prms = sum_qac_prms + q_hifu%vf(hifu_idx%qac_prms)%sf(j, k, l)
 
                         vol_cell = dx(j)*dy(k)*dz(l)
                         ! Calculate heat source moments inside the bubble cloud
@@ -644,11 +641,11 @@ contains
                 call s_mpi_allreduce_sum(tmp, sum_qac_prms)
             end if
 
-            $:GPU_UPDATE(host='[q_hifu%vf(hifu_params%tsamp_idx)%sf]')
+            $:GPU_UPDATE(host='[q_hifu%vf(hifu_idx%tsamp)%sf]')
 
             if (proc_rank == 0) then
-                write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, q_hifu%vf(hifu_params%tsamp_idx)%sf(0, &
-                       & 0, 0), sum_qac, sum_qac_prms
+                write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, q_hifu%vf(hifu_idx%tsamp)%sf(0, 0, 0), &
+                       & sum_qac, sum_qac_prms
                 write (99, '(A)') trim(line)
             end if
 
@@ -894,12 +891,12 @@ contains
                     if (condition) then
                         if (p > 0) then
                             write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, &
-                                   & x_cc(j), y_cc(k), z_cc(l), q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), &
-                                   & q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
+                                   & x_cc(j), y_cc(k), z_cc(l), q_hifu%vf(hifu_idx%P)%sf(j, k, l), &
+                                   & q_hifu%vf(hifu_idx%P + 1)%sf(j, k, l)
                             write (100, '(A)') trim(line)
                         else
                             write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') mytime + dt, x_cc(j), &
-                                   & y_cc(k), q_hifu%vf(hifu_params%P_idx)%sf(j, k, l), q_hifu%vf(hifu_params%P_idx + 1)%sf(j, k, l)
+                                   & y_cc(k), q_hifu%vf(hifu_idx%P)%sf(j, k, l), q_hifu%vf(hifu_idx%P + 1)%sf(j, k, l)
                             write (100, '(A)') trim(line)
                         end if
                     end if
@@ -919,21 +916,21 @@ contains
         real(wp) :: alpha, rho_cp, tdiff, q_ac, q_vis, q_th, abortFlag, CFL_heat, CFL_heat_max, val_tmp
         character(len=512) :: line
 
-        qac_hs_idx = hifu_params%qac_idx
-        if (hifu_params%intPrms) qac_hs_idx = hifu_params%qac_prms_idx
+        qac_hs_idx = hifu_idx%qac
+        if (hifu_params%intPrms) qac_hs_idx = hifu_idx%qac_prms
 
         do i = 1, sys_size_hifu
             $:GPU_UPDATE(host='[q_hifu%vf(i)%sf]')
         end do
-        sampledTime = q_hifu%vf(hifu_params%tsamp_idx)%sf(0, 0, 0)
+        sampledTime = q_hifu%vf(hifu_idx%tsamp)%sf(0, 0, 0)
 
         if (f_approx_equal(sampledTime, 0._wp)) call s_mpi_abort("mbHF: time sampled is zero. Run stage 2.")
 
         if (bubbles_lagrange) then
             if (proc_rank == 0) print*, 'Adding bubbles in pure 3D domain'
             call s_mean_radius_hifu(sampledTime)
-            hifu_params%qvis_idx = 1; hifu_params%qth_idx = hifu_params%qvis_idx + 1
-            $:GPU_UPDATE(device='[hifu_params]')
+            hifu_idx%qvis = 1; hifu_idx%qth = hifu_idx%qvis + 1
+            $:GPU_UPDATE(device='[hifu_params, hifu_idx]')
 
             $:GPU_PARALLEL_LOOP(private='[i, j, k]', collapse=3)
             do k = idwbuff(3)%beg, idwbuff(3)%end
@@ -963,8 +960,8 @@ contains
             if (proc_rank == 0) print*, 'Here are the non-averaged source terms: q_src'
             call s_mpi_barrier()
             call s_print_hifu_source_stats(sys_size_hifu, sum_val_qac)
-            call s_print_hifu_source_stats(hifu_params%qvis_idx, sum_val_qvis)
-            call s_print_hifu_source_stats(hifu_params%qth_idx, sum_val_qth)
+            call s_print_hifu_source_stats(hifu_idx%qvis, sum_val_qvis)
+            call s_print_hifu_source_stats(hifu_idx%qth, sum_val_qth)
             if (proc_rank == 0) then
                 write (line, '(ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16,",",ES24.16)') sampledTime, &
                        & 0._wp, 0._wp, 0._wp, 0._wp, sum_val_qvis, sum_val_qth
@@ -973,7 +970,7 @@ contains
             end if
 
             call s_start_HIFU_indexes(stg=3)
-            $:GPU_UPDATE(device='[hifu_params]')
+            $:GPU_UPDATE(device='[hifu_params, hifu_idx]')
 
             abortFlag = 0._wp; CFL_heat_max = -100_wp
 
@@ -987,10 +984,10 @@ contains
                         q_vis = q_hifu%vf(1)%sf(i, j, k)/sampledTime
                         q_th = q_hifu%vf(2)%sf(i, j, k)/sampledTime
 
-                        q_hifu%vf(hifu_params%qac_idx)%sf(i, j, k) = q_ac
-                        q_hifu%vf(hifu_params%qvis_idx)%sf(i, j, k) = q_vis
-                        q_hifu%vf(hifu_params%qth_idx)%sf(i, j, k) = q_th
-                        q_hifu%vf(hifu_params%T_idx)%sf(i, j, k) = hifu_params%Tref
+                        q_hifu%vf(hifu_idx%qac)%sf(i, j, k) = q_ac
+                        q_hifu%vf(hifu_idx%qvis)%sf(i, j, k) = q_vis
+                        q_hifu%vf(hifu_idx%qth)%sf(i, j, k) = q_th
+                        q_hifu%vf(hifu_idx%T)%sf(i, j, k) = hifu_params%Tref
 
                         !> Get thermal properties
                         rho_cp = 0._wp; tdiff = 0._wp
@@ -1003,7 +1000,7 @@ contains
 
                         if (f_is_default(rho_cp) .or. f_is_default(tdiff)) abortFlag = abortFlag + 1._wp
 
-                        q_hifu%vf(hifu_params%T_idx + 1)%sf(i, j, k) = (q_ac + q_vis + q_th)/rho_cp
+                        q_hifu%vf(hifu_idx%T + 1)%sf(i, j, k) = (q_ac + q_vis + q_th)/rho_cp
 
                         CFL_heat = max(CFL_heat, tdiff*dt/(dx(i)**2.0_wp))
                         CFL_heat = max(CFL_heat, tdiff*dt/(dy(j)**2.0_wp))
@@ -1016,9 +1013,9 @@ contains
 
             if (proc_rank == 0) print*, 'Here are the averaged source terms: q_src*(1/tsampled)*(1/rho*cp)'
             call s_mpi_barrier()
-            call s_print_hifu_source_stats(hifu_params%qac_idx, sum_val_qac)
-            call s_print_hifu_source_stats(hifu_params%qvis_idx, sum_val_qvis)
-            call s_print_hifu_source_stats(hifu_params%qth_idx, sum_val_qth)
+            call s_print_hifu_source_stats(hifu_idx%qac, sum_val_qac)
+            call s_print_hifu_source_stats(hifu_idx%qvis, sum_val_qvis)
+            call s_print_hifu_source_stats(hifu_idx%qth, sum_val_qth)
 
             if (num_procs > 1) then
                 val_tmp = abortFlag
@@ -1075,9 +1072,9 @@ contains
         end if
 
         if (proc_rank == 0) then
-            if (idx == hifu_params%qac_idx) print*, 'q_us (min, max):', min_val, max_val
-            if (idx == hifu_params%qvis_idx) print*, 'q_vis smeared (min, max):', min_val, max_val
-            if (idx == hifu_params%qth_idx) print*, 'q_th smeared (min, max):', min_val, max_val
+            if (idx == hifu_idx%qac) print*, 'q_us (min, max):', min_val, max_val
+            if (idx == hifu_idx%qvis) print*, 'q_vis smeared (min, max):', min_val, max_val
+            if (idx == hifu_idx%qth) print*, 'q_th smeared (min, max):', min_val, max_val
         end if
 
     end subroutine s_print_hifu_source_stats
@@ -1109,13 +1106,13 @@ contains
                                        & **2._wp + (z_cc(l) - hifu_params%cloud_center(3))**2._wp)
 
                     if (dist_radial <= hifu_params%R_cloud) then
-                        total_heat = total_heat + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, l)
-                        heat_moment1 = heat_moment1 + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, &
+                        total_heat = total_heat + q_hifu%vf(hifu_idx%qac)%sf(j, k, l)
+                        heat_moment1 = heat_moment1 + q_hifu%vf(hifu_idx%qac)%sf(j, k, &
                                                                 & l)*((x_cc(j) - hifu_params%cloud_center(1))/hifu_params%R_cloud)
-                        heat_moment2 = heat_moment2 + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, &
+                        heat_moment2 = heat_moment2 + q_hifu%vf(hifu_idx%qac)%sf(j, k, &
                                                                 & l)*((x_cc(j) - hifu_params%cloud_center(1))/hifu_params%R_cloud) &
                                                                 & **2._wp
-                        heat_moment3 = heat_moment3 + q_hifu%vf(hifu_params%qac_idx)%sf(j, k, &
+                        heat_moment3 = heat_moment3 + q_hifu%vf(hifu_idx%qac)%sf(j, k, &
                                                                 & l)*((x_cc(j) - hifu_params%cloud_center(1))/hifu_params%R_cloud) &
                                                                 & **3._wp
                     end if
@@ -1186,26 +1183,20 @@ contains
                     rhs_vf(1)%sf(j, k, l) = 0._stp
 
                     !> Temperature derivatives at the cell center. METHOD: Second order centered difference approximation
-                    dTdx = (q_hifu%vf(hifu_params%T_idx)%sf(j + 1, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j - 1, k, &
+                    dTdx = (q_hifu%vf(hifu_idx%T)%sf(j + 1, k, l) - q_hifu%vf(hifu_idx%T)%sf(j - 1, k, &
                             & l))/(x_cc(j + 1) - x_cc(j - 1))
-                    dTdx_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j - 2, k, &
-                              & l))/(x_cc(j) - x_cc(j - 2))
-                    dTdx_R = (q_hifu%vf(hifu_params%T_idx)%sf(j + 2, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                              & l))/(x_cc(j + 2) - x_cc(j))
+                    dTdx_L = (q_hifu%vf(hifu_idx%T)%sf(j, k, l) - q_hifu%vf(hifu_idx%T)%sf(j - 2, k, l))/(x_cc(j) - x_cc(j - 2))
+                    dTdx_R = (q_hifu%vf(hifu_idx%T)%sf(j + 2, k, l) - q_hifu%vf(hifu_idx%T)%sf(j, k, l))/(x_cc(j + 2) - x_cc(j))
 
-                    dTdr = (q_hifu%vf(hifu_params%T_idx)%sf(j, k + 1, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k - 1, &
+                    dTdr = (q_hifu%vf(hifu_idx%T)%sf(j, k + 1, l) - q_hifu%vf(hifu_idx%T)%sf(j, k - 1, &
                             & l))/(y_cc(k + 1) - y_cc(k - 1))
-                    dTdr_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k - 2, &
-                              & l))/(y_cc(k) - y_cc(k - 2))
-                    dTdr_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k + 2, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                              & l))/(y_cc(k + 2) - y_cc(k))
+                    dTdr_L = (q_hifu%vf(hifu_idx%T)%sf(j, k, l) - q_hifu%vf(hifu_idx%T)%sf(j, k - 2, l))/(y_cc(k) - y_cc(k - 2))
+                    dTdr_R = (q_hifu%vf(hifu_idx%T)%sf(j, k + 2, l) - q_hifu%vf(hifu_idx%T)%sf(j, k, l))/(y_cc(k + 2) - y_cc(k))
 
-                    dTdz = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l + 1) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
+                    dTdz = (q_hifu%vf(hifu_idx%T)%sf(j, k, l + 1) - q_hifu%vf(hifu_idx%T)%sf(j, k, &
                             & l - 1))/(z_cc(l + 1) - z_cc(l - 1))
-                    dTdz_L = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                              & l - 2))/(z_cc(l) - z_cc(l - 2))
-                    dTdz_R = (q_hifu%vf(hifu_params%T_idx)%sf(j, k, l + 2) - q_hifu%vf(hifu_params%T_idx)%sf(j, k, &
-                              & l))/(z_cc(l + 2) - z_cc(l))
+                    dTdz_L = (q_hifu%vf(hifu_idx%T)%sf(j, k, l) - q_hifu%vf(hifu_idx%T)%sf(j, k, l - 2))/(z_cc(l) - z_cc(l - 2))
+                    dTdz_R = (q_hifu%vf(hifu_idx%T)%sf(j, k, l + 2) - q_hifu%vf(hifu_idx%T)%sf(j, k, l))/(z_cc(l + 2) - z_cc(l))
 
                     !> Find temperature derivatives at the faces of the cell
                     dTdx_L = (dTdx*(x_cc(j) - x_cb(j - 1)) + dTdx_L*(x_cb(j - 1) - x_cc(j - 1)))/(x_cc(j) - x_cc(j - 1))
@@ -1231,7 +1222,7 @@ contains
 
                     !> Adding the heat source terms avg(qac+qvis+qth)/rho_cp
                     if (hifu_on) then
-                        rhs_vf(1)%sf(j, k, l) = rhs_vf(1)%sf(j, k, l) + q_hifu%vf(hifu_params%T_idx + 1)%sf(j, k, l)
+                        rhs_vf(1)%sf(j, k, l) = rhs_vf(1)%sf(j, k, l) + q_hifu%vf(hifu_idx%T + 1)%sf(j, k, l)
                     end if
 
                     ! Checking NaNs

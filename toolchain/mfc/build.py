@@ -310,7 +310,34 @@ class MFCTarget:
         if case.params.get("chemistry", "F") == "T":
             m.update(case.get_cantera_solution().name.encode())
 
-        return m.hexdigest()[:10]
+        cfg = CFG()
+        if cfg.gpu == gpuConfigOptions.ACC.value:
+            prefix = "gpu-acc"
+        elif cfg.gpu == gpuConfigOptions.MP.value:
+            prefix = "gpu-mp"
+        else:
+            prefix = "cpu"
+
+        if cfg.debug:
+            prefix += "-debug"
+        if cfg.reldebug:
+            prefix += "-reldebug"
+        if cfg.gcov:
+            prefix += "-gcov"
+        if cfg.fastmath:
+            prefix += "-fastmath"
+        if cfg.single:
+            prefix += "-single"
+        if cfg.mixed:
+            prefix += "-mixed"
+        if cfg.unified:
+            prefix += "-unified"
+        if not cfg.mpi:
+            prefix += "-nompi"
+        if case.params.get("chemistry", "F") == "T":
+            prefix += "-chem"
+
+        return f"{prefix}-{m.hexdigest()[:10]}"
 
     # Get path to directory that will store the build files
     def get_staging_dirpath(self, case: Case) -> str:
@@ -405,6 +432,7 @@ class MFCTarget:
             f"-DCMAKE_INSTALL_PREFIX={install_dirpath}",
             f"-DMFC_SINGLE_PRECISION={'ON' if (ARG('single') or ARG('mixed')) else 'OFF'}",
             f"-DMFC_MIXED_PRECISION={'ON' if ARG('mixed') else 'OFF'}",
+            f"-DMFC_BUILD_JOBS={ARG('jobs')}",
         ]
 
         # Verbosity level 3 (-vvv): add cmake debug flags

@@ -4,8 +4,7 @@
 
 #:include 'macros.fpp'
 
-!> @brief Shared bubble-dynamics procedures (radial acceleration, wall pressure, sound speed) for ensemble- and volume-averaged
-!! models
+!> @brief Bubble-dynamics procedures for ensemble- and volume-averaged models
 module m_bubbles
 
     use m_derived_types
@@ -13,6 +12,7 @@ module m_bubbles
     use m_mpi_proxy
     use m_variables_conversion
     use m_helper_basic
+    use m_constants, only: bubble_model_gilmore, bubble_model_keller_miksis, bubble_model_rayleigh_plesset
 
     implicit none
 
@@ -34,7 +34,7 @@ contains
         real(wp)             :: fCpbw, fCpinf, fCpinf_dot, fH, fHdot, c_gas, c_liquid, p_out
         real(wp)             :: f_rddot
 
-        if (bubble_model == 1) then
+        if (bubble_model == bubble_model_gilmore) then
             ! Gilmore bubbles
             fCpinf = fP - Eu
             fCpbw = f_cpbw(fR0, fR, fV, fpb)
@@ -43,7 +43,7 @@ contains
             fCpinf_dot = f_cpinfdot(fRho, fP, alf, fntait, fBtait, f_bub_adv_src, f_divu)
             fHdot = f_Hdot(fCpbw, fCpinf, fCpinf_dot, fntait, fBtait, fR, fV, fR0, fpbdot)
             f_rddot = f_rddot_G(fCpbw, fR, fV, fH, fHdot, c_gas, fntait, fBtait)
-        else if (bubble_model == 2) then
+        else if (bubble_model == bubble_model_keller_miksis) then
             ! Keller-Miksis bubbles
             fCpinf = fP
             fCpbw = f_cpbw_KM(fR0, fR, fV, fpb, fshell, fRbuck)
@@ -57,7 +57,7 @@ contains
                 c_liquid = fCson
             end if
             f_rddot = f_rddot_KM(fpbdot, fCpinf, fCpbw, fRho, fR, fV, fR0, c_liquid, fInt, fshell, fRbuck, fpb)
-        else if (bubble_model == 3) then
+        else if (bubble_model == bubble_model_rayleigh_plesset) then
             ! Rayleigh-Plesset bubbles
             fCpbw = f_cpbw_KM(fR0, fR, fV, fpb)
             f_rddot = f_rddot_RP(fP, fRho, fR, fV, fCpbw)

@@ -180,6 +180,14 @@ if ! cmp "$(pwd)/toolchain/pyproject.toml" "$(pwd)/build/pyproject.toml" > /dev/
     if [ "$USE_UV" = "1" ]; then
         # UV_LINK_MODE=copy avoids slow hardlink failures on cross-filesystem installs (common on HPC)
         export UV_LINK_MODE=copy
+        # On GitHub Actions self-hosted runners, the default uv cache (~/.cache/uv)
+        # often lives on a shared NFS $HOME (e.g. OLCF /ccs/home), where uv's
+        # file-lock implementation hits "os error 524" when concurrent runners on
+        # different nodes contend for the same .lock. Redirect to node-local
+        # storage in CI only, so non-CI users keep their normal reusable cache.
+        if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ -w "${TMPDIR:-/tmp}" ]; then
+            export UV_CACHE_DIR="${TMPDIR:-/tmp}/uv-cache-${USER:-$(id -un)}"
+        fi
         log "(venv) Using$MAGENTA uv$COLOR_RESET for fast installation..."
 
         if [ "$verbose" = "1" ]; then
@@ -399,4 +407,21 @@ if ! cmp "$(pwd)/toolchain/pyproject.toml" "$(pwd)/build/pyproject.toml" > /dev/
     cp "$(pwd)/toolchain/pyproject.toml" "$(pwd)/build/"
 
     fi  # end of USE_UV=0 (pip) block
+fi
+
+
+# Apply patches to installed packages.
+# fypp: always emit a resync linemarker after single-line $: macro calls so
+# that the compiler attributes the following Fortran statement to the correct
+# source line rather than the call-site line (off-by-1 in backtraces).
+FYPP_PY="$(python3 -c "import fypp; print(fypp.__file__)" 2>/dev/null)"
+FYPP_PATCH="$(pwd)/toolchain/patches/fypp-linemarker-resync.patch"
+if [ -n "$FYPP_PY" ] && [ -f "$FYPP_PATCH" ]; then
+    if ! grep -q "Always emit a resync marker" "$FYPP_PY" 2>/dev/null; then
+        if patch -p1 --forward --silent "$FYPP_PY" < "$FYPP_PATCH" 2>/dev/null; then
+            ok "(venv) Applied$MAGENTA fypp$COLOR_RESET linemarker-resync patch."
+        else
+            warn "(venv) Failed to apply$MAGENTA fypp$COLOR_RESET linemarker-resync patch (fypp version may have changed)."
+        fi
+    fi
 fi

@@ -49,7 +49,7 @@ print(
     json.dumps(
         {
             # Logistics
-            "run_time_info": "T",
+            "run_time_info": "F",
             # Computational Domain Parameters
             "x_domain%beg": -math.pi * L,
             "x_domain%end": math.pi * L,
@@ -69,6 +69,7 @@ print(
             "num_patches": 1,
             "model_eqns": 2,
             "num_fluids": 1,
+            "riemann_solver": 5,
             "time_stepper": 3,
             "bc_x%beg": -1,
             "bc_x%end": -1,
@@ -101,10 +102,11 @@ print(
             "patch_icpp(1)%length_x": 2 * math.pi * L,
             "patch_icpp(1)%length_y": 2 * math.pi * L,
             "patch_icpp(1)%length_z": 2 * math.pi * L,
-            "patch_icpp(1)%vel(1)": f"{V0}*sin(x/{L})*cos(y/{L})*sin(z/{L})",
-            "patch_icpp(1)%vel(2)": f"-{V0}*cos(x/{L})*sin(y/{L})*sin(z/{L})",
+            "patch_icpp(1)%vel(1)": 0.0,
+            "patch_icpp(1)%vel(2)": 0.0,
             "patch_icpp(1)%vel(3)": 0,
-            "patch_icpp(1)%pres": f"{P0} + ({rho0}*{V0}**2/16)*(cos(2*x/{L}) + cos(2*y/{L}))*(cos(2*z/{L}) + 2)",
+            "patch_icpp(1)%pres": 0.0,
+            "patch_icpp(1)%hcid": 380,
             "patch_icpp(1)%alpha_rho(1)": 1,
             "patch_icpp(1)%alpha(1)": 1,
             # Fluids Physical Parameters
